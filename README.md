@@ -12,8 +12,6 @@
 
 
 
-pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
-
 
 ---
 
@@ -59,6 +57,7 @@ pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap
   - [Support](#support)
   - [Contributions](#contributions)
     - [How to Contribute](#how-to-contribute)
+- [Install Dependencies \& Build](#install-dependencies--build)
 
 </details>
 
@@ -155,6 +154,7 @@ Join our [Discord server](https://discord.gg/kvAZvdkuuN) to share ideas, seek he
 ## Support
 
 <a href='https://ko-fi.com/D1D510FNSV' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=3' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+
 ## Contributions
 
 We welcome any contributions to improve this project! Whether it's bug fixes or new features, your help is appreciated.
@@ -166,4 +166,9 @@ We welcome any contributions to improve this project! Whether it's bug fixes or 
 
 We look forward to your contributions!
 
+# Install Dependencies & Build
 
+```python
+pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
+python -m PyInstaller FadCrypt.spec
+```
