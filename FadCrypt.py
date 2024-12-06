@@ -537,6 +537,7 @@ class AppLockerGUI:
 
 
 
+
         # Radio buttons
         ttk.Label(left_frame, text="Password Dialog Style:", font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=10)
         ttk.Radiobutton(left_frame, text="Simple Dialog", variable=self.password_dialog_style, value="simple", command=self.save_and_update_preview).pack(anchor="w", padx=20, pady=0)
@@ -745,22 +746,35 @@ class AppLockerGUI:
 
     def check_for_updates(self):
         try:
-            response = requests.get("https://api.github.com/repos/anonfaded/FadCrypt/releases/latest")
+            # Get the latest release info from GitHub
+            response = requests.get("https://api.github.com/repos/anonfaded/FadCrypt/releases")
             response.raise_for_status()  # Ensure we got a valid response
+            releases = response.json()
 
-            latest_version = response.json().get("tag_name", None)
-            current_version = __version__
-
-            if latest_version and latest_version != current_version:
-                self.show_message("Update Available", f"New version {latest_version} is available! Visit GitHub for more details.")
+            # Find the latest version that starts with 'v'
+            latest_version = None
+            for release in releases:
+                tag = release.get("tag_name", "")
+                if tag.startswith('v'):
+                    latest_version = tag
+                    latest_release = release
+                    break
+            
+            if latest_version and latest_version != __version__:
+                    update_message = f"New version {latest_version} is available!\nYou are currently on version {__version__}.\n\nWould you like to download the update?"
+                    if messagebox.askyesno("Update Available", update_message):
+                        webbrowser.open(latest_release["html_url"])
             else:
-                self.show_message("Up to Date", "Your application is up to date.")
+                self.show_message("Up to Date", f"You are running the latest version ({__version__})")
+
         except requests.ConnectionError:
             self.show_message("Connection Error", "Unable to check for updates. Please check your internet connection.")
         except requests.HTTPError as http_err:
             self.show_message("HTTP Error", f"HTTP error occurred:\n{http_err}")
         except Exception as e:
             self.show_message("Error", f"An error occurred while checking for updates: {str(e)}")
+
+
 
 
 
@@ -990,7 +1004,6 @@ class AppLockerGUI:
             self.img = ImageTk.PhotoImage(image)
         except:
             print("load_image: unable to load 1.ico")
-
 
 
 
@@ -2461,6 +2474,8 @@ class FileMonitor:
 
 
 
+
+
         
     def start_monitoring(self):
         """Start monitoring and handle multiple instances."""
@@ -2538,6 +2553,8 @@ class FileMonitor:
                             print(f"Error during initial restore of {file_path}: {e}")
                     else:
                         print(f"Backup for {file_path} not found for initial restore.")
+
+
 
 
 
