@@ -34,8 +34,8 @@ import pygame
 from ctypes import wintypes
 
 # App Version Information
-__version__ = "0.1.0"
-__version_code__ = 1  # Increment this for each release
+__version__ = "v0.2.0"
+__version_code__ = 2  # Increment this for each release
 
 
 # Embedded configuration and state data
@@ -299,7 +299,6 @@ class AppLockerGUI:
 
 
 
-
         # Create a frame for the footer
         footer_frame = ttk.Frame(self.main_frame)
         footer_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -556,6 +555,7 @@ class AppLockerGUI:
 
 
 
+
         # Preview area
         ttk.Label(right_frame, text="Dialog Preview:", font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=10, padx=50)
         self.preview_frame = ttk.Frame(right_frame, width=400, height=250)  # Set a fixed size
@@ -563,6 +563,9 @@ class AppLockerGUI:
         self.preview_frame.pack_propagate(False)  # Prevent the frame from shrinking
         self.preview_label = ttk.Label(self.preview_frame)
         self.preview_label.pack(expand=True, fill=tk.BOTH)
+
+
+
 
 
 
@@ -762,6 +765,7 @@ class AppLockerGUI:
 
 
 
+
     def show_readme(self):
         # Show the Read Me dialog first
         self.fullscreen_readme_dialog()
@@ -895,6 +899,10 @@ class AppLockerGUI:
 
 
 
+
+
+
+
     def configure_canvas(self, event):
         # Update the width of the canvas window to fit the frame
         self.canvas.itemconfig(self.canvas_frame, width=event.width)
@@ -921,6 +929,7 @@ class AppLockerGUI:
     def save_and_update_wallpaper(self):
         self.save_wallpaper_choice()
         self.update_preview()
+
 
 
 
@@ -967,6 +976,11 @@ class AppLockerGUI:
 
 
 
+
+
+
+
+
     # image for the main page above the buttons
     def load_image(self):
         # Open and prepare the image
@@ -976,6 +990,8 @@ class AppLockerGUI:
             self.img = ImageTk.PhotoImage(image)
         except:
             print("load_image: unable to load 1.ico")
+
+
 
 
 
@@ -999,6 +1015,7 @@ class AppLockerGUI:
 
 
 
+
     def update_apps_listbox(self):
         self.apps_listbox.delete(0, tk.END)
         for index, app in enumerate(self.app_locker.config["applications"]):
@@ -1016,7 +1033,6 @@ class AppLockerGUI:
         self.config_text.delete(1.0, tk.END)
         self.config_text.insert(tk.END, json.dumps(self.app_locker.config, indent=4))
         self.config_text.config(state=tk.DISABLED)
-
 
 
 
@@ -1068,7 +1084,7 @@ class AppLockerGUI:
             else:
                 self.show_message("Error", "Incorrect old password.")
         else:
-            self.show_message("Oops!", "How do I change a password that doesn’t exist? :(")
+            self.show_message("Oops!", "How do I change a password that doesn't exist? :(")
 
     def add_application(self):
         app_name = self.ask_password("Add Application", "Enter the name of the application:")
@@ -1189,84 +1205,100 @@ class AppLockerGUI:
     def disable_tools(self):
         """Disable Command Prompt, PowerShell, and Task Manager using winreg."""
         try:
-            # Disable Command Prompt
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Policies\Microsoft\Windows\System', 0, winreg.KEY_CREATE_SUB_KEY | winreg.KEY_SET_VALUE) as cmd_key:
-                winreg.SetValueEx(cmd_key, 'DisableCMD', 0, winreg.REG_DWORD, 1)
-            print("Command Prompt disabled.")
-            
-            # Disable Task Manager
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System') as taskmgr_key:
-                winreg.SetValueEx(taskmgr_key, 'DisableTaskMgr', 0, winreg.REG_DWORD, 1)
-            print("Task Manager disabled.")
-            
-            # Disable Control Panel
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer') as explorer_key:
-                winreg.SetValueEx(explorer_key, 'NoControlPanel', 0, winreg.REG_DWORD, 1)
-            print("Control Panel disabled.")
-            
-            # Disable System Configuration Utility (msconfig)
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System') as system_key:
-                winreg.SetValueEx(system_key, 'DisableTaskMgr', 0, winreg.REG_DWORD, 1)
-            print("System Configuration Utility (msconfig) disabled.")
-            
-            # Prevent system shutdown
-            # with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System') as policy_key:
-            #     winreg.SetValueEx(policy_key, 'DisableShutdown', 0, winreg.REG_DWORD, 1)
-            # print("System shutdown disabled.")
+            # Check for admin privileges
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to disable tools.")
+                return
 
-            # Block Registry Editor
-            AppLockerGUI.block_registry_editor()
+            # Create/modify registry keys with proper error handling
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    # Ensure the key path exists
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+                    # Set the value
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key)
+                    print(f"{value_name} set successfully.")
+                except Exception as e:
+                    print(f"Error setting {value_name}: {e}")
+
+            print("Tools disabled successfully.")
 
         except Exception as e:
             print(f"Failed to disable tools: {e}")
 
 
 
-    def enable_tools(self):
+    def enable_system_tools(self):
         """Enable Command Prompt, PowerShell, and Task Manager using winreg."""
         try:
-            # Enable Command Prompt
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Policies\Microsoft\Windows\System', 0, winreg.KEY_SET_VALUE) as cmd_key:
-                winreg.SetValueEx(cmd_key, 'DisableCMD', 0, winreg.REG_DWORD, 0)
-            print("Command Prompt enabled.")
-            
-            # Enable Task Manager
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System') as taskmgr_key:
-                winreg.SetValueEx(taskmgr_key, 'DisableTaskMgr', 0, winreg.REG_DWORD, 0)
-            print("Task Manager enabled.")
-            
-            # Enable Control Panel
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer') as explorer_key:
-                try:
-                    winreg.DeleteValue(explorer_key, 'NoControlPanel')
-                except FileNotFoundError:
-                    pass
-            print("Control Panel enabled.")
-            
-            # Enable System Configuration Utility (msconfig)
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System') as system_key:
-                try:
-                    winreg.DeleteValue(system_key, 'DisableTaskMgr')
-                except FileNotFoundError:
-                    pass
-            print("System Configuration Utility (msconfig) enabled.")
-            
-            # Allow system shutdown
-            # with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System') as policy_key:
-            #     try:
-            #         winreg.DeleteValue(policy_key, 'DisableShutdown')
-            #     except FileNotFoundError:
-            #         pass
-            # print("System shutdown enabled.")
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to enable tools.")
+                return
 
-            # Unblock Registry Editor
-            AppLockerGUI.unblock_registry_editor()
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
 
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                    try:
+                        winreg.DeleteValue(key, value_name)
+                        print(f"{value_name} removed successfully.")
+                    except FileNotFoundError:
+                        print(f"{value_name} was not found, already enabled.")
+                    finally:
+                        winreg.CloseKey(key)
+                except Exception as e:
+                    print(f"Error handling {value_name}: {e}")
+
+            print("Tools enabled successfully.")
         except Exception as e:
             print(f"Failed to enable tools: {e}")
-
     
+    # Alias the new method
+    enable_tools = enable_system_tools
 
+    def disable_system_tools(self):
+        """Disable Command Prompt, PowerShell, and Task Manager using winreg."""
+        try:
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to disable tools.")
+                return
+
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key)
+                    print(f"{value_name} set successfully.")
+                except Exception as e:
+                    print(f"Error setting {value_name}: {e}")
+
+            print("Tools disabled successfully.")
+        except Exception as e:
+            print(f"Failed to disable tools: {e}")
+
+    # Alias the new method
+    disable_tools = disable_system_tools
 
     def save_settings(self, *args):
         settings = {
@@ -1306,7 +1338,6 @@ class AppLockerGUI:
             return self.custom_dialog(title, prompt, fullscreen=False)
         else:
             return self.custom_dialog(title, prompt, fullscreen=True)
-
 
 
 
@@ -1963,6 +1994,7 @@ class AppLockerGUI:
 
 
 
+
 class AppLocker:
     # def __init__(self, gui, config_file="config.json", state_file="state.json"):
     def __init__(self, gui):
@@ -2548,30 +2580,38 @@ class SingleInstance:
 
 
 
-def main():
-    # Step 1: Create a SingleInstance object and check for existing instance
-    single_instance = SingleInstance()
-    single_instance.create_mutex()
 
-    root = TkinterDnD.Tk()
-    style = Style(theme='darkly')  # Apply dark theme, pulse, cyborg, darkly, simplex(red)
+def run_as_admin():
+    try:
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            # Re-run the program with admin rights
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            sys.exit()
+    except Exception as e:
+        print(f"Error requesting admin rights: {e}")
+        return False
+    return True
 
-
-    # Customize window borders (not directly supported in ttkbootstrap, but can be done with custom themes)
-    style.configure('TNotebook.Tab',
+if __name__ == "__main__":
+    if run_as_admin():
+        root = TkinterDnD.Tk()  # Use TkinterDnD.Tk instead of tk.Tk
+        style = Style(theme='darkly')  # Apply dark theme
+        
+        # Customize window borders and styles
+        style.configure('TNotebook.Tab',
                     background='#333333',  # Dark gray for tabs
                     foreground='#FFFFFF')  # White text for tabs
-    
-    style.configure('TButton', bordercolor="black", background="black")
-    style.configure('red.TButton', bordercolor="#ED2939", background="#ED2939")
-    style.configure('white.TButton', bordercolor="#ffffff", background="#ffffff")
-    style.configure('green.TButton', bordercolor="#009E60", background="#009E60")
-    style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
-    style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
-    style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
+        
+        style.configure('TButton', bordercolor="black", background="black")
+        style.configure('red.TButton', bordercolor="#ED2939", background="#ED2939")
+        style.configure('white.TButton', bordercolor="#ffffff", background="#ffffff")
+        style.configure('green.TButton', bordercolor="#009E60", background="#009E60")
+        style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
+        style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
+        style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
 
-    # Customize button color
-    style.configure('TButton',
+        # Customize button color
+        style.configure('TButton',
                     background='#333333',  # Dark gray color
                     foreground='#FFFFFF',  # White text
                     borderwidth=3,  # Border width
@@ -2579,21 +2619,12 @@ def main():
                     highlightbackground='#222222',  # Darker border color
                     highlightthickness=0)  # Thickness of the border
 
-    style.map('TButton',
-            foreground=[('hover', '#D3D3D3')],  # gray text color on hover
-            background=[('active', '#000000')])  # Black color on hover
-    
+        style.map('TButton',
+                foreground=[('hover', '#D3D3D3')],  # gray text color on hover
+                background=[('active', '#000000')])  # Black color on hover
 
-    # Style the Checkbutton
-    style.configure('TCheckbutton', foreground='#ffffff', padding=10)
-
-    app = AppLockerGUI(root)
-    # root.protocol("WM_DELETE_WINDOW", root.iconify)  # Minimize instead of close
-    root.mainloop()
-
-if __name__ == "__main__":
-    monitor = FileMonitor()
-    monitoring_thread = threading.Thread(target=start_monitoring_thread, args=(monitor,))
-    monitoring_thread.daemon = True
-    monitoring_thread.start()
-    main()
+        # Style the Checkbutton
+        style.configure('TCheckbutton', foreground='#ffffff', padding=10)
+        
+        app = AppLockerGUI(root)
+        root.mainloop()

@@ -12,7 +12,7 @@
 
 
 
-
+pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
 
 
 ---
@@ -49,14 +49,16 @@
 <br>
         
 
-- [Screenshots](#-screenshots)
-- [How FadCrypt Works](#how-fadcrypt-works)
-- [Download](https://github.com/anonfaded/FadCrypt#-download)
-- [Features](#features)
-- [Featured-on](#featured-on)
-- [Join Community](#join-community)
-- [Support](#support)
-- [Contributions](#contributions)
+- [FadCrypt](#fadcrypt)
+  - [📱 Screenshots](#-screenshots)
+  - [How FadCrypt Works:](#how-fadcrypt-works)
+  - [⬇️ Download](#️-download)
+  - [Features:](#features)
+  - [Featured On](#featured-on)
+  - [Join Community](#join-community)
+  - [Support](#support)
+  - [Contributions](#contributions)
+    - [How to Contribute](#how-to-contribute)
 
 </details>
 
