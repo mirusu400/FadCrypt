@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "FadCrypt"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "v0.2.0"
 #define MyAppPublisher "FadSec Lab"
 #define MyAppURL "https://www.fadedhood.com/"
 #define MyAppExeName "FadCrypt.exe"
@@ -30,9 +30,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
-OutputDir=C:\Users\User2\Desktop\FadCrypt\setup
+OutputDir=C:\Users\faded\Desktop\FadCrypt\setup
 OutputBaseFilename=FadCryptSetup
-SetupIconFile=C:\Users\User2\Desktop\FadCrypt\img\1.ico
+SetupIconFile=C:\Users\faded\Documents\repos\FadCrypt\img\1.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -44,7 +44,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "C:\Users\User2\Desktop\FadCrypt\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "C:\Users\faded\Documents\repos\FadCrypt\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
