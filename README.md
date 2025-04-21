@@ -58,7 +58,7 @@
   - [Contributions](#contributions)
     - [How to Contribute](#how-to-contribute)
 - [Install Dependencies \& Build](#install-dependencies--build)
-
+- [Reset Password](#reset-password)
 </details>
 
 ---
@@ -172,3 +172,34 @@ We look forward to your contributions!
 pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
 python -m PyInstaller FadCrypt.spec
 ```
+# Reset Password
+
+Follow the steps below to regain access to FadCrypt, or download the guide as a PDF for reference:  
+[FadCrypt_Reset_Password_Guide.pdf](https://github.com/user-attachments/files/19832431/FadCrypt_Reset_Password_Guide.pdf)
+
+## 1. Terminate the app processes (if running)
+
+1. Open the search box: `Windows key + S`  
+2. Type **"PowerShell"**, right-click, and select **"Run as administrator"**
+3. In the PowerShell window, enter the following command to kill all running instances of FadCrypt:
+
+```powershell
+Stop-Process -Name "fadcrypt" -Force
+```
+
+## 2. Delete the password binary file  
+*(This allows you to create a new password without needing the old one)*
+
+1. Navigate to and delete the following file:
+
+```
+C:\Users\<YourUsername>\AppData\Roaming\FadCrypt\encrypted_password.bin
+```
+
+2. Also delete the backup copy from:
+
+```
+C:\ProgramData\FadCrypt\Backup\encrypted_password.bin
+```
+
+Now you can open the app again and set a new password — it’ll work like a charm!
