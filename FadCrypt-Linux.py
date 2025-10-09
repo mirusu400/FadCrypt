@@ -2519,24 +2519,30 @@ def start_monitoring_thread(monitor):
 
 class SingleInstance:
     def __init__(self):
-        self.lock_file = "/var/run/fadcrypt.lock"
+        self.lock_file = "/tmp/fadcrypt.lock"
+        self.lock_fd = None
 
     def create_mutex(self):
         """Create a file-based lock to ensure only one instance is running."""
         try:
-            # Try to create and open the lock file
-            self.lock_file_descriptor = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-        except FileExistsError:
+            import fcntl
+            self.lock_fd = open(self.lock_file, 'w')
+            fcntl.lockf(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.lock_fd.write(str(os.getpid()))
+            self.lock_fd.flush()
+        except (IOError, OSError):
             print("Another instance is already running. Exiting...")
-            sys.exit(1)  # Exit immediately if another instance is running
+            sys.exit(1)
 
     def release_mutex(self):
-        """Release the lock by removing the lock file."""
+        """Release the lock by closing and removing the lock file."""
         try:
-            os.remove(self.lock_file)
+            if self.lock_fd:
+                self.lock_fd.close()
+            if os.path.exists(self.lock_file):
+                os.remove(self.lock_file)
         except OSError as e:
             print(f"Error removing lock file: {e}")
-
 
 
 
