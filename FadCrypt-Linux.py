@@ -2169,49 +2169,56 @@ class AppLocker:
     def block_application(self, app_name, app_path):
         while self.monitoring:
             try:
-                try:
-                    app_processes = [proc for proc in psutil.process_iter(['name', 'pid']) if proc.info['name'].lower() == app_name.lower()]
-                except Exception as e:
-                    print(f"Error in retrieving processes in block_application: {e}")
-                    continue
+                # Get process name from path for better matching
+                process_name = os.path.basename(app_path) if app_path else app_name
+                
+                # Handle .desktop files
+                if app_path.endswith('.desktop'):
+                    process_name = self._get_exec_from_desktop(app_path)
+                
+                app_processes = []
+                for proc in psutil.process_iter(['name', 'pid', 'cmdline']):
+                    try:
+                        # Match by process name or command line
+                        if (proc.info['name'].lower() == process_name.lower() or
+                            any(process_name.lower() in cmd.lower() for cmd in proc.info['cmdline'] if cmd)):
+                            app_processes.append(proc)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
 
                 if app_processes:
                     if app_name not in self.state["unlocked_apps"]:
-                        try:
-                            for proc in app_processes:
+                        for proc in app_processes:
+                            try:
                                 proc.terminate()
-                        except Exception as e:
-                            print(f"Error in terminating process in block_application: {e}")
-
-                        try:
-                            self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-                        except Exception as e:
-                            print(f"Error in scheduling password dialog in block_application: {e}")
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                pass
                         
-                        try:
-                            time.sleep(1)  # Wait for user input
-                        except Exception as e:
-                            print(f"Error in sleeping in block_application: {e}")
+                        self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
+                        time.sleep(1)
                     else:
-                        try:
-                            time.sleep(7)
-                        except Exception as e:
-                            print(f"Error in extended sleep in block_application: {e}")
+                        time.sleep(7)
                 
                 if app_name in self.state["unlocked_apps"] and not app_processes:
-                    try:
-                        self.state["unlocked_apps"].remove(app_name)
-                        self.save_state()
-                    except Exception as e:
-                        print(f"Error in saving state in block_application: {e}")
+                    self.state["unlocked_apps"].remove(app_name)
+                    self.save_state()
                 
-                try:
-                    time.sleep(1)
-                except Exception as e:
-                    print(f"Error in final sleep in block_application: {e}")
+                time.sleep(1)
             except Exception as e:
-                print(f"General error in block_application: {e}")
+                print(f"Error in block_application: {e}")
 
+    def _get_exec_from_desktop(self, desktop_path):
+        """Extract executable name from .desktop file"""
+        try:
+            with open(desktop_path, 'r') as f:
+                for line in f:
+                    if line.startswith('Exec='):
+                        exec_line = line.split('=', 1)[1].strip()
+                        # Remove arguments and get just the executable
+                        return exec_line.split()[0].split('/')[-1]
+        except Exception as e:
+            print(f"Error parsing desktop file: {e}")
+        return os.path.basename(desktop_path)
 
     def _show_password_dialog(self, app_name, app_path):
         try:
