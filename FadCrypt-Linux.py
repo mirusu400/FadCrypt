@@ -172,7 +172,11 @@ class AppLockerGUI:
 
     def on_drop(self, event):
         file_path = event.data.strip('{}')
-        if file_path.endswith(('.exe', '.desktop', '.sh', 'AppImage')):
+        # linux executable extensions and patterns
+        linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin')
+        
+        if (file_path.endswith(linux_executables) or 
+            os.access(file_path, os.X_OK)):  # check if file is executable
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, file_path)
 
@@ -1124,14 +1128,14 @@ class AppLockerGUI:
     def add_to_startup(self):
         try:
             desktop_entry = f"""[Desktop Entry]
-Type=Application
-Exec={sys.executable} "{sys.argv[0]}" --auto-monitor
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=FadCrypt
-Comment=Start FadCrypt automatically
-"""
+            Type=Application
+            Exec={sys.executable} "{sys.argv[0]}" --auto-monitor
+            Hidden=false
+            NoDisplay=false
+            X-GNOME-Autostart-enabled=true
+            Name=FadCrypt
+            Comment=Start FadCrypt automatically
+            """
             autostart_dir = os.path.join(os.path.expanduser("~"), ".config", "autostart")
             os.makedirs(autostart_dir, exist_ok=True)
             autostart_path = os.path.join(autostart_dir, "FadCrypt.desktop")
