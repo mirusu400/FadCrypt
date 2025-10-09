@@ -3,27 +3,23 @@ import json
 import threading
 import subprocess
 import time
-import getpass
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from cryptography.exceptions import InvalidTag
 import psutil
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox, filedialog, PhotoImage
+from tkinter import ttk, filedialog, PhotoImage
 import signal
-from PIL import Image, ImageDraw
+from PIL import Image
 from pystray import Icon, Menu, MenuItem
 import sys
 import base64
 from cryptography.fernet import Fernet
 import shutil
-import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from tkinterdnd2 import TkinterDnD, DND_FILES
-import ctypes  # We'll modify specific usages based on need.
 from ttkbootstrap import Style
 from PIL import Image, ImageTk
 import webbrowser
@@ -172,11 +168,23 @@ class AppLockerGUI:
 
     def on_drop(self, event):
         file_path = event.data.strip('{}')
-        # linux executable extensions and patterns
-        linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin')
-        
-        if (file_path.endswith(linux_executables) or 
-            os.access(file_path, os.X_OK)):  # check if file is executable
+
+        # Check if the file exists first
+        if not os.path.exists(file_path):
+            self.show_message("Invalid File", "File does not exist.")
+            return
+
+        # Linux executable extensions and patterns
+        linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin', '.py', '.pl', '.rb')
+
+        # Check if it's a valid executable
+        is_executable = (
+            file_path.endswith(linux_executables) or
+            os.access(file_path, os.X_OK) or  # Check if file has execute permissions
+            self.is_elf_binary(file_path)  # Check if it's an ELF binary
+        )
+
+        if is_executable:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, file_path)
 
@@ -186,6 +194,15 @@ class AppLockerGUI:
         else:
             self.show_message("Invalid File", "Please drop a valid executable file.")
 
+    def is_elf_binary(self, file_path):
+        """Check if the file is an ELF binary (Linux executable format)"""
+        try:
+            with open(file_path, 'rb') as f:
+                # ELF files start with the magic bytes: 0x7f, 'E', 'L', 'F'
+                magic = f.read(4)
+                return magic == b'\x7fELF'
+        except (IOError, OSError):
+            return False
 
     def browse_for_file(self):
         # Update filetypes for Linux (allow selection of any executable file)
@@ -1105,10 +1122,10 @@ class AppLockerGUI:
 
     def start_monitoring(self, auto_start=False):
         if os.path.exists(self.app_locker.password_file):
-            # Lock tools if required, uncomment below lines and adjust the tools in its main method
-            # if self.lock_tools_var.get():
-            #     print("Disabling Terminal and System Monitor...")
-                # self.disable_tools()
+            # Lock tools if required
+            if self.lock_tools_var.get():
+                print("Disabling Terminal and System Monitor...")
+                self.disable_tools()
 
             # Start monitoring in a separate thread
             threading.Thread(target=self.app_locker.start_monitoring, daemon=True).start()
@@ -1127,37 +1144,54 @@ class AppLockerGUI:
 
     def add_to_startup(self):
         try:
+            # Get the absolute path to the current script
+            script_path = os.path.abspath(sys.argv[0])
+            python_path = sys.executable
+
             desktop_entry = f"""[Desktop Entry]
-            Type=Application
-            Exec={sys.executable} "{sys.argv[0]}" --auto-monitor
-            Hidden=false
-            NoDisplay=false
-            X-GNOME-Autostart-enabled=true
-            Name=FadCrypt
-            Comment=Start FadCrypt automatically
-            """
+Type=Application
+Exec={python_path} "{script_path}" --auto-monitor
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=FadCrypt
+Comment=Start FadCrypt automatically
+Version=1.0
+"""
             autostart_dir = os.path.join(os.path.expanduser("~"), ".config", "autostart")
             os.makedirs(autostart_dir, exist_ok=True)
             autostart_path = os.path.join(autostart_dir, "FadCrypt.desktop")
-            
+
             with open(autostart_path, "w") as f:
                 f.write(desktop_entry)
             os.chmod(autostart_path, 0o755)
-            print("FadCrypt added to startup.")
+            print(f"FadCrypt added to startup: {autostart_path}")
         except Exception as e:
             print(f"Error adding to startup: {e}")
 
+    def remove_from_startup(self):
+        try:
+            autostart_path = os.path.join(os.path.expanduser("~"), ".config", "autostart", "FadCrypt.desktop")
+            if os.path.exists(autostart_path):
+                os.remove(autostart_path)
+                print("FadCrypt removed from startup.")
+            else:
+                print("FadCrypt was not in startup.")
+        except Exception as e:
+            print(f"Error removing from startup: {e}")
 
     def stop_monitoring(self):
-        # enable the feature to enable the tools, also first enable the disable method for this
-        # if self.lock_tools_var.get():
-        #     print("Enabling Terminal and System Monitor...")
-        #     self.enable_tools()
+        # Enable the tools if they were disabled
+        if self.lock_tools_var.get():
+            print("Enabling Terminal and System Monitor...")
+            self.enable_tools()
 
         if self.app_locker.monitoring:
             password = self.ask_password("Stop Monitoring", "Enter your password to stop monitoring:")
             if password and self.app_locker.verify_password(password):
                 self.app_locker.stop_monitoring()
+                # Remove from startup when monitoring is stopped
+                self.remove_from_startup()
                 self.show_message("Success", "Monitoring stopped.")
                 self.master.deiconify()  # Show the main window
             else:
@@ -1220,7 +1254,7 @@ class AppLockerGUI:
             
             if disabled_tools:
                 # Save list of disabled tools for re-enabling
-                with open(os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt'), 'w') as f:
+                with open(os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt'), 'w') as f:
                     f.write('\n'.join(disabled_tools))
                 print(f"Disabled tools: {disabled_tools}")
             else:
@@ -1235,11 +1269,11 @@ class AppLockerGUI:
     def enable_tools(self):
         """Re-enable previously disabled tools"""
         try:
-            disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+            disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
             if os.path.exists(disabled_tools_file):
                 with open(disabled_tools_file, 'r') as f:
                     tools = f.read().strip().split('\n')
-                
+
                 for tool in tools:
                     if tool and os.path.exists(tool):
                         try:
@@ -1247,11 +1281,11 @@ class AppLockerGUI:
                             print(f"Re-enabled: {tool}")
                         except PermissionError:
                             print(f"Permission denied: Cannot re-enable {tool}")
-                
+
                 os.remove(disabled_tools_file)
             else:
                 print("No disabled tools file found")
-                
+
         except Exception as e:
             print(f"Failed to enable tools: {e}")
 
@@ -2549,7 +2583,23 @@ class SingleInstance:
 def main():
     # Step 1: Create a SingleInstance object and check for existing instance
     single_instance = SingleInstance()
-    # single_instance.create_mutex()
+    single_instance.create_mutex()
+
+    # Setup cleanup on exit
+    def cleanup_on_exit():
+        single_instance.release_mutex()
+
+    import atexit
+    atexit.register(cleanup_on_exit)
+
+    # Setup signal handlers for proper cleanup
+    def signal_handler(signum, frame):
+        print("Received signal, cleaning up...")
+        cleanup_on_exit()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     root = TkinterDnD.Tk()
     style = Style(theme='darkly')  # Apply dark theme, pulse, cyborg, darkly, simplex(red)
