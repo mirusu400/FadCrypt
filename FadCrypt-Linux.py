@@ -1196,11 +1196,36 @@ class AppLockerGUI:
 
 
     def disable_tools(self):
+        """Disable system tools on Linux (use with extreme caution)"""
         try:
-            # Example of disabling tools on Linux
-            os.system('chmod -x /usr/bin/gnome-terminal')  # Disabling gnome-terminal (use with caution)
-            os.system('chmod -x /usr/bin/gnome-system-monitor')  # Disabling gnome-system-monitor (use with caution)
-            print("Terminal and System Monitor disabled.")
+            # Create a backup of original permissions
+            tools_to_disable = [
+                '/usr/bin/gnome-terminal',
+                '/usr/bin/konsole',
+                '/usr/bin/xterm',
+                '/usr/bin/gnome-system-monitor',
+                '/usr/bin/htop',
+                '/usr/bin/top'
+            ]
+            
+            disabled_tools = []
+            for tool in tools_to_disable:
+                if os.path.exists(tool) and os.access(tool, os.X_OK):
+                    try:
+                        # Remove execute permission
+                        os.chmod(tool, 0o644)
+                        disabled_tools.append(tool)
+                    except PermissionError:
+                        print(f"Permission denied: Cannot disable {tool}")
+            
+            if disabled_tools:
+                # Save list of disabled tools for re-enabling
+                with open(os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt'), 'w') as f:
+                    f.write('\n'.join(disabled_tools))
+                print(f"Disabled tools: {disabled_tools}")
+            else:
+                print("No tools were disabled (permission issues or tools not found)")
+                
         except Exception as e:
             print(f"Failed to disable tools: {e}")
 
@@ -1208,15 +1233,29 @@ class AppLockerGUI:
 
 
     def enable_tools(self):
+        """Re-enable previously disabled tools"""
         try:
-            os.system('chmod +x /usr/bin/gnome-terminal')  # Enabling gnome-terminal
-            os.system('chmod +x /usr/bin/gnome-system-monitor')  # Enabling gnome-system-monitor
-            print("Terminal and System Monitor enabled.")
+            disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+            if os.path.exists(disabled_tools_file):
+                with open(disabled_tools_file, 'r') as f:
+                    tools = f.read().strip().split('\n')
+                
+                for tool in tools:
+                    if tool and os.path.exists(tool):
+                        try:
+                            os.chmod(tool, 0o755)  # Restore execute permission
+                            print(f"Re-enabled: {tool}")
+                        except PermissionError:
+                            print(f"Permission denied: Cannot re-enable {tool}")
+                
+                os.remove(disabled_tools_file)
+            else:
+                print("No disabled tools file found")
+                
         except Exception as e:
             print(f"Failed to enable tools: {e}")
 
 
-    
 
 
     def save_settings(self, *args):
@@ -2113,8 +2152,6 @@ class AppLocker:
             encryptor = cipher.encryptor()
             encrypted_hash = encryptor.update(password.encode()) + encryptor.finalize()
             
-            with open(self.password_file, "wb") as f:
-                f.write(salt + encryptor.tag + encrypted_hash)
         except Exception as e:
             self.show_message("Error", f"Error creating password: {e}")
 
