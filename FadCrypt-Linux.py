@@ -1122,19 +1122,26 @@ class AppLockerGUI:
 
 
     def add_to_startup(self):
-        desktop_entry = f"""[Desktop Entry]
-    Type=Application
-    Exec={sys.executable} --auto-monitor
-    Hidden=false
-    NoDisplay=false
-    X-GNOME-Autostart-enabled=true
-    Name=FadCrypt
-    Comment=Start FadCrypt automatically
-    """
-        autostart_path = os.path.join(os.path.expanduser("~"), ".config", "autostart", "FadCrypt.desktop")
-        with open(autostart_path, "w") as f:
-            f.write(desktop_entry)
-        print("FadCrypt added to startup.")
+        try:
+            desktop_entry = f"""[Desktop Entry]
+Type=Application
+Exec={sys.executable} "{sys.argv[0]}" --auto-monitor
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=FadCrypt
+Comment=Start FadCrypt automatically
+"""
+            autostart_dir = os.path.join(os.path.expanduser("~"), ".config", "autostart")
+            os.makedirs(autostart_dir, exist_ok=True)
+            autostart_path = os.path.join(autostart_dir, "FadCrypt.desktop")
+            
+            with open(autostart_path, "w") as f:
+                f.write(desktop_entry)
+            os.chmod(autostart_path, 0o755)
+            print("FadCrypt added to startup.")
+        except Exception as e:
+            print(f"Error adding to startup: {e}")
 
 
     def stop_monitoring(self):
