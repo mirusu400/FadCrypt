@@ -1504,7 +1504,7 @@ Version=1.0
 
 
     def start_snake_game(self):
-        def run_snake_game():
+        def run_snake_game(gui_instance):
             # Initialize Pygame
             pygame.init()
 
@@ -1759,8 +1759,8 @@ Version=1.0
 
             def load_high_score():
                 try:
-                    # Get the FadCrypt folder path
-                    folder_path = AppLocker.get_fadcrypt_folder(self)
+                    # Get the FadCrypt folder path using the gui_instance
+                    folder_path = gui_instance.app_locker.get_fadcrypt_folder()
                     # Define the full path to the snake_high_score.json file
                     file_path = os.path.join(folder_path, "snake_high_score.json")
                     # Load the high score from the file
@@ -1769,23 +1769,17 @@ Version=1.0
                 except (FileNotFoundError, json.JSONDecodeError, KeyError):
                     return 0
 
-
-            # def save_high_score(high_score):
-            #     with open("snake_high_score.json", "w") as f:
-            #         json.dump({"high_score": high_score}, f)
-            # def get_fadcrypt_folder(self):
-            #     path = os.path.join(os.getenv('APPDATA'), 'FadCrypt')
-            #     os.makedirs(path, exist_ok=True)
-            #     return path
-
-            def save_high_score(self, high_score):
-                # Get the FadCrypt folder path
-                folder_path = AppLocker.get_fadcrypt_folder(self)
-                # Define the full path to the snake_high_score.json file
-                file_path = os.path.join(folder_path, "snake_high_score.json")
-                # Save the high score to the file
-                with open(file_path, "w") as f:
-                    json.dump({"high_score": high_score}, f)
+            def save_high_score(high_score):
+                try:
+                    # Get the FadCrypt folder path using the gui_instance
+                    folder_path = gui_instance.app_locker.get_fadcrypt_folder()
+                    # Define the full path to the snake_high_score.json file
+                    file_path = os.path.join(folder_path, "snake_high_score.json")
+                    # Save the high score to the file
+                    with open(file_path, "w") as f:
+                        json.dump({"high_score": high_score}, f)
+                except Exception as e:
+                    print(f"Error saving high score: {e}")
                     
 
             def main():
@@ -1925,7 +1919,7 @@ Version=1.0
                     
                     if snake.score > high_score:
                         high_score = snake.score
-                        save_high_score(self, high_score)
+                        save_high_score(high_score)
                     
                     action = game_over(window, snake.score, high_score)
                     if action == "QUIT":
@@ -1945,8 +1939,8 @@ Version=1.0
                 RIGHT = (1, 0)
                 main()
 
-        # Run the game in a new thread
-        snake_game_thread = threading.Thread(target=run_snake_game)
+        # Run the game in a new thread, passing the GUI instance
+        snake_game_thread = threading.Thread(target=run_snake_game, args=(self,))
         snake_game_thread.start()
 
 
@@ -2309,7 +2303,11 @@ class AppLocker:
 
                     if app_path:
                         try:
-                            subprocess.Popen(app_path)
+                            # NEW: Check if the path is a desktop entry
+                            if app_path.lower().endswith('.desktop'):
+                                subprocess.Popen(['xdg-open', app_path])
+                            else:
+                                subprocess.Popen(app_path)
                         except Exception as e:
                             print(f"Error in launching application in _show_password_dialog: {e}")
                             self.show_message("Error", f"Failed to start {app_name}: {e}")
