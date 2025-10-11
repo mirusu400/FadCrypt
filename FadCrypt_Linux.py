@@ -2222,15 +2222,25 @@ class AppLocker:
                     process_name = self._get_exec_from_desktop(app_path)
                 
                 app_processes = []
-                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status']):
+                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status', 'ppid']):
                     try:
                         # Skip zombie processes - they are already dead but not reaped
                         if proc.info['status'] == psutil.STATUS_ZOMBIE:
                             continue  # Skip zombie processes silently
                         
                         # Match by process name or command line
-                        if (proc.info['name'].lower() == process_name.lower() or
-                            (proc.info['cmdline'] and any(process_name.lower() in cmd.lower() for cmd in proc.info['cmdline'] if cmd))):
+                        proc_name = proc.info['name'].lower()
+                        proc_cmdline = proc.info['cmdline'] if proc.info['cmdline'] else []
+                        
+                        # Direct name match
+                        if proc_name == process_name.lower():
+                            app_processes.append(proc)
+                        # Command line match
+                        elif proc_cmdline and any(process_name.lower() in cmd.lower() for cmd in proc_cmdline if cmd):
+                            app_processes.append(proc)
+                        # Special handling for Chrome/Chromium-based apps - catch all child processes
+                        elif 'chrome' in process_name.lower() and ('chrome' in proc_name or 
+                                                                   any('chrome' in str(cmd).lower() for cmd in proc_cmdline if cmd)):
                             app_processes.append(proc)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
@@ -2344,12 +2354,44 @@ class AppLocker:
 
                     # Launch the app
                     try:
+                        # Determine if it's a known GUI app (browser, etc)
+                        gui_apps = ['chrome', 'chromium', 'firefox', 'brave', 'opera', 'edge', 
+                                   'vivaldi', 'code', 'slack', 'discord', 'telegram',
+                                   'vlc', 'gimp', 'libreoffice', 'thunderbird', 'zoom', 'teams', 'obs', 'steam', 'nautilus', 'dolphin', 'kate', 'gedit', 'kdenlive', 'krita', 'inkscape', 'blender', 'audacity', 'shotcut', 'code', 'pycharm', 'eclipse', 'intellij', 'sublime', 'virtualbox', 'postman', 'docker', 'filezilla', 'wireshark', 'gparted', 'transmission', 'remmina']
+                        
+                        is_gui_app = any(gui_app in app_path.lower() or gui_app in app_name.lower() 
+                                        for gui_app in gui_apps)
+                        
                         if app_path.lower().endswith('.desktop'):
-                            subprocess.Popen(['xdg-open', app_path])
+                            # Launch .desktop files with xdg-open in detached mode
+                            subprocess.Popen(['xdg-open', app_path], 
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
                         elif app_path.lower().endswith('.py'):
-                            subprocess.Popen(['python3', app_path])
+                            # Launch Python scripts in a new terminal
+                            subprocess.Popen(['gnome-terminal', '--', 'python3', app_path],
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
+                        elif is_gui_app:
+                            # Launch known GUI apps directly without terminal
+                            subprocess.Popen([app_path],
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
+                        elif any(bin_dir in app_path for bin_dir in ['/usr/bin', '/bin', '/usr/local/bin']):
+                            # Launch CLI tools in a new terminal
+                            subprocess.Popen(['gnome-terminal', '--', app_path],
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
                         else:
-                            subprocess.Popen([app_path])
+                            # Launch other apps directly (assume GUI)
+                            subprocess.Popen([app_path],
+                                           stdout=subprocess.DEVNULL, 
+                                           stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
                         print(f"Successfully launched {app_name}")
                     except Exception as e:
                         print(f"Error launching {app_name}: {e}")
