@@ -1963,13 +1963,16 @@ class AppLocker:
         self.config = {"applications": []}  # In-memory configuration
         self.state = {"unlocked_apps": []}  # In-memory state
 
-        self.load_config()
+        self.load_config()  # Load config from disk
         self.load_state()
         self.monitoring = False
         self.monitoring_thread = None
         # self.state_file = {"unlocked_apps": []}  # In-memory state
         self.load_state()
         self.icon = None
+        self.apps_showing_dialog = set()
+        self.observers = []
+        self.pending_launch = None
         
 
 
@@ -1981,17 +1984,20 @@ class AppLocker:
         
 
     def load_config(self):
+        print("=== LOAD_CONFIG START ===")
         print(f"Loading config from {self.config_file}")  # Debug print
         
         # Check if the config file exists
         if os.path.exists(self.config_file):
             if os.path.exists(self.password_file):
                 password = self.load_password()
-                try:
-                    self.config = self.decrypt_data(password, self.config_file)
+                print(f"Password file exists, password loaded (length: {len(password)})")
+                decrypted_data = self.decrypt_data(password, self.config_file)
+                if decrypted_data is not None:
+                    self.config = decrypted_data
                     print(f"Config loaded: {self.config}")  # Debug print
-                except Exception as e:
-                    print(f"Error decrypting config: {e}")
+                else:
+                    print("Decryption failed. Creating new config.")  # Debug print
                     self.config = {"applications": []}
                     self.save_config()  # Save a new encrypted config if decryption fails
             else:
@@ -2004,6 +2010,7 @@ class AppLocker:
             self.config = {"applications": []}
             # Create the config file with default content and encrypt it
             self.save_config()
+        print("=== LOAD_CONFIG END ===")
 
     def save_config(self):
         if os.path.exists(self.password_file):
@@ -2088,12 +2095,33 @@ class AppLocker:
             return None
     
     def load_state(self):
-        # No file operation, use in-memory state
-        pass
+        print("Loading state from disk...")
+        state_file = os.path.join(self.get_fadcrypt_folder(), 'state.json')
+        if os.path.exists(state_file) and os.path.exists(self.password_file):
+            password = self.load_password()
+            if password:
+                decrypted_data = self.decrypt_data(password, state_file)
+                if decrypted_data is not None:
+                    self.state = decrypted_data
+                    print(f"State loaded: {self.state}")
+                else:
+                    print("Failed to decrypt state file, using default state")
+                    self.state = {"unlocked_apps": []}
+            else:
+                print("Password file not found, using default state")
+                self.state = {"unlocked_apps": []}
+        else:
+            print("State file not found, using default state")
+            self.state = {"unlocked_apps": []}
 
     def save_state(self):
-        # self._update_script("embedded_state", self.state)
-        pass
+        if os.path.exists(self.password_file):
+            password = self.load_password()
+            state_file = os.path.join(self.get_fadcrypt_folder(), 'state.json')
+            self.encrypt_data(password, self.state, state_file)
+            print(f"State saved to {state_file}: {self.state}")
+        else:
+            print("Password file not found, cannot save state")
     
     def export_config(self):
         export_path = "FadCrypt_config.json"
@@ -2194,8 +2222,12 @@ class AppLocker:
                     process_name = self._get_exec_from_desktop(app_path)
                 
                 app_processes = []
-                for proc in psutil.process_iter(['name', 'pid', 'cmdline']):
+                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status']):
                     try:
+                        # Skip zombie processes - they are already dead but not reaped
+                        if proc.info['status'] == psutil.STATUS_ZOMBIE:
+                            continue  # Skip zombie processes silently
+                        
                         # Match by process name or command line
                         if (proc.info['name'].lower() == process_name.lower() or
                             (proc.info['cmdline'] and any(process_name.lower() in cmd.lower() for cmd in proc.info['cmdline'] if cmd))):
@@ -2204,23 +2236,72 @@ class AppLocker:
                         continue
 
                 if app_processes:
+                    print(f"Found {len(app_processes)} processes for {app_name}, unlocked_apps: {self.state['unlocked_apps']}, showing_dialog: {app_name in self.apps_showing_dialog}")
                     if app_name not in self.state["unlocked_apps"]:
-                        for proc in app_processes:
-                            try:
-                                proc.terminate()
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                pass
-                        
-                        self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-                        time.sleep(1)
+                        if app_name not in self.apps_showing_dialog:
+                            print(f"Blocking {app_name}: terminating {len(app_processes)} processes")
+                            for proc in app_processes:
+                                print(f"Killing process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
+                                # Kill child processes first
+                                for child in proc.children(recursive=True):
+                                    try:
+                                        child.kill()
+                                        print(f"Killed child process {child.pid}")
+                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                        print(f"Failed to kill child {child.pid}: {e}")
+                                try:
+                                    proc.kill()  # Use kill instead of terminate for immediate blocking
+                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
+                            
+                            print(f"Showing password dialog for {app_name}")
+                            self.apps_showing_dialog.add(app_name)
+                            self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
+                            time.sleep(1)
+                        else:
+                            # App is showing dialog, but new processes appeared - kill them too
+                            print(f"Blocking additional {app_name} processes while dialog is showing: terminating {len(app_processes)} processes")
+                            for proc in app_processes:
+                                print(f"Killing additional process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
+                                # Kill child processes first
+                                for child in proc.children(recursive=True):
+                                    try:
+                                        child.kill()
+                                        print(f"Killed child process {child.pid}")
+                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                        print(f"Failed to kill child {child.pid}: {e}")
+                                try:
+                                    proc.kill()  # Use kill instead of terminate for immediate blocking
+                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
                     else:
+                        print(f"{app_name} is unlocked, sleeping for 7 seconds")
                         time.sleep(7)
                 
+                # Only remove from unlocked_apps if no processes found for an extended period
+                # This prevents premature removal right after launching
                 if app_name in self.state["unlocked_apps"] and not app_processes:
-                    self.state["unlocked_apps"].remove(app_name)
-                    self.save_state()
+                    # Check if we've seen no processes for this app recently
+                    if not hasattr(self, f"{app_name}_no_process_count"):
+                        setattr(self, f"{app_name}_no_process_count", 0)
+                    
+                    count = getattr(self, f"{app_name}_no_process_count")
+                    count += 1
+                    setattr(self, f"{app_name}_no_process_count", count)
+                    
+                    # Only remove after 10 consecutive checks with no processes (about 0.5 seconds)
+                    if count >= 10:
+                        print(f"Auto-locking {app_name} (no active processes found)")
+                        self.state["unlocked_apps"].remove(app_name)
+                        self.save_state()
+                        delattr(self, f"{app_name}_no_process_count")
+                    # Don't print the counting to avoid terminal clutter
+                elif app_name in self.state["unlocked_apps"] and app_processes:
+                    # Reset counter if processes are found
+                    if hasattr(self, f"{app_name}_no_process_count"):
+                        delattr(self, f"{app_name}_no_process_count")
                 
-                time.sleep(1)
+                time.sleep(0.05)  # Very fast monitoring for near-instant blocking
             except Exception as e:
                 print(f"Error in block_application: {e}")
 
@@ -2251,31 +2332,39 @@ class AppLocker:
                 return
 
             if password is None:
+                print(f"Password dialog cancelled for {app_name}")
                 return
 
             try:
                 if self.verify_password(password):
+                    print(f"Password verified successfully for {app_name}, adding to unlocked_apps")
                     self.state["unlocked_apps"].append(app_name)
                     self.save_state()
+                    print(f"State saved, unlocked_apps now: {self.state['unlocked_apps']}")
 
-                    if app_path:
-                        try:
-                            # NEW: Check if the path is a desktop entry
-                            if app_path.lower().endswith('.desktop'):
-                                subprocess.Popen(['xdg-open', app_path])
-                            elif app_path.lower().endswith('.py'):
-                                subprocess.Popen(['python3', app_path])
-                            else:
-                                subprocess.Popen([app_path])
-                        except Exception as e:
-                            print(f"Error in launching application in _show_password_dialog: {e}")
-                            self.gui.show_message("Error", f"Failed to start {app_name}: {e}")
+                    # Launch the app
+                    try:
+                        if app_path.lower().endswith('.desktop'):
+                            subprocess.Popen(['xdg-open', app_path])
+                        elif app_path.lower().endswith('.py'):
+                            subprocess.Popen(['python3', app_path])
+                        else:
+                            subprocess.Popen([app_path])
+                        print(f"Successfully launched {app_name}")
+                    except Exception as e:
+                        print(f"Error launching {app_name}: {e}")
+                        self.gui.show_message("Error", f"Failed to start {app_name}: {e}")
+
                 else:
+                    print(f"Incorrect password entered for {app_name}")
                     self.gui.show_message("Error", f"Incorrect password. {app_name} remains locked.")
             except Exception as e:
                 print(f"Error in verifying password or saving state in _show_password_dialog: {e}")
         except Exception as e:
             print(f"General error in _show_password_dialog: {e}")
+        finally:
+            print(f"Removing {app_name} from apps_showing_dialog")
+            self.apps_showing_dialog.discard(app_name)
 
 
     def start_monitoring(self):
@@ -2297,6 +2386,33 @@ class AppLocker:
             self.monitoring = False
             if self.icon:
                 self.icon.stop()
+            
+            print("Re-enabling disabled tools...")
+            # Re-enable execution for disabled tools
+            disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+            if os.path.exists(disabled_tools_file):
+                with open(disabled_tools_file, 'r') as f:
+                    tools = f.read().strip().split('\n')
+
+                # Filter out empty lines and non-existent tools
+                valid_tools = [tool for tool in tools if tool and os.path.exists(tool)]
+                
+                if valid_tools:
+                    print(f"Re-enabling {len(valid_tools)} tools...")
+                    # Create a single command to chmod all tools at once
+                    chmod_commands = " && ".join([f"chmod 755 '{tool}'" for tool in valid_tools])
+                    try:
+                        subprocess.run(['pkexec', 'bash', '-c', chmod_commands], check=True)
+                        print(f"Successfully re-enabled all {len(valid_tools)} tools")
+                    except subprocess.CalledProcessError as e:
+                        print(f"Failed to re-enable tools: {e}")
+                
+                # Clean up the record file
+                os.remove(disabled_tools_file)
+                print("Disabled tools re-enabled and file removed.")
+            else:
+                print("No disabled tools file found.")
+            
             self.gui.master.deiconify()  # Show the main window
         else:
             self.gui.show_message("Info", "Monitoring is not running.")
