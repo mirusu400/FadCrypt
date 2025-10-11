@@ -46,8 +46,8 @@ class AppLockerGUI:
         # Center the dialog on the screen
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
-        dialog_width = 700  # Adjust width as needed
-        dialog_height = 550  # Adjust height as needed
+        dialog_width = 700  # Increased width
+        dialog_height = 650  # Increased height to prevent truncation
         position_x = (screen_width // 2) - (dialog_width // 2)
         position_y = (screen_height // 2) - (dialog_height // 2)
         self.master.geometry(f"{dialog_width}x{dialog_height}+{position_x}+{position_y}")
