@@ -10,7 +10,7 @@ import tempfile
 import shutil
 
 # Add the current directory to the path so we can import FadCrypt-Linux
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_single_instance():
     """Test the SingleInstance functionality"""
