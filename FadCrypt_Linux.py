@@ -345,68 +345,6 @@ class AppLockerGUI:
 
 
 
-        # Applications Tab
-        self.apps_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.apps_frame, text="Applications")
-
-        # Create a frame to hold the listbox and scrollbar
-        list_frame = ttk.Frame(self.apps_frame)
-        list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
-
-        # Create the listbox with a scrollbar
-        self.apps_listbox = tk.Listbox(list_frame, width=50, font=("Helvetica", 10), selectmode=tk.SINGLE)
-        self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.apps_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.apps_listbox.config(yscrollcommand=scrollbar.set)
-
-        
-
-        self.update_apps_listbox()
-
-        # Buttons frame
-        button_frame = ttk.Frame(self.apps_frame)
-        button_frame.pack(pady=10, padx=5, fill=tk.X)
-
-        # Modify the Add button to open the new dialog
-        ttk.Button(button_frame, text="Add", command=self.open_add_application_dialog, style="green.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Remove", command=self.remove_application, style="red.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Rename", command=self.rename_application).pack(side=tk.LEFT, padx=5)
-
-
-        # State Tab
-        # self.state_frame = ttk.Frame(self.notebook)
-        # self.notebook.add(self.state_frame, text="State")
-
-        # self.state_text = tk.Text(self.state_frame, width=60, height=10)
-        # self.state_text.pack(pady=5)
-        # self.update_state_display()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         # Config Tab
         self.config_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.config_frame, text="Config")
@@ -446,6 +384,36 @@ class AppLockerGUI:
 
         export_button = ttk.Button(export_frame, text="Export Config", command=self.export_config, style="green.TButton")
         export_button.pack(anchor="w", padx=12)
+
+        # Applications Tab
+        self.apps_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.apps_frame, text="Applications")
+
+        # Create a frame to hold the listbox and scrollbar
+        list_frame = ttk.Frame(self.apps_frame)
+        list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
+
+        # Create the listbox with a scrollbar
+        self.apps_listbox = tk.Listbox(list_frame, width=50, font=("Helvetica", 10), selectmode=tk.SINGLE)
+        self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.apps_listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.apps_listbox.config(yscrollcommand=scrollbar.set)
+
+        
+
+        self.update_apps_listbox()
+
+        # Buttons frame
+        button_frame = ttk.Frame(self.apps_frame)
+        button_frame.pack(pady=10, padx=5, fill=tk.X)
+
+        # Modify the Add button to open the new dialog
+        ttk.Button(button_frame, text="Add", command=self.open_add_application_dialog, style="green.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Remove", command=self.remove_application, style="red.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Rename", command=self.rename_application).pack(side=tk.LEFT, padx=5)
 
 
 
