@@ -1190,10 +1190,6 @@ class AppLockerGUI:
 
     def disable_tools(self):
         """Disable system tools on Linux (use with extreme caution)"""
-        # Check for root privileges before proceeding.
-        if os.geteuid() != 0:
-            self.show_message("Permission Error", "Disabling system tools requires root privileges.\nPlease run FadCrypt with sudo to use this feature.")
-            return
         try:
             #list of common terminal and system monitor executables.
             tools_to_disable = [
@@ -1206,21 +1202,25 @@ class AppLockerGUI:
             ]
             
             disabled_tools = []
+            chmod_commands = []
             for tool in tools_to_disable:
                 if os.path.exists(tool) and os.access(tool, os.X_OK):
-                    try:
-                        # Remove execute permission for all users.
-                        os.chmod(tool, 0o644)
-                        disabled_tools.append(tool)
-                    except OSError as e:
-                        print(f"Failed to change permissions for {tool}: {e}")
+                    chmod_commands.append(f'chmod 644 "{tool}"')
+                    disabled_tools.append(tool)
             
-            if disabled_tools:
-                # Save the list of modified tools for re-enabling later.
-                disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
-                with open(disabled_tools_file, 'w') as f:
-                    f.write('\n'.join(disabled_tools))
-                print(f"Disabled tools: {disabled_tools}")
+            if chmod_commands:
+                # Run all chmod commands in one pkexec call
+                command = '; '.join(chmod_commands)
+                try:
+                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+                    print(f"Disabled tools: {disabled_tools}")
+                    
+                    # Save the list of modified tools for re-enabling later.
+                    disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
+                    with open(disabled_tools_file, 'w') as f:
+                        f.write('\n'.join(disabled_tools))
+                except subprocess.CalledProcessError as e:
+                    print(f"Failed to disable tools: {e}")
             else:
                 print("No tools were disabled (tools not found or already disabled).")
                 
@@ -1229,29 +1229,33 @@ class AppLockerGUI:
 
     def enable_tools(self):
         """Re-enable previously disabled tools"""
-        # Check for root privileges before proceeding.
-        if os.geteuid() != 0:
-            # No GUI message here to avoid bothering non-root users when they stop monitoring.
-            # The operation will just be skipped.
-            print("Not running as root. Skipping tool re-enabling.")
-            return
         try:
             disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
             if os.path.exists(disabled_tools_file):
                 with open(disabled_tools_file, 'r') as f:
                     tools = f.read().strip().split('\n')
 
+                chmod_commands = []
+                valid_tools = []
                 for tool in tools:
                     if tool and os.path.exists(tool):
-                        try:
-                            # Restore execute permission.
-                            os.chmod(tool, 0o755)
+                        chmod_commands.append(f'chmod 755 "{tool}"')
+                        valid_tools.append(tool)
+
+                if chmod_commands:
+                    # Run all chmod commands in one pkexec call
+                    command = '; '.join(chmod_commands)
+                    try:
+                        subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+                        for tool in valid_tools:
                             print(f"Re-enabled: {tool}")
-                        except OSError as e:
-                            print(f"Failed to restore permissions for {tool}: {e}")
-                
-                # Clean up the record file after restoring permissions.
-                os.remove(disabled_tools_file)
+                        
+                        # Clean up the record file after restoring permissions.
+                        os.remove(disabled_tools_file)
+                    except subprocess.CalledProcessError as e:
+                        print(f"Failed to restore permissions: {e}")
+                else:
+                    print("No valid tools found to re-enable.")
             else:
                 print("No disabled tools file found to re-enable.")
         except Exception as e:
@@ -2194,7 +2198,7 @@ class AppLocker:
                     try:
                         # Match by process name or command line
                         if (proc.info['name'].lower() == process_name.lower() or
-                            any(process_name.lower() in cmd.lower() for cmd in proc.info['cmdline'] if cmd)):
+                            (proc.info['cmdline'] and any(process_name.lower() in cmd.lower() for cmd in proc.info['cmdline'] if cmd))):
                             app_processes.append(proc)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
