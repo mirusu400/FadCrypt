@@ -2263,11 +2263,13 @@ class AppLocker:
                             # NEW: Check if the path is a desktop entry
                             if app_path.lower().endswith('.desktop'):
                                 subprocess.Popen(['xdg-open', app_path])
+                            elif app_path.lower().endswith('.py'):
+                                subprocess.Popen(['python3', app_path])
                             else:
-                                subprocess.Popen(app_path)
+                                subprocess.Popen([app_path])
                         except Exception as e:
                             print(f"Error in launching application in _show_password_dialog: {e}")
-                            self.show_message("Error", f"Failed to start {app_name}: {e}")
+                            self.gui.show_message("Error", f"Failed to start {app_name}: {e}")
                 else:
                     self.gui.show_message("Error", f"Incorrect password. {app_name} remains locked.")
             except Exception as e:
