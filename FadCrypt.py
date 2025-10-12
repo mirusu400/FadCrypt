@@ -42,6 +42,9 @@ from ctypes import wintypes
 # App Version Information - imported from central version file
 from version import __version__, __version_code__
 
+# Import shared core modules
+from core.config_manager import ConfigManager
+
 
 # Embedded configuration and state data
 embedded_config = {
@@ -63,7 +66,7 @@ class AppLockerGUI:
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
         dialog_width = 700  # Adjust width as needed
-        dialog_height = 550  # Adjust height as needed
+        dialog_height = 650  # Adjust height as needed
         position_x = (screen_width // 2) - (dialog_width // 2)
         position_y = (screen_height // 2) - (dialog_height // 2)
         self.master.geometry(f"{dialog_width}x{dialog_height}+{position_x}+{position_y}")
@@ -81,9 +84,18 @@ class AppLockerGUI:
         self.password_dialog_style = tk.StringVar(value="simple")
         self.wallpaper_choice = tk.StringVar(value="default")
         
+        # Initialize shared ConfigManager
+        self.config_manager = ConfigManager(
+            app_locker=None,  # Will be set after app_locker is created
+            get_fadcrypt_folder_func=lambda: self.app_locker.get_fadcrypt_folder()
+        )
 
         self.set_app_icon()  # Set the custom app icon
         self.create_widgets()
+        
+        # Set app_locker reference after it's created
+        self.config_manager.app_locker = self.app_locker
+        
         self.load_settings()
         # Automatically start monitoring if launched with the --auto-monitor flag
         if '--auto-monitor' in sys.argv:
@@ -405,45 +417,68 @@ class AppLockerGUI:
 
 
         # Config Tab
+        # Config Tab with scrollable content
         self.config_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.config_frame, text="Config")
 
+        # Create canvas and scrollbar for scrollable content
+        config_canvas = tk.Canvas(self.config_frame, highlightthickness=0)
+        config_scrollbar = ttk.Scrollbar(self.config_frame, orient="vertical", command=config_canvas.yview)
+        scrollable_config_frame = ttk.Frame(config_canvas)
+
+        scrollable_config_frame.bind(
+            "<Configure>",
+            lambda e: config_canvas.configure(scrollregion=config_canvas.bbox("all"))
+        )
+
+        config_canvas.create_window((0, 0), window=scrollable_config_frame, anchor="nw")
+        config_canvas.configure(yscrollcommand=config_scrollbar.set)
+
+        config_canvas.pack(side="left", fill="both", expand=True, padx=0)
+        config_scrollbar.pack(side="right", fill="y")
+
         # Title for the config section
-        config_title = ttk.Label(self.config_frame, text="Config File", font=("TkDefaultFont", 16, "bold"))
-        config_title.pack(anchor="w", padx=10, pady=(10, 0))
+        config_title = ttk.Label(scrollable_config_frame, text="Config File", font=("TkDefaultFont", 16, "bold"))
+        config_title.pack(anchor="w", padx=15, pady=(10, 0))
         # Separator before textbox section
-        ttk.Separator(self.config_frame, orient='horizontal').pack(fill=tk.X, padx=10, pady=5)
+        ttk.Separator(scrollable_config_frame, orient='horizontal').pack(fill=tk.X, padx=15, pady=5)
 
         # Config text box to display the config file content
-        self.config_text = tk.Text(self.config_frame, width=99, height=17)
-        self.config_text.pack(pady=5, padx=10)
+        self.config_text = tk.Text(scrollable_config_frame, width=70, height=17, wrap=tk.WORD)
+        self.config_text.pack(pady=5, padx=15, fill=tk.X, expand=False)
         self.update_config_display()
 
         # Description below the config text box
-        config_description = ttk.Label(self.config_frame, text=(
+        config_description = ttk.Label(scrollable_config_frame, text=(
             "This is the list of applications currently locked by FadCrypt.\n"
             "It is displayed in plain text here for your convenience, "
             "but rest assured, the data is encrypted when saved on your computer,\n"
             "keeping your locked apps confidential."
-        ))
-        config_description.pack(anchor="w", padx=10, pady=(10, 10))
+        ), wraplength=650)
+        config_description.pack(anchor="w", padx=15, pady=(10, 10), fill=tk.X)
 
-        # Separator before export section
-        ttk.Separator(self.config_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        # Separator before export/import section
+        ttk.Separator(scrollable_config_frame, orient='horizontal').pack(fill=tk.X, pady=10, padx=15)
 
-        # Export config data section
-        export_frame = ttk.Frame(self.config_frame)
-        export_frame.pack(fill=tk.X, pady=10, padx=15)
+        # Export/Import config data section (combined in one row)
+        config_actions_frame = ttk.Frame(scrollable_config_frame)
+        config_actions_frame.pack(fill=tk.X, pady=10, padx=15)
 
-        export_title = ttk.Label(export_frame, text="Export Configurations", font=("TkDefaultFont", 10, "bold"))
-        export_title.pack(anchor="w", padx=10)
+        config_actions_title = ttk.Label(config_actions_frame, text="Backup & Restore Configurations", font=("TkDefaultFont", 10, "bold"))
+        config_actions_title.pack(anchor="w", padx=0)
 
-        export_description = ttk.Label(export_frame, text="Export the list of applications added to the lock list.")
-        export_description.pack(anchor="w", pady=(0, 5), padx=10)
+        config_actions_description = ttk.Label(config_actions_frame, text="Export your lock list to a file or import a previously saved configuration.", wraplength=650)
+        config_actions_description.pack(anchor="w", pady=(0, 5), padx=0, fill=tk.X)
 
-        export_button = ttk.Button(export_frame, text="Export Config", command=self.export_config, style="green.TButton")
-        export_button.pack(anchor="w", padx=12)
+        # Button container for horizontal layout
+        buttons_container = ttk.Frame(config_actions_frame)
+        buttons_container.pack(anchor="w", padx=0, pady=(5, 0))
 
+        export_button = ttk.Button(buttons_container, text="Export Config", command=self.export_config, style="green.TButton")
+        export_button.pack(side="left", padx=(0, 10))
+
+        import_button = ttk.Button(buttons_container, text="Import Config", command=self.import_config, style="blue.TButton")
+        import_button.pack(side="left")
 
 
 
@@ -1115,14 +1150,12 @@ class AppLockerGUI:
         self.state_text.insert(tk.END, json.dumps(self.app_locker.state, indent=4))
 
     def export_config(self):
-        file_path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="FadCrypt_config.json", filetypes=[("JSON files", "*.json")])
-        if file_path:
-            try:
-                with open(file_path, "w") as f:
-                    json.dump(self.app_locker.config, f, indent=4)
-                self.show_message("Success", f"Config exported successfully to {file_path}")
-            except Exception as e:
-                self.show_message("Error", f"Failed to export config: {e}")
+        """Export configuration using shared ConfigManager"""
+        self.config_manager.export_config(self.show_message)
+
+    def import_config(self):
+        """Import configuration using shared ConfigManager"""
+        self.config_manager.import_config(self.show_message, self.update_apps_listbox)
 
     def export_state(self):
         self.app_locker.export_state()
@@ -1494,7 +1527,10 @@ class AppLockerGUI:
             frame.pack(expand=True, fill='both', padx=10, pady=10)
 
         tk.Label(frame, text=title, font=("Arial", 14, "bold"), bg='white').pack(pady=10)
-        tk.Label(frame, text=prompt, font=("Arial", 10), bg='white').pack(pady=5)
+        
+        # Message label with wrapping
+        message_label = tk.Label(frame, text=prompt, font=("Arial", 10), bg='white', wraplength=360, justify='left')
+        message_label.pack(pady=5, padx=10)
         
         result = [None]  # Use a list to store the result
 
