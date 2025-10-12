@@ -404,7 +404,20 @@ class AppLockerGUI:
         list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
 
         # Create the listbox with a scrollbar
-        self.apps_listbox = tk.Listbox(list_frame, width=50, font=("Helvetica", 10), selectmode=tk.SINGLE)
+        self.apps_listbox = tk.Listbox(
+            list_frame, 
+            width=50, 
+            font=("Helvetica", 10), 
+            selectmode=tk.SINGLE,
+            bg='#222222',  # Dark background matching darkly theme
+            fg='#ffffff',  # White text
+            selectbackground='#555555',  # Gray selection background
+            selectforeground='#009E60',  # Green text when selected (matching theme)
+            activestyle='none',  # Remove underline on active item
+            highlightcolor='#ED2939',  # Red border when focused (matching theme active color)
+            highlightbackground='#444444',  # Dark border when not focused
+            highlightthickness=1
+        )
         self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.apps_listbox.yview)
@@ -990,11 +1003,11 @@ class AppLockerGUI:
         for index, app in enumerate(self.app_locker.config["applications"]):
             item = f"  {app['name']} - {app['path']}"  # Added two spaces for left padding
             self.apps_listbox.insert(tk.END, item)
-            # Apply alternating row colors
+            # Apply alternating row colors for dark theme
             if index % 2 == 0:
-                self.apps_listbox.itemconfig(index, {'bg': '#f0f0f0'})
+                self.apps_listbox.itemconfig(index, {'bg': '#2a2a2a', 'fg': '#ffffff'})
             else:
-                self.apps_listbox.itemconfig(index, {'bg': '#ffffff'})
+                self.apps_listbox.itemconfig(index, {'bg': '#1f1f1f', 'fg': '#ffffff'})
         self.update_config_display()
 
     def update_config_display(self):
