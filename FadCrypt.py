@@ -1496,6 +1496,14 @@ class AppLockerGUI:
         dialog.attributes('-topmost', True)  # Always on top
         dialog.update_idletasks()  # Update geometry-related information
 
+        # Set the FadCrypt icon for the dialog
+        try:
+            ico_path = self.resource_path('img/1.ico')
+            if os.path.exists(ico_path):
+                dialog.iconbitmap(ico_path)
+        except Exception as e:
+            print(f"Could not set dialog icon: {e}")
+
         if fullscreen:
             dialog.attributes('-fullscreen', True)
         else:
@@ -1608,6 +1616,14 @@ class AppLockerGUI:
         dialog = tk.Toplevel(self.master)
         dialog.attributes('-fullscreen', True)
         dialog.grab_set()
+
+        # Set the FadCrypt icon for the dialog
+        try:
+            ico_path = self.resource_path('img/1.ico')
+            if os.path.exists(ico_path):
+                dialog.iconbitmap(ico_path)
+        except Exception as e:
+            print(f"Could not set dialog icon: {e}")
 
         # Load and display wallpaper
         wallpaper_path = self.get_wallpaper_path()
