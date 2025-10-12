@@ -171,9 +171,34 @@ We look forward to your contributions!
 
 # Install Dependencies & Build
 
-```python
-pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
+**Linux Prerequisites:**
+
+First, install the Tkinter library (required for GUI):
+
+```bash
+sudo apt-get install python3-tk
+```
+
+**Install Python Dependencies:**
+
+You can install all required Python packages using pip:
+
+```bash
+pip install -r requirements.txt
+```
+
+**Build the Application:**
+
+For Windows:
+
+```bash
 python -m PyInstaller FadCrypt.spec
+```
+
+For Linux:
+
+```bash
+python3 -m PyInstaller FadCrypt_Linux.spec
 ```
 
 # Reset Password

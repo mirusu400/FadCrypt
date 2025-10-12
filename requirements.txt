@@ -1,0 +1,9 @@
+cryptography
+psutil
+pillow
+pystray
+watchdog
+tkinterdnd2
+ttkbootstrap
+pygame
+requests

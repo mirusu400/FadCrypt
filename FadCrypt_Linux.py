@@ -1630,6 +1630,7 @@ Version=1.0
     def custom_dialog(self, title, prompt, fullscreen=False, input_required=True):
         dialog = tk.Toplevel(self.master)
         dialog.attributes('-alpha', 0.0)  # Start fully transparent
+        dialog.attributes('-topmost', True)  # Always on top
         dialog.update_idletasks()  # Update geometry-related information
 
         if fullscreen:
