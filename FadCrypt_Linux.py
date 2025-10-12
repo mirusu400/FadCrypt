@@ -29,9 +29,9 @@ import pygame
 import shlex          
 import fcntl
 import atexit
-# App Version Information
-__version__ = "0.1.0"
-__version_code__ = 1  # Increment this for each release
+
+# App Version Information - imported from central version file
+from version import __version__, __version_code__
 
 
 
@@ -1145,21 +1145,26 @@ class AppLockerGUI:
         try:
            # Determine the correct Exec command for startup
             if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                # Packaged with PyInstaller
-                exec_command = f'"{sys.executable}" --auto-monitor'
+                # Packaged with PyInstaller - check if installed system-wide
+                if sys.executable.startswith('/usr/'):
+                    # Installed via .deb package - use command name
+                    exec_command = 'fadcrypt --auto-monitor'
+                else:
+                    # Standalone PyInstaller build
+                    exec_command = f'"{sys.executable}" --auto-monitor'
             else:
                 # Running as a script
                 exec_command = f'{sys.executable} "{os.path.abspath(sys.argv[0])}" --auto-monitor'
             desktop_entry = f"""[Desktop Entry]
-                                Type=Application
-                                Exec={exec_command}
-                                Hidden=false
-                                NoDisplay=false
-                                X-GNOME-Autostart-enabled=true
-                                Name=FadCrypt
-                                Comment=Start FadCrypt automatically
-                                Version=1.0
-                                """
+Type=Application
+Exec={exec_command}
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name=FadCrypt
+Comment=Start FadCrypt automatically
+Version=1.0
+"""
             autostart_dir = os.path.join(os.path.expanduser("~"), ".config", "autostart")
             os.makedirs(autostart_dir, exist_ok=True)
             autostart_path = os.path.join(autostart_dir, "FadCrypt.desktop")

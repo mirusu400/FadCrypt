@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FadCrypt
+Comment=Application locker and monitor
+Exec=fadcrypt
+Icon=fadcrypt
+Terminal=false
+Categories=Utility;Security;
+StartupNotify=true
+Keywords=lock;monitor;security;password;
