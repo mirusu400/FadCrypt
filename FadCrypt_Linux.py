@@ -766,10 +766,21 @@ class AppLockerGUI:
             latest_version = response.json().get("tag_name", None)
             current_version = __version__
 
-            if latest_version and latest_version != current_version:
-                self.show_message("Update Available", f"New version {latest_version} is available! Visit GitHub for more details.")
+            if latest_version:
+                # Compare versions properly (strip 'v' prefix for comparison)
+                latest_ver = latest_version.lstrip('v')
+                current_ver = current_version.lstrip('v')
+                
+                # Split version into parts and compare
+                latest_parts = [int(x) for x in latest_ver.split('.')]
+                current_parts = [int(x) for x in current_ver.split('.')]
+                
+                if latest_parts > current_parts:
+                    self.show_message("Update Available", f"New version {latest_version} is available! Visit GitHub for more details.")
+                else:
+                    self.show_message("Up to Date", "Your application is up to date.")
             else:
-                self.show_message("Up to Date", "Your application is up to date.")
+                self.show_message("Error", "Could not retrieve version information.")
         except requests.ConnectionError:
             self.show_message("Connection Error", "Unable to check for updates. Please check your internet connection.")
         except requests.HTTPError as http_err:

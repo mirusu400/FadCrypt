@@ -778,12 +778,23 @@ class AppLockerGUI:
                     latest_release = release
                     break
             
-            if latest_version and latest_version != __version__:
+            if latest_version:
+                # Compare versions properly (strip 'v' prefix for comparison)
+                latest_ver = latest_version.lstrip('v')
+                current_ver = __version__.lstrip('v')
+                
+                # Split version into parts and compare
+                latest_parts = [int(x) for x in latest_ver.split('.')]
+                current_parts = [int(x) for x in current_ver.split('.')]
+                
+                if latest_parts > current_parts:
                     update_message = f"New version {latest_version} is available!\nYou are currently on version {__version__}.\n\nWould you like to download the update?"
                     if messagebox.askyesno("Update Available", update_message):
                         webbrowser.open(latest_release["html_url"])
+                else:
+                    self.show_message("Up to Date", f"You are running the latest version ({__version__})")
             else:
-                self.show_message("Up to Date", f"You are running the latest version ({__version__})")
+                self.show_message("Error", "Could not retrieve version information.")
 
         except requests.ConnectionError:
             self.show_message("Connection Error", "Unable to check for updates. Please check your internet connection.")
