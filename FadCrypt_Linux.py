@@ -583,6 +583,25 @@ class AppLockerGUI:
         )
         lock_tools_checkbox.pack(anchor="w", pady=10)
         
+        # File Locations Info Section
+        ttk.Separator(bottom_frame, orient='horizontal').pack(fill='x', pady=20, padx=27)
+        
+        locations_title = ttk.Label(bottom_frame, text="📁 File Locations", font=("TkDefaultFont", 11, "bold"))
+        locations_title.pack(anchor="w", pady=5, padx=27)
+        
+        locations_info = ttk.Label(
+            bottom_frame,
+            text="Main Configuration Folder:\n"
+                 "  ~/.FadCrypt/\n"
+                 "  (Stores: config.json, encrypted_password.bin, state.json, settings.json)\n\n"
+                 "Backup Folder:\n"
+                 "  ~/.local/share/FadCrypt/Backup/\n"
+                 "  (Stores: backup copies of critical files for recovery)",
+            justify="left",
+            foreground="#888888"
+        )
+        locations_info.pack(anchor="w", pady=5, padx=50)
+        
 
 
         # Pack canvas and scrollbar
@@ -2643,13 +2662,15 @@ class FileMonitor:
         self.files_to_monitor = []
 
     def get_fadcrypt_folder(self):
-        path = os.path.join(os.getenv('HOME'), '.FadCrypt')  # Changed APPDATA to HOME and updated folder name
+        # Main config folder in user's home
+        path = os.path.join(os.getenv('HOME'), '.FadCrypt')
         os.makedirs(path, exist_ok=True)
         return path
 
     def get_backup_folder(self):
-        # Using a folder in the user's home directory for backup
-        path = os.path.join(os.getenv('HOME'), '.FadCrypt', 'Backup')  # Changed ProgramData to HOME and updated folder name
+        # Backup folder in a separate location (similar to Windows C:\ProgramData)
+        # Using ~/.local/share for system-wide backup storage (XDG Base Directory spec)
+        path = os.path.join(os.getenv('HOME'), '.local', 'share', 'FadCrypt', 'Backup')
         os.makedirs(path, exist_ok=True)
         return path
     

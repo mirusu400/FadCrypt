@@ -4,14 +4,10 @@
 
 <!-- https://github.com/user-attachments/assets/c9eeaf74-6649-4810-b420-e2c4ad4bd365 -->
 
-
 <br>
 
-| :exclamation: | This project is part of the [FadSec Lab suite](https://github.com/fadsec-lab). <br> Discover our focus on ad-free, privacy-first applications and stay updated on future releases!  |
-|---------------|:---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-
-
-
+| :exclamation: | This project is part of the [FadSec Lab suite](https://github.com/fadsec-lab). <br> Discover our focus on ad-free, privacy-first applications and stay updated on future releases! |
+| ------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 
 ---
 
@@ -24,11 +20,9 @@
 [![GitHub all releases](https://img.shields.io/github/downloads/anonfaded/FadCrypt/total?label=Downloads&logo=github)](https://github.com/anonfaded/FadCrypt/releases/)
 
 [![ko-fi badge](https://img.shields.io/badge/buy_me_a-coffee-red)](https://ko-fi.com/D1D510FNSV)
-[![Discord](https://img.shields.io/discord/1263384048194027520?label=Join%20Us%20on%20Discord&logo=discord)](https://discord.gg/kvAZvdkuuN )
+[![Discord](https://img.shields.io/discord/1263384048194027520?label=Join%20Us%20on%20Discord&logo=discord)](https://discord.gg/kvAZvdkuuN)
 
 <!-- <img alt="Discord" src="https://img.shields.io/discord/1263384048194027520?style=social&logo=discord&label=Join%20chat&color=red"> -->
-
-
 
 <br>
 <br>
@@ -45,7 +39,7 @@
     <summary>Expand Table of Contents</summary>
     
 <br>
-        
+
 
 - [FadCrypt](#fadcrypt)
   - [📱 Screenshots](#-screenshots)
@@ -79,14 +73,9 @@
     <img src="https://github.com/user-attachments/assets/ec7dcc78-2a36-42ef-81a3-8cdda3e33195" style="width: 500px; height: auto;" >
  <br>
 
-
-
-
-
-
 <!--     <br> -->
 <!--     <em>UI</em> -->
-   
+
 </div>
 <!--     <details>
         <summary><strong>More Screenshots</strong></summary>
@@ -99,17 +88,20 @@
     
 ## How FadCrypt Works:
 
-1. **Password Creation:** When you set a password, it's encrypted and saved with the configuration file of locked apps. During monitoring, these files are backed up to `C:\ProgramData\FadCrypt\Backup\`. If detected as deleted, they are automatically recovered and restored.
+1. **Password Creation:** When you set a password, it's encrypted and saved with the configuration file of locked apps. During monitoring, these files are backed up to a separate location:
+
+   - **Windows:** `C:\ProgramData\FadCrypt\Backup\`
+   - **Linux:** `~/.local/share/FadCrypt/Backup/`
+
+   If detected as deleted, they are automatically recovered and restored.
 
 2. **Monitoring Mode:** Press "Start Monitoring" to set FadCrypt as a startup app. It will automatically activate every time your PC starts, and will persistently run unless you press "Stop Monitoring."
 
-3. **Security Features:** FadCrypt can't be stopped without the correct password. The app also disables Control Panel, Registry Editor, Task Manager, and msconfig to prevent tampering.
+3. **Security Features:** FadCrypt can't be stopped without the correct password. The app also disables Control Panel, Registry Editor, Task Manager, and msconfig (Windows) or terminal emulators and system monitors (Linux) to prevent tampering.
 
 4. **Mutex Protection:** FadCrypt uses mutual exclusion to ensure only one instance runs at a time, blocking new instances until the current one is closed with the password. This prevents bypass attempts.
 
 **Note:** The password recovery feature is not available yet.
-
-
 
 ## ⬇️ Download
 
@@ -123,33 +115,38 @@ Download the latest `windows setup installer` file directly from the [releases p
 - **Real-time Monitoring:** Detects and auto-recovers critical files if deleted.
 - **Auto-Startup:** Automatically enabled for every session after starting monitoring.
 - **Aesthetic UI:** Choose custom wallpapers or a minimal style with smooth animations.
-  
+
 **Security:**
+
 - **System Tools Disabled:** Disables Command Prompt, Task Manager, msconfig, Control Panel, and Registry Editor; a nightmare for a layman to bypass. (Manual PowerShell disabling is recommended for maximum security.)
 - **Encrypted Storage:** Password and config data are encrypted and backed up somewhere in `C://` drive.
 
 **Testing:**
+
 - **Testing Blocked Tools:** Confirm effectiveness by searching for Control Panel or Task Manager and try to open it during monitoring.
 
 **Extras:**
+
 - **Snake Game:** Enjoy the classic Snake game on the main tab or from the tray icon! :)
 
 **Upcoming Features:**
+
 - **Password Recovery:** Recover forgotten passwords with ease.
 - **Logging and Alerts:** Includes screenshots, email alerts on wrong password attempts, and detailed logs.
 - **Community Input:** Integrates feedback for improved security and usability.
 
 ## Featured On
+
 - [VPN Club on Telegram](https://t.me/s/wbnet?q=fadcrypt)
 - [popMods on Telegram](https://t.me/s/popmods?q=fadcrypt)
 - [blog.csdn.net](https://blog.csdn.net/qq_29607687/article/details/141366524)
 <!-- - [rhkb.cn](http://www.rhkb.cn/news/405585.html) -->
 
 ## Join Community
+
 Join our [Discord server](https://discord.gg/kvAZvdkuuN) to share ideas, seek help, or connect with other users. Your feedback and contributions are welcome!
 
-[![Discord](https://img.shields.io/discord/1263384048194027520?label=Join%20Us%20on%20Discord&logo=discord)](https://discord.gg/kvAZvdkuuN )
-
+[![Discord](https://img.shields.io/discord/1263384048194027520?label=Join%20Us%20on%20Discord&logo=discord)](https://discord.gg/kvAZvdkuuN)
 
 ## Support
 
@@ -160,6 +157,7 @@ Join our [Discord server](https://discord.gg/kvAZvdkuuN) to share ideas, seek he
 We welcome any contributions to improve this project! Whether it's bug fixes or new features, your help is appreciated.
 
 ### How to Contribute
+
 1. **Check Issues**: Browse the [issues](https://github.com/anonfaded/FadCrypt/issues) to see where you can help.
 2. **Fork the Repo**: Fork the repository to make your changes.
 3. **Submit a PR**: Create a pull request with a clear description of your changes.
@@ -172,6 +170,7 @@ We look forward to your contributions!
 pip install cryptography psutil pillow pystray watchdog tkinterdnd2 ttkbootstrap pygame requests
 python -m PyInstaller FadCrypt.spec
 ```
+
 # Reset Password
 
 Follow the steps below to regain access to FadCrypt, or download the guide as a PDF for reference:  
@@ -179,7 +178,7 @@ Follow the steps below to regain access to FadCrypt, or download the guide as a 
 
 ## 1. Terminate the app processes (if running)
 
-1. Open the search box: `Windows key + S`  
+1. Open the search box: `Windows key + S`
 2. Type **"PowerShell"**, right-click, and select **"Run as administrator"**
 3. In the PowerShell window, enter the following command to kill all running instances of FadCrypt:
 
@@ -187,8 +186,11 @@ Follow the steps below to regain access to FadCrypt, or download the guide as a 
 Stop-Process -Name "fadcrypt" -Force
 ```
 
-## 2. Delete the password binary file  
-*(This allows you to create a new password without needing the old one)*
+## 2. Delete the password binary file
+
+_(This allows you to create a new password without needing the old one)_
+
+**On Windows:**
 
 1. Navigate to and delete the following file:
 
@@ -202,4 +204,18 @@ C:\Users\<YourUsername>\AppData\Roaming\FadCrypt\encrypted_password.bin
 C:\ProgramData\FadCrypt\Backup\encrypted_password.bin
 ```
 
-Now you can open the app again and set a new password — it’ll work like a charm!
+**On Linux:**
+
+1. Navigate to and delete the following file:
+
+```
+~/.FadCrypt/encrypted_password.bin
+```
+
+2. Also delete the backup copy from:
+
+```
+~/.local/share/FadCrypt/Backup/encrypted_password.bin
+```
+
+Now you can open the app again and set a new password — it'll work like a charm!

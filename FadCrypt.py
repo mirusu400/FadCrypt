@@ -588,6 +588,25 @@ class AppLockerGUI:
         )
         lock_tools_checkbox.pack(anchor="w", pady=10)
         
+        # File Locations Info Section
+        ttk.Separator(bottom_frame, orient='horizontal').pack(fill='x', pady=20, padx=27)
+        
+        locations_title = ttk.Label(bottom_frame, text="📁 File Locations", font=("TkDefaultFont", 11, "bold"))
+        locations_title.pack(anchor="w", pady=5, padx=27)
+        
+        locations_info = ttk.Label(
+            bottom_frame,
+            text="Main Configuration Folder:\n"
+                 "  C:\\Users\\<YourUsername>\\AppData\\Roaming\\FadCrypt\\\n"
+                 "  (Stores: config.json, encrypted_password.bin, state.json, settings.json)\n\n"
+                 "Backup Folder:\n"
+                 "  C:\\ProgramData\\FadCrypt\\Backup\\\n"
+                 "  (Stores: backup copies of critical files for recovery)",
+            justify="left",
+            foreground="#888888"
+        )
+        locations_info.pack(anchor="w", pady=5, padx=50)
+        
 
 
         # Pack canvas and scrollbar
