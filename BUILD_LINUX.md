@@ -19,7 +19,7 @@ pip install pyinstaller cryptography psutil pillow pystray watchdog tkinterdnd2 
 2. **Install the package:**
 
    ```bash
-   sudo dpkg -i fadcrypt_0.1.0_amd64.deb
+   sudo dpkg -i fadcrypt_X.X.X_amd64.deb
    ```
 
 3. **Run FadCrypt:**
