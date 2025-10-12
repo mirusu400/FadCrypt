@@ -51,6 +51,13 @@ cp img/1.png fadcrypt-deb/usr/share/pixmaps/fadcrypt.png
 cp LICENSE fadcrypt-deb/usr/share/doc/fadcrypt/
 cp README.md fadcrypt-deb/usr/share/doc/fadcrypt/
 
+# Copy prerm script for cleanup on uninstall
+if [ -f debian/prerm ]; then
+    cp debian/prerm fadcrypt-deb/DEBIAN/
+    chmod 755 fadcrypt-deb/DEBIAN/prerm
+    echo "Added prerm script for automatic cleanup on uninstall"
+fi
+
 # Set permissions
 chmod 755 fadcrypt-deb/usr/bin/fadcrypt
 chmod 644 fadcrypt-deb/usr/share/applications/fadcrypt.desktop

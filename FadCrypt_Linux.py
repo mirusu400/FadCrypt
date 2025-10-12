@@ -1,4 +1,155 @@
+#!/usr/bin/env python3
+# Handle --cleanup flag FIRST, before any GUI imports
+import sys
 import os
+
+if '--cleanup' in sys.argv:
+    import subprocess
+    print("[CLEANUP] Starting FadCrypt cleanup...", flush=True)
+    
+    try:
+        # Get user's home directory
+        if 'SUDO_USER' in os.environ:
+            import pwd
+            user_home = pwd.getpwnam(os.environ['SUDO_USER']).pw_dir
+            print(f"[CLEANUP] Running as sudo, user home: {user_home}", flush=True)
+        else:
+            user_home = os.path.expanduser('~')
+            print(f"[CLEANUP] User home: {user_home}", flush=True)
+        
+        fadcrypt_folder = os.path.join(user_home, '.FadCrypt')
+        disabled_tools_file = os.path.join(fadcrypt_folder, 'disabled_tools.txt')
+        
+        # List of common system tools that might have been disabled
+        all_tools = [
+            '/usr/bin/gnome-terminal',
+            '/usr/bin/konsole',
+            '/usr/bin/xterm',
+            '/usr/bin/gnome-system-monitor',
+            '/usr/bin/htop',
+            '/usr/bin/top',
+            '/usr/bin/gnome-control-center'
+        ]
+        
+        print(f"[CLEANUP] Checking {len(all_tools)} common system tools...", flush=True)
+        
+        # Re-enable all tools (regardless of whether they were disabled)
+        success_count = 0
+        tools_to_restore = []
+        
+        # First, check which tools need restoring
+        for tool in all_tools:
+            if os.path.exists(tool):
+                try:
+                    stat_info = os.stat(tool)
+                    current_perms = oct(stat_info.st_mode)[-3:]
+                    print(f"[CLEANUP] Tool: {tool} (current perms: {current_perms})", flush=True)
+                    
+                    # Only restore if execute permission is missing (was disabled)
+                    if not (stat_info.st_mode & 0o111):
+                        tools_to_restore.append(tool)
+                except Exception as e:
+                    print(f"[CLEANUP] ✗ Error checking {tool}: {e}", flush=True)
+            else:
+                print(f"[CLEANUP] - Tool not found: {tool}", flush=True)
+        
+        # Restore permissions for all disabled tools in one sudo command
+        if tools_to_restore:
+            print(f"[CLEANUP] Restoring {len(tools_to_restore)} disabled tools...", flush=True)
+            
+            # Build a single command to restore all tools
+            chmod_commands = [f'chmod 755 "{tool}"' for tool in tools_to_restore]
+            full_command = ' && '.join(chmod_commands)
+            
+            try:
+                # Check if we're running via dpkg (SUDO_USER is set but we need root perms)
+                # In this case, the prerm script should run us with root privileges
+                running_via_dpkg = 'SUDO_USER' in os.environ
+                
+                if running_via_dpkg:
+                    # We're being called from dpkg prerm, permissions should be available
+                    print(f"[CLEANUP] Running via dpkg, using direct chmod", flush=True)
+                    result = subprocess.run(['bash', '-c', full_command], 
+                                          capture_output=True, 
+                                          text=True,
+                                          check=False)
+                elif os.geteuid() != 0:
+                    # Not root and not via dpkg, need to use sudo
+                    print(f"[CLEANUP] Not root, using sudo", flush=True)
+                    result = subprocess.run(['sudo', 'bash', '-c', full_command], 
+                                          capture_output=True, 
+                                          text=True,
+                                          check=False)
+                else:
+                    # Already root
+                    print(f"[CLEANUP] Running as root", flush=True)
+                    result = subprocess.run(['bash', '-c', full_command], 
+                                          capture_output=True, 
+                                          text=True,
+                                          check=False)
+                
+                if result.returncode == 0:
+                    print(f"[CLEANUP] ✓ Successfully restored all tools", flush=True)
+                    success_count = len(tools_to_restore)
+                else:
+                    print(f"[CLEANUP] ✗ Failed to restore some tools: {result.stderr.strip()}", flush=True)
+                    # Try individual restoration
+                    for tool in tools_to_restore:
+                        try:
+                            if running_via_dpkg or os.geteuid() == 0:
+                                result = subprocess.run(['chmod', '755', tool], 
+                                                      capture_output=True, text=True, check=False)
+                            else:
+                                result = subprocess.run(['sudo', 'chmod', '755', tool], 
+                                                      capture_output=True, text=True, check=False)
+                            
+                            if result.returncode == 0:
+                                print(f"[CLEANUP] ✓ Restored: {tool}", flush=True)
+                                success_count += 1
+                        except Exception as e:
+                            print(f"[CLEANUP] ✗ Error with {tool}: {e}", flush=True)
+            except Exception as e:
+                print(f"[CLEANUP] ✗ Error restoring permissions: {e}", flush=True)
+        
+        print(f"[CLEANUP] Successfully restored {success_count}/{len(all_tools)} tools", flush=True)
+        
+        # Remove the disabled_tools.txt tracking file if it exists
+        if os.path.exists(disabled_tools_file):
+            try:
+                os.remove(disabled_tools_file)
+                print(f"[CLEANUP] Removed tracking file: {disabled_tools_file}", flush=True)
+            except Exception as e:
+                print(f"[CLEANUP] Could not remove tracking file: {e}", flush=True)
+        
+        # Remove autostart entries
+        autostart_dir = os.path.join(user_home, '.config', 'autostart')
+        for autostart_name in ['fadcrypt-autostart.desktop', 'FadCrypt.desktop']:
+            autostart_file = os.path.join(autostart_dir, autostart_name)
+            if os.path.exists(autostart_file):
+                try:
+                    os.remove(autostart_file)
+                    print(f"[CLEANUP] Removed autostart: {autostart_file}", flush=True)
+                except Exception as e:
+                    print(f"[CLEANUP] Could not remove autostart: {e}", flush=True)
+        
+        # Remove lock file
+        lock_file = '/tmp/fadcrypt.lock'
+        if os.path.exists(lock_file):
+            try:
+                os.remove(lock_file)
+                print(f"[CLEANUP] Removed lock file: {lock_file}", flush=True)
+            except Exception as e:
+                print(f"[CLEANUP] Could not remove lock file: {e}", flush=True)
+        
+        print("[CLEANUP] Cleanup completed successfully!", flush=True)
+        sys.exit(0)
+        
+    except Exception as e:
+        print(f"[CLEANUP] Fatal error during cleanup: {e}", flush=True)
+        sys.exit(1)
+
+# Now import GUI libraries (only if not running cleanup)
+
 import json
 import threading
 import subprocess
@@ -13,7 +164,6 @@ from tkinter import ttk, filedialog, PhotoImage
 import signal
 from PIL import Image
 from pystray import Icon, Menu, MenuItem
-import sys
 import base64
 from cryptography.fernet import Fernet
 import shutil
@@ -601,6 +751,29 @@ class AppLockerGUI:
             foreground="#888888"
         )
         locations_info.pack(anchor="w", pady=5, padx=50)
+        
+        # Uninstall Cleanup Section
+        ttk.Separator(bottom_frame, orient='horizontal').pack(fill='x', pady=20, padx=27)
+        
+        cleanup_title = ttk.Label(bottom_frame, text="🔧 Uninstall Cleanup", font=("TkDefaultFont", 11, "bold"))
+        cleanup_title.pack(anchor="w", pady=5, padx=27)
+        
+        cleanup_info = ttk.Label(
+            bottom_frame,
+            text="Before uninstalling FadCrypt, run this cleanup to restore all system settings.\n"
+                 "This will re-enable disabled terminals, system monitors, and remove autostart entries.",
+            justify="left",
+            foreground="#888888"
+        )
+        cleanup_info.pack(anchor="w", pady=5, padx=50)
+        
+        cleanup_button = ttk.Button(
+            bottom_frame,
+            text="Run Uninstall Cleanup",
+            command=self.cleanup_on_uninstall,
+            style='danger.TButton'
+        )
+        cleanup_button.pack(anchor="w", pady=10, padx=50)
         
 
 
@@ -1289,36 +1462,92 @@ Version=1.0
     def enable_tools(self):
         """Re-enable previously disabled tools"""
         try:
+            # First try to read from the tracking file
             disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
+            tools_to_enable = []
+            
             if os.path.exists(disabled_tools_file):
                 with open(disabled_tools_file, 'r') as f:
-                    tools = f.read().strip().split('\n')
+                    tools_to_enable = [tool.strip() for tool in f.read().strip().split('\n') if tool.strip()]
+            
+            # If no tracking file, try to re-enable all common tools
+            if not tools_to_enable:
+                tools_to_enable = [
+                    '/usr/bin/gnome-terminal',
+                    '/usr/bin/konsole',
+                    '/usr/bin/xterm',
+                    '/usr/bin/gnome-system-monitor',
+                    '/usr/bin/htop',
+                    '/usr/bin/top'
+                ]
 
-                chmod_commands = []
-                valid_tools = []
-                for tool in tools:
-                    if tool and os.path.exists(tool):
-                        chmod_commands.append(f'chmod 755 "{tool}"')
-                        valid_tools.append(tool)
+            chmod_commands = []
+            valid_tools = []
+            for tool in tools_to_enable:
+                if tool and os.path.exists(tool):
+                    chmod_commands.append(f'chmod 755 "{tool}"')
+                    valid_tools.append(tool)
 
-                if chmod_commands:
-                    # Run all chmod commands in one pkexec call
-                    command = '; '.join(chmod_commands)
-                    try:
-                        subprocess.run(['pkexec', 'bash', '-c', command], check=True)
-                        for tool in valid_tools:
-                            print(f"Re-enabled: {tool}")
-                        
-                        # Clean up the record file after restoring permissions.
+            if chmod_commands:
+                # Run all chmod commands in one pkexec call
+                command = '; '.join(chmod_commands)
+                try:
+                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+                    for tool in valid_tools:
+                        print(f"Re-enabled: {tool}")
+                    
+                    # Clean up the record file after restoring permissions.
+                    if os.path.exists(disabled_tools_file):
                         os.remove(disabled_tools_file)
-                    except subprocess.CalledProcessError as e:
-                        print(f"Failed to restore permissions: {e}")
-                else:
-                    print("No valid tools found to re-enable.")
+                except subprocess.CalledProcessError as e:
+                    print(f"Failed to restore permissions: {e}")
             else:
-                print("No disabled tools file found to re-enable.")
+                print("No valid tools found to re-enable.")
         except Exception as e:
             print(f"An error occurred in enable_tools: {e}")
+
+    def cleanup_on_uninstall(self):
+        """
+        Cleanup function to restore all system settings before uninstallation.
+        This ensures users don't have disabled settings after uninstalling FadCrypt.
+        """
+        try:
+            print("Running uninstall cleanup...")
+            
+            # Re-enable all system tools
+            self.enable_tools()
+            
+            # Stop monitoring if active
+            if hasattr(self, 'app_locker') and self.app_locker.monitoring:
+                print("Stopping monitoring...")
+                self.app_locker.stop_monitoring()
+            
+            # Remove autostart entry
+            try:
+                autostart_path = os.path.expanduser('~/.config/autostart/FadCrypt.desktop')
+                if os.path.exists(autostart_path):
+                    os.remove(autostart_path)
+                    print("Removed from autostart")
+            except Exception as e:
+                print(f"Error removing from autostart: {e}")
+            
+            # Show confirmation
+            self.show_message(
+                "Cleanup Complete",
+                "All system settings have been restored.\n"
+                "You can now safely uninstall FadCrypt."
+            )
+            print("Uninstall cleanup completed successfully.")
+            return True
+            
+        except Exception as e:
+            print(f"Error during uninstall cleanup: {e}")
+            self.show_message(
+                "Cleanup Error",
+                f"Some settings may not have been restored:\n{str(e)}\n\n"
+                "Please manually check terminal and system monitor permissions."
+            )
+            return False
 
     def save_settings(self, *args):
         settings = {
@@ -2569,28 +2798,42 @@ class AppLocker:
             print("Re-enabling disabled tools...")
             # Re-enable execution for disabled tools
             disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+            tools_to_enable = []
+            
             if os.path.exists(disabled_tools_file):
                 with open(disabled_tools_file, 'r') as f:
-                    tools = f.read().strip().split('\n')
+                    tools_to_enable = [tool.strip() for tool in f.read().strip().split('\n') if tool.strip()]
+            
+            # If no tracking file, try to re-enable all common tools
+            if not tools_to_enable:
+                tools_to_enable = [
+                    '/usr/bin/gnome-terminal',
+                    '/usr/bin/konsole',
+                    '/usr/bin/xterm',
+                    '/usr/bin/gnome-system-monitor',
+                    '/usr/bin/htop',
+                    '/usr/bin/top'
+                ]
 
-                # Filter out empty lines and non-existent tools
-                valid_tools = [tool for tool in tools if tool and os.path.exists(tool)]
-                
-                if valid_tools:
-                    print(f"Re-enabling {len(valid_tools)} tools...")
-                    # Create a single command to chmod all tools at once
-                    chmod_commands = " && ".join([f"chmod 755 '{tool}'" for tool in valid_tools])
-                    try:
-                        subprocess.run(['pkexec', 'bash', '-c', chmod_commands], check=True)
-                        print(f"Successfully re-enabled all {len(valid_tools)} tools")
-                    except subprocess.CalledProcessError as e:
-                        print(f"Failed to re-enable tools: {e}")
-                
-                # Clean up the record file
+            # Filter out non-existent tools
+            valid_tools = [tool for tool in tools_to_enable if tool and os.path.exists(tool)]
+            
+            if valid_tools:
+                print(f"Re-enabling {len(valid_tools)} tools...")
+                # Create a single command to chmod all tools at once
+                chmod_commands = " && ".join([f"chmod 755 '{tool}'" for tool in valid_tools])
+                try:
+                    subprocess.run(['pkexec', 'bash', '-c', chmod_commands], check=True)
+                    print(f"Successfully re-enabled all {len(valid_tools)} tools")
+                except subprocess.CalledProcessError as e:
+                    print(f"Failed to re-enable tools: {e}")
+            
+            # Clean up the record file if it exists
+            if os.path.exists(disabled_tools_file):
                 os.remove(disabled_tools_file)
                 print("Disabled tools re-enabled and file removed.")
             else:
-                print("No disabled tools file found.")
+                print("No disabled tools file found, re-enabled common tools.")
             
             self.gui.master.deiconify()  # Show the main window
         else:
@@ -2867,6 +3110,7 @@ def main():
     style.configure('green.TButton', bordercolor="#009E60", background="#009E60")
     style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
     style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
+    style.configure('danger.TButton', bordercolor="#DC3545", background="#DC3545", foreground="#FFFFFF")
     style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
 
     # Customize button color
@@ -2890,6 +3134,8 @@ def main():
     root.mainloop()
 
 if __name__ == "__main__":
+    # Cleanup is already handled at the top of the file before GUI imports
+    # If we get here, just start the normal app
     monitor = FileMonitor()
     monitoring_thread = threading.Thread(target=start_monitoring_thread, args=(monitor,))
     monitoring_thread.daemon = True

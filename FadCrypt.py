@@ -12,6 +12,12 @@ from cryptography.exceptions import InvalidTag
 import psutil
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox, filedialog, PhotoImage
+
+# Import Windows compatibility layer for Linux testing
+import sys
+if sys.platform.startswith('linux'):
+    import win_compat  # noqa: F401 - This provides mock winreg/ctypes.windll
+
 import winreg
 import signal
 from PIL import Image, ImageDraw
@@ -605,6 +611,30 @@ class AppLockerGUI:
             foreground="#888888"
         )
         locations_info.pack(anchor="w", pady=5, padx=50)
+        
+        # Uninstall Cleanup Section
+        ttk.Separator(bottom_frame, orient='horizontal').pack(fill='x', pady=20, padx=27)
+        
+        cleanup_title = ttk.Label(bottom_frame, text="🔧 Uninstall Cleanup", font=("TkDefaultFont", 11, "bold"))
+        cleanup_title.pack(anchor="w", pady=5, padx=27)
+        
+        cleanup_info = ttk.Label(
+            bottom_frame,
+            text="Before uninstalling FadCrypt, run this cleanup to restore all system settings.\n"
+                 "This will re-enable Task Manager, Command Prompt, Registry Editor, and remove autostart entries.\n"
+                 "Requires administrator privileges.",
+            justify="left",
+            foreground="#888888"
+        )
+        cleanup_info.pack(anchor="w", pady=5, padx=50)
+        
+        cleanup_button = ttk.Button(
+            bottom_frame,
+            text="Run Uninstall Cleanup",
+            command=self.cleanup_on_uninstall,
+            style='danger.TButton'
+        )
+        cleanup_button.pack(anchor="w", pady=10, padx=50)
         
 
 
@@ -1311,6 +1341,47 @@ class AppLockerGUI:
     
     # Alias the new method
     enable_tools = enable_system_tools
+
+    def cleanup_on_uninstall(self):
+        """
+        Cleanup function to restore all system settings before uninstallation.
+        This ensures users don't have disabled settings after uninstalling FadCrypt.
+        """
+        try:
+            print("Running uninstall cleanup...")
+            
+            # Re-enable all system tools
+            self.enable_system_tools()
+            
+            # Stop monitoring if active
+            if hasattr(self, 'app_locker') and self.app_locker.monitoring:
+                print("Stopping monitoring...")
+                self.app_locker.stop_monitoring()
+            
+            # Remove autostart entry
+            try:
+                self.remove_from_startup()
+                print("Removed from startup")
+            except Exception as e:
+                print(f"Error removing from startup: {e}")
+            
+            # Show confirmation
+            self.show_message(
+                "Cleanup Complete",
+                "All system settings have been restored.\n"
+                "You can now safely uninstall FadCrypt."
+            )
+            print("Uninstall cleanup completed successfully.")
+            return True
+            
+        except Exception as e:
+            print(f"Error during uninstall cleanup: {e}")
+            self.show_message(
+                "Cleanup Error",
+                f"Some settings may not have been restored:\n{str(e)}\n\n"
+                "Please manually re-enable Task Manager, Command Prompt, and other tools."
+            )
+            return False
 
     def disable_system_tools(self):
         """Disable Command Prompt, PowerShell, and Task Manager using winreg."""
@@ -2639,6 +2710,55 @@ def run_as_admin():
     return True
 
 if __name__ == "__main__":
+    # Handle --cleanup flag for uninstaller
+    if '--cleanup' in sys.argv:
+        try:
+            # Create a minimal instance just to run cleanup
+            class MinimalAppLocker:
+                def enable_system_tools(self):
+                    import winreg
+                    # List of all registry settings that FadCrypt disables
+                    keys_to_restore = [
+                        (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+                    ]
+                    
+                    for reg_path, value_name in keys_to_restore:
+                        try:
+                            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                            winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 0)
+                            winreg.CloseKey(key)
+                        except FileNotFoundError:
+                            pass  # Key doesn't exist, nothing to restore
+                        except Exception:
+                            pass
+                
+                def cleanup_on_uninstall(self):
+                    """Cleanup function to restore system settings before uninstall"""
+                    import winreg
+                    # Re-enable all system tools
+                    self.enable_system_tools()
+                    
+                    # Remove from Windows startup
+                    try:
+                        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                           r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                           0, winreg.KEY_SET_VALUE)
+                        winreg.DeleteValue(key, "FadCrypt")
+                        winreg.CloseKey(key)
+                    except FileNotFoundError:
+                        pass  # Key doesn't exist, nothing to remove
+                    except Exception:
+                        pass
+            
+            cleanup_app = MinimalAppLocker()
+            cleanup_app.cleanup_on_uninstall()
+            sys.exit(0)
+        except Exception:
+            sys.exit(1)
+    
     if run_as_admin():
         root = TkinterDnD.Tk()  # Use TkinterDnD.Tk instead of tk.Tk
         style = Style(theme='darkly')  # Apply dark theme
@@ -2655,6 +2775,7 @@ if __name__ == "__main__":
         style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
         style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
         style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
+        style.configure('danger.TButton', bordercolor="#DC3545", background="#DC3545", foreground="#FFFFFF")
 
         # Customize button color
         style.configure('TButton',
