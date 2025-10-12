@@ -33,9 +33,8 @@ import requests
 import pygame
 from ctypes import wintypes
 
-# App Version Information
-__version__ = "v0.2.0"
-__version_code__ = 2  # Increment this for each release
+# App Version Information - imported from central version file
+from version import __version__, __version_code__
 
 
 # Embedded configuration and state data

@@ -1,0 +1,17 @@
+Package: fadcrypt
+Version: 0.2.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: python3 (>= 3.8), libgtk-3-0
+Maintainer: Faded <fadedhood@proton.me>
+Description: Application locker and monitor for Linux
+ FadCrypt is a cross-platform GUI application that helps you lock and
+ monitor applications with password protection and encrypted configuration.
+ .
+ Features include:
+  - Lock/unlock specific applications
+  - Password-protected monitoring
+  - System tray integration
+  - Auto-start on login support
+  - Built-in mini snake game
