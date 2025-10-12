@@ -37,6 +37,44 @@ config_mgr.export_config(show_message_func)
 config_mgr.import_config(show_message_func, update_display_func)
 ```
 
+### `application_manager.py`
+
+Manages the Applications tab, application CRUD operations, statistics, and metadata tracking.
+
+**Features:**
+
+- Complete Applications tab UI with multi-selection support
+- Add, edit, remove applications with validation
+- Timestamp tracking (added, modified)
+- Usage statistics (unlock count, last unlocked)
+- Context menu (right-click) with quick actions
+- Keyboard shortcuts (Ctrl+A, Delete, Double-click, F2)
+- Confirmation dialogs for destructive operations
+- Metadata persistence (stored in `app_metadata.json`)
+- Icon support with caching (extracts from .desktop files on Linux)
+
+**Usage:**
+
+```python
+from core.application_manager import ApplicationManager
+
+# Initialize
+app_manager = ApplicationManager(
+    app_locker=your_app_locker,
+    master=your_tk_window,
+    notebook=your_notebook,
+    resource_path_func=your_resource_path_function,
+    show_message_func=your_message_function,
+    update_config_display_func=your_update_function,
+    is_linux=True  # or False for Windows
+)
+
+# The tab is automatically created
+# Methods available:
+app_manager.increment_unlock_count(app_name)  # Track unlocks
+app_manager.update_apps_listbox()  # Refresh display
+```
+
 ## Adding New Shared Modules
 
 When adding new features that are identical between Windows and Linux versions:
@@ -57,6 +95,11 @@ When adding new features that are identical between Windows and Linux versions:
 ## Future Refactoring Candidates
 
 Consider extracting these into core modules:
+
+- Password management (create, change, verify)
+- Update checking functionality
+- Backup and restore operations
+- System monitoring and tray icon management
 
 - Password management (create/change/verify)
 - Update checking logic

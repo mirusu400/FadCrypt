@@ -44,6 +44,7 @@ from version import __version__, __version_code__
 
 # Import shared core modules
 from core.config_manager import ConfigManager
+from core.application_manager import ApplicationManager
 
 
 # Embedded configuration and state data
@@ -89,6 +90,9 @@ class AppLockerGUI:
             app_locker=None,  # Will be set after app_locker is created
             get_fadcrypt_folder_func=lambda: self.app_locker.get_fadcrypt_folder()
         )
+        
+        # Initialize shared ApplicationManager
+        self.app_manager = None  # Will be initialized in create_widgets after tabs are created
 
         self.set_app_icon()  # Set the custom app icon
         self.create_widgets()
@@ -354,69 +358,7 @@ class AppLockerGUI:
 
 
 
-        # Applications Tab
-        self.apps_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.apps_frame, text="Applications")
-
-        # Create a frame to hold the listbox and scrollbar
-        list_frame = ttk.Frame(self.apps_frame)
-        list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
-
-        # Create the listbox with a scrollbar
-        self.apps_listbox = tk.Listbox(list_frame, width=50, font=("Helvetica", 10), selectmode=tk.SINGLE)
-        self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.apps_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.apps_listbox.config(yscrollcommand=scrollbar.set)
-
-        
-
-        self.update_apps_listbox()
-
-        # Buttons frame
-        button_frame = ttk.Frame(self.apps_frame)
-        button_frame.pack(pady=10, padx=5, fill=tk.X)
-
-        # Modify the Add button to open the new dialog
-        ttk.Button(button_frame, text="Add", command=self.open_add_application_dialog, style="green.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Remove", command=self.remove_application, style="red.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Rename", command=self.rename_application).pack(side=tk.LEFT, padx=5)
-
-
-        # State Tab
-        # self.state_frame = ttk.Frame(self.notebook)
-        # self.notebook.add(self.state_frame, text="State")
-
-        # self.state_text = tk.Text(self.state_frame, width=60, height=10)
-        # self.state_text.pack(pady=5)
-        # self.update_state_display()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # Config Tab
+        # Config Tab (moved before Applications tab to match Linux version)
         # Config Tab with scrollable content
         self.config_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.config_frame, text="Config")
@@ -447,6 +389,25 @@ class AppLockerGUI:
         self.config_text = tk.Text(scrollable_config_frame, width=70, height=17, wrap=tk.WORD)
         self.config_text.pack(pady=5, padx=15, fill=tk.X, expand=False)
         self.update_config_display()
+
+
+        # Applications Tab - Using shared ApplicationManager
+        self.app_manager = ApplicationManager(
+            app_locker=self.app_locker,
+            master=self.master,
+            notebook=self.notebook,
+            resource_path_func=self.resource_path,
+            show_message_func=self.show_message,
+            update_config_display_func=self.update_config_display,
+            is_linux=False
+        )
+        
+        # Set callback for Add button
+        self.app_manager.add_application_callback = self.open_add_application_dialog
+        
+        # Keep references to ApplicationManager's components for backward compatibility
+        self.apps_frame = self.app_manager.apps_frame
+        self.apps_listbox = self.app_manager.apps_listbox
 
         # Description below the config text box
         config_description = ttk.Label(scrollable_config_frame, text=(
@@ -1124,15 +1085,9 @@ class AppLockerGUI:
 
 
     def update_apps_listbox(self):
-        self.apps_listbox.delete(0, tk.END)
-        for index, app in enumerate(self.app_locker.config["applications"]):
-            item = f"  {app['name']} - {app['path']}"  # Added two spaces for left padding
-            self.apps_listbox.insert(tk.END, item)
-            # Apply alternating row colors
-            if index % 2 == 0:
-                self.apps_listbox.itemconfig(index, {'bg': '#f0f0f0'})
-            else:
-                self.apps_listbox.itemconfig(index, {'bg': '#ffffff'})
+        """Delegate to ApplicationManager"""
+        if self.app_manager:
+            self.app_manager.update_apps_listbox()
         self.update_config_display()
 
     def update_config_display(self):
@@ -1164,11 +1119,6 @@ class AppLockerGUI:
 
         
 
-    def update_apps_listbox(self):
-        self.apps_listbox.delete(0, tk.END)
-        for app in self.app_locker.config["applications"]:
-            self.apps_listbox.insert(tk.END, f"{app['name']} - {app['path']}")
-
     def create_password(self):
         if os.path.exists(self.app_locker.password_file):
             self.show_message("Info", "Password already exists. Use 'Change Password' to modify.")
@@ -1192,42 +1142,20 @@ class AppLockerGUI:
             self.show_message("Oops!", "How do I change a password that doesn't exist? :(")
 
     def add_application(self):
-        app_name = self.ask_password("Add Application", "Enter the name of the application:")
-        if app_name:
-            app_path = filedialog.askopenfilename(title="Select application executable")
-            if app_path:
-                self.app_locker.add_application(app_name, app_path)
-                self.update_apps_listbox()
-                self.update_config_display()  # Update config tab
-                self.show_message("Success", f"Application {app_name}\nadded successfully.")
+        """Keep old dialog - ApplicationManager doesn't have Windows .exe dialog"""
+        # The open_add_application_dialog method handles this
+        pass
 
 
     def remove_application(self):
-        selection = self.apps_listbox.curselection()
-        if selection:
-            app_name = self.apps_listbox.get(selection[0]).split(" - ")[0].strip()  # Remove leading spaces
-            self.app_locker.remove_application(app_name)
-            self.update_apps_listbox()
-            self.update_config_display()
-            self.show_message("Success", f"Application {app_name}\nremoved successfully.")
-        else:
-            self.show_message("Error", "Please select an application to remove.")
+        """Delegate to ApplicationManager"""
+        if self.app_manager:
+            self.app_manager.remove_applications()
 
     def rename_application(self):
-        selection = self.apps_listbox.curselection()
-        if selection:
-            old_name = self.apps_listbox.get(selection[0]).split(" - ")[0].strip()  # Remove leading spaces
-            new_name = self.ask_password("Rename Application", f"Enter new name for {old_name}:")
-            if new_name:
-                for app in self.app_locker.config["applications"]:
-                    if app["name"] == old_name:
-                        app["name"] = new_name
-                        break
-                self.update_apps_listbox()
-                self.update_config_display()
-                self.show_message("Success", f"Application renamed from {old_name} to {new_name}.")
-        else:
-            self.show_message("Error", "Please select an application to rename.")
+        """Delegate to ApplicationManager's edit function"""
+        if self.app_manager:
+            self.app_manager.edit_application()
 
     def start_monitoring(self, auto_start=False):
         if os.path.exists(self.app_locker.password_file):
