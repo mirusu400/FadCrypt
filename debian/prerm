@@ -1,0 +1,33 @@
+#!/bin/bash
+# prerm script for fadcrypt
+# This script runs before the package is removed
+
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        echo "Running FadCrypt cleanup..."
+        
+        # Run cleanup if the binary still exists
+        if [ -x /usr/bin/fadcrypt ]; then
+            # Export SUDO_USER so cleanup knows the real user's home directory
+            # but run with root privileges (don't use su)
+            export SUDO_USER="${SUDO_USER:-$USER}"
+            /usr/bin/fadcrypt --cleanup
+            
+            echo "Cleanup completed."
+        else
+            echo "FadCrypt binary not found, skipping cleanup"
+        fi
+        ;;
+        
+    failed-upgrade)
+        ;;
+        
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

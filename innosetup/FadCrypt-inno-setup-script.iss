@@ -2,7 +2,7 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "FadCrypt"
-#define MyAppVersion "v0.2.0"
+#define MyAppVersion "v0.3.0"
 #define MyAppPublisher "FadSec Lab"
 #define MyAppURL "https://faded.dev"
 #define MyAppExeName "FadCrypt.exe"
@@ -53,4 +53,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Run cleanup to restore system settings before uninstalling
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--cleanup"; Flags: runhidden waituntilterminated
 
