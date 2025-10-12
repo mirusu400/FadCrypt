@@ -4,7 +4,7 @@
 #define MyAppName "FadCrypt"
 #define MyAppVersion "v0.2.0"
 #define MyAppPublisher "FadSec Lab"
-#define MyAppURL "https://www.fadedhood.com/"
+#define MyAppURL "https://faded.dev"
 #define MyAppExeName "FadCrypt.exe"
 
 [Setup]

@@ -317,7 +317,7 @@ class AppLockerGUI:
         logo_label.pack(side=tk.LEFT, padx=(0, 0))  # Add padding to the right of the logo
 
         # Add remaining branding and license info (right side)
-        branding_text = " \u00A9 2024 | fadedhood.com | Licensed under GPL 3.0"
+        branding_text = " \u00A9 2024 | faded.dev | Licensed under GPL 3.0"
         branding_label = ttk.Label(footer_frame, text=branding_text, foreground="gray", font=("Helvetica", 10))
         branding_label.pack(side=tk.LEFT)
 
