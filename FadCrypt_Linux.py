@@ -2447,8 +2447,8 @@ class AppLocker:
                     # Reset counter if processes are found
                     if hasattr(self, f"{app_name}_no_process_count"):
                         delattr(self, f"{app_name}_no_process_count")
-                
-                time.sleep(0.05)  # Very fast monitoring for near-instant blocking
+
+                time.sleep(1)  # Check every 1 second - balances responsiveness and CPU usage
             except Exception as e:
                 print(f"Error in block_application: {e}")
 

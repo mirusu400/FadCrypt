@@ -3,7 +3,7 @@ FadCrypt Version Information
 Single source of truth for version across the application and build system.
 """
 
-__version__ = "v0.3.0
+__version__ = "v0.3.0"
 __version_code__ = 3  # Increment this for each release
 
 # Package metadata
