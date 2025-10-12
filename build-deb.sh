@@ -11,7 +11,10 @@ PACKAGE_NAME=$(python3 -c "from version import PACKAGE_NAME; print(PACKAGE_NAME)
 MAINTAINER=$(python3 -c "from version import MAINTAINER_FULL; print(MAINTAINER_FULL)")
 DESCRIPTION=$(python3 -c "from version import PACKAGE_DESCRIPTION; print(PACKAGE_DESCRIPTION)")
 
-echo "Building version: $VERSION"
+# Strip 'v' prefix from version for Debian package (Debian versions must start with a digit)
+DEB_VERSION="${VERSION#v}"
+
+echo "Building version: $VERSION (Debian: $DEB_VERSION)"
 
 # Check dependencies
 echo "Checking dependencies..."
@@ -56,7 +59,7 @@ chmod 644 fadcrypt-deb/usr/share/applications/fadcrypt.desktop
 INSTALLED_SIZE=$(du -sk fadcrypt-deb/usr | cut -f1)
 cat > fadcrypt-deb/DEBIAN/control << EOF
 Package: ${PACKAGE_NAME}
-Version: ${VERSION}
+Version: ${DEB_VERSION}
 Section: utils
 Priority: optional
 Architecture: amd64
@@ -77,14 +80,15 @@ EOF
 
 # Build the .deb package
 echo "Building .deb package..."
-dpkg-deb --build fadcrypt-deb ${PACKAGE_NAME}_${VERSION}_amd64.deb
+dpkg-deb --build fadcrypt-deb ${PACKAGE_NAME}_${DEB_VERSION}_amd64.deb
 
 echo ""
 echo "=== Build Complete ==="
-echo "Package: ${PACKAGE_NAME}_${VERSION}_amd64.deb"
+echo "Package: ${PACKAGE_NAME}_${DEB_VERSION}_amd64.deb"
+echo "App Version: ${VERSION}"
 echo ""
 echo "To install:"
-echo "  sudo dpkg -i ${PACKAGE_NAME}_${VERSION}_amd64.deb"
+echo "  sudo dpkg -i ${PACKAGE_NAME}_${DEB_VERSION}_amd64.deb"
 echo ""
 echo "To run:"
 echo "  ${PACKAGE_NAME}"
