@@ -10,7 +10,6 @@ VERSION=$(python3 -c "from version import __version__; print(__version__)")
 PACKAGE_NAME=$(python3 -c "from version import PACKAGE_NAME; print(PACKAGE_NAME)")
 MAINTAINER=$(python3 -c "from version import MAINTAINER_FULL; print(MAINTAINER_FULL)")
 DESCRIPTION=$(python3 -c "from version import PACKAGE_DESCRIPTION; print(PACKAGE_DESCRIPTION)")
-LONG_DESC=$(python3 -c "from version import PACKAGE_LONG_DESCRIPTION; print(PACKAGE_LONG_DESCRIPTION)")
 
 echo "Building version: $VERSION"
 
@@ -65,7 +64,15 @@ Installed-Size: ${INSTALLED_SIZE}
 Depends: python3 (>= 3.8), libgtk-3-0
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
-${LONG_DESC}
+ FadCrypt is a cross-platform GUI application that helps you lock and
+ monitor applications with password protection and encrypted configuration.
+ .
+ Features include:
+  - Lock/unlock specific applications
+  - Password-protected monitoring
+  - System tray integration
+  - Auto-start on login support
+  - Built-in mini snake game
 EOF
 
 # Build the .deb package

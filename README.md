@@ -40,7 +40,6 @@
     
 <br>
 
-
 - [FadCrypt](#fadcrypt)
   - [📱 Screenshots](#-screenshots)
   - [How FadCrypt Works:](#how-fadcrypt-works)
@@ -158,9 +157,15 @@ We welcome any contributions to improve this project! Whether it's bug fixes or 
 
 ### How to Contribute
 
-1. **Check Issues**: Browse the [issues](https://github.com/anonfaded/FadCrypt/issues) to see where you can help.
-2. **Fork the Repo**: Fork the repository to make your changes.
-3. **Submit a PR**: Create a pull request with a clear description of your changes.
+1. **Discuss First**: Before starting work, please discuss your ideas:
+   - Open an [issue](https://github.com/anonfaded/FadCrypt/issues) to discuss the bug or feature
+   - Join our [Discord server](https://discord.gg/kvAZvdkuuN) to chat with maintainer and community
+   - This helps avoid duplicate work and ensures your contribution aligns with project goals
+2. **Check Issues**: Browse existing [issues](https://github.com/anonfaded/FadCrypt/issues) to see where you can help.
+3. **Fork the Repo**: Once approved, fork the repository to make your changes.
+4. **Submit a PR**: Create a pull request with a clear description of your changes.
+
+**Note:** Please avoid submitting PRs without prior discussion to ensure efficient collaboration.
 
 We look forward to your contributions!
 
