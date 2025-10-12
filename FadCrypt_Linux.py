@@ -112,7 +112,7 @@ class AppLockerGUI:
 
         
         # Drag and Drop Area
-        drop_frame = tk.LabelFrame(self.add_dialog, text="Drag and Drop .exe Here")
+        drop_frame = tk.LabelFrame(self.add_dialog, text="Drag and Drop Executable Here")
         drop_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
         # Use TkinterDnD for drag-and-drop functionality
@@ -141,6 +141,16 @@ class AppLockerGUI:
         # Manual Input Area
         manual_frame = tk.LabelFrame(self.add_dialog, text="Or Manually Add Application")
         manual_frame.pack(padx=10, pady=10, fill="both", expand=True)
+
+        # Helper text for finding executables
+        helper_text = tk.Label(manual_frame, text=(
+            "To find an executable path, use the 'which' command in terminal:\n"
+            "❯ which firefox\n"
+            "/usr/bin/firefox\n\n"
+            "Paste the exact path (with slashes) in the Path field below.\n"
+            "For Name, use any readable name like 'Firefox'."
+        ), justify="left", fg="blue", font=("Arial", 9))
+        helper_text.pack(pady=5, padx=10, anchor="w")
 
         tk.Label(manual_frame, text="Name:").pack(pady=5)
         self.name_entry = tk.Entry(manual_frame)
@@ -551,9 +561,10 @@ class AppLockerGUI:
         lock_tools_checkbox_title.pack(anchor="w", pady=5, padx=27)
         lock_tools_checkbox = ttk.Checkbutton(
             bottom_frame,
-            text="Disable Command Prompt, Registry Editor, Control Panel, msconfig, and Task Manager during monitoring.\n"
-            "(Default: All are disabled for best security. For added security, please disable PowerShell as well; search\n"
-            "on internet for help. Otherwise, FadCrypt could be terminated via PowerShell.)",
+            text="Disable common terminals and system monitors during monitoring.\n"
+            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security.\n"
+            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually;\n"
+            "otherwise, FadCrypt could be terminated via terminal.)",
             variable=self.lock_tools_var,
             command=self.save_settings
         )
@@ -776,10 +787,10 @@ class AppLockerGUI:
             "- Auto-Startup: After starting monitoring, the app will be automatically enabled for every session.\n"
             "- Aesthetic UI: Choose custom wallpapers or a minimal style with smooth animations.\n\n"
             "Security:\n"
-            "- System Tools Disabled: Disables Command Prompt, Task Manager, msconfig, Control Panel, and Registry Editor;\n  a real nightmare for attackers trying to bypass it.\n  Manual PowerShell disabling is recommended as it's a significant loophole!\n"
+            "- System Tools Disabled: Disables common terminals (gnome-terminal, konsole, xterm) and system monitors\n  (gnome-system-monitor, htop, top); a real nightmare for attackers trying to bypass it.\n  Manual disabling of other terminals is recommended as it's a significant loophole!\n"
             "- Encrypted Storage: Passwords and config file data (list of locked apps) are encrypted and backed up.\n\n"
             "Testing:\n"
-            "- Test blocked tools (Command Prompt, Task Manager) via Windows search to confirm effectiveness.\nSearch for Control Panel or Task Manager in Windows+S search and see the disabled message box.\n\n"
+            "- Test blocked tools by trying to run disabled terminals and system monitors to confirm effectiveness.\n\n"
             "Upcoming Features:\n"
             "- Password Recovery: In case of a forgotten password, users will be able to recover their passwords.\n"
             "- Logging and Alerts: Includes screenshots, email alerts on wrong password attempts, and detailed logs.\n"
