@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit, 
     QFileDialog, QSystemTrayIcon
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
-from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRegularExpression
+from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase, QSyntaxHighlighter, QTextCharFormat, QColor
 
 from ui.components.app_list_widget import AppListWidget
 from ui.components.button_panel import ButtonPanel
@@ -27,6 +27,80 @@ from core.application_manager import ApplicationManager
 
 # Import version info
 from version import __version__, __version_code__
+
+
+class JsonSyntaxHighlighter(QSyntaxHighlighter):
+    """Syntax highlighter for JSON with dark theme colors"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Define formats for different JSON elements
+        self.formats = {}
+        
+        # Keys (blue)
+        key_format = QTextCharFormat()
+        key_format.setForeground(QColor("#61afef"))  # Blue
+        self.formats['key'] = key_format
+        
+        # String values (green)
+        string_format = QTextCharFormat()
+        string_format.setForeground(QColor("#98c379"))  # Green
+        self.formats['string'] = string_format
+        
+        # Numbers (orange)
+        number_format = QTextCharFormat()
+        number_format.setForeground(QColor("#d19a66"))  # Orange
+        self.formats['number'] = number_format
+        
+        # Booleans and null (purple)
+        keyword_format = QTextCharFormat()
+        keyword_format.setForeground(QColor("#c678dd"))  # Purple
+        self.formats['keyword'] = keyword_format
+        
+        # Braces and brackets (white)
+        brace_format = QTextCharFormat()
+        brace_format.setForeground(QColor("#abb2bf"))  # Light gray
+        self.formats['brace'] = brace_format
+        
+    def highlightBlock(self, text):
+        """Apply syntax highlighting to a block of text"""
+        # Highlight JSON keys (text before colon in quotes)
+        key_pattern = QRegularExpression(r'"([^"]+)"\s*:')
+        iterator = key_pattern.globalMatch(text)
+        while iterator.hasNext():
+            match = iterator.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self.formats['key'])
+        
+        # Highlight string values (text in quotes after colon)
+        string_pattern = QRegularExpression(r':\s*"([^"]*)"')
+        iterator = string_pattern.globalMatch(text)
+        while iterator.hasNext():
+            match = iterator.next()
+            start = match.capturedStart() + text[match.capturedStart():].index('"')
+            length = match.capturedEnd() - start
+            self.setFormat(start, length, self.formats['string'])
+        
+        # Highlight numbers
+        number_pattern = QRegularExpression(r'\b\d+\.?\d*\b')
+        iterator = number_pattern.globalMatch(text)
+        while iterator.hasNext():
+            match = iterator.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self.formats['number'])
+        
+        # Highlight booleans and null
+        keyword_pattern = QRegularExpression(r'\b(true|false|null)\b')
+        iterator = keyword_pattern.globalMatch(text)
+        while iterator.hasNext():
+            match = iterator.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self.formats['keyword'])
+        
+        # Highlight braces and brackets
+        brace_pattern = QRegularExpression(r'[{}[\],]')
+        iterator = brace_pattern.globalMatch(text)
+        while iterator.hasNext():
+            match = iterator.next()
+            self.setFormat(match.capturedStart(), match.capturedLength(), self.formats['brace'])
 
 
 class MainWindowBase(QMainWindow):
@@ -611,6 +685,23 @@ class MainWindowBase(QMainWindow):
         self.config_text.setReadOnly(True)
         self.config_text.setMinimumHeight(300)
         self.config_text.setPlaceholderText("No applications locked yet...")
+        
+        # Apply JSON syntax highlighting
+        self.json_highlighter = JsonSyntaxHighlighter(self.config_text.document())
+        
+        # Set dark background for better contrast with syntax colors
+        self.config_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #abb2bf;
+                border: 1px solid #333333;
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                font-size: 11pt;
+            }
+        """)
+        
         config_layout.addWidget(self.config_text)
         
         # Description
@@ -681,6 +772,9 @@ class MainWindowBase(QMainWindow):
         tab_layout.addWidget(scroll_area)
         
         self.tabs.addTab(config_tab, "Config")
+        
+        # Initial update of config display
+        self.update_config_display()
         
     def create_settings_tab(self):
         """Create Settings tab"""
@@ -1115,7 +1209,7 @@ class MainWindowBase(QMainWindow):
             print(f"Error saving applications config: {e}")
     
     def update_config_display(self):
-        """Update the config display in Config tab"""
+        """Update the config display in Config tab - show raw JSON"""
         config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
         
         if os.path.exists(config_file):
@@ -1123,20 +1217,18 @@ class MainWindowBase(QMainWindow):
                 with open(config_file, 'r') as f:
                     config_data = json.load(f)
                 
-                # Format the display
-                display_text = f"Applications Locked: {len(config_data)}\n"
-                display_text += "=" * 50 + "\n\n"
-                
-                for i, (app_name, app_data) in enumerate(config_data.items(), 1):
-                    display_text += f"{i}. {app_name}\n"
-                    display_text += f"   Path: {app_data['path']}\n"
-                    display_text += f"   Unlocked: {app_data.get('unlock_count', 0)} times\n\n"
-                
-                self.config_text.setPlainText(display_text)
+                # Display raw JSON with proper formatting
+                raw_json = json.dumps(config_data, indent=4)
+                self.config_text.setPlainText(raw_json)
+                print(f"[Config Display] Updated with {len(config_data)} apps")
             except Exception as e:
-                self.config_text.setPlainText(f"Error loading config: {e}")
+                error_msg = f"Error loading config: {e}"
+                self.config_text.setPlainText(error_msg)
+                print(f"[Config Display] {error_msg}")
         else:
-            self.config_text.setPlainText("No applications locked yet...")
+            empty_msg = "No configuration file found. Add applications to create config."
+            self.config_text.setPlainText(empty_msg)
+            print(f"[Config Display] {empty_msg}")
     
     def load_applications_config(self):
         """Load applications configuration from JSON file"""
@@ -1163,6 +1255,10 @@ class MainWindowBase(QMainWindow):
             
             self.update_app_count()
             print(f"Applications config loaded: {len(config_data)} apps")
+            
+            # Update config display to show the loaded apps (if config tab has been created)
+            if hasattr(self, 'config_text'):
+                self.update_config_display()
         except Exception as e:
             print(f"Error loading applications config: {e}")
         
@@ -1459,12 +1555,21 @@ class MainWindowBase(QMainWindow):
         
         if file_path:
             try:
-                # Export configuration (placeholder - will need ConfigManager integration)
-                import json
+                # Build applications list from current data
+                applications = []
+                for app_name, app_data in self.app_list_widget.apps_data.items():
+                    applications.append({
+                        'name': app_name,
+                        'path': app_data['path'],
+                        'unlock_count': app_data.get('unlock_count', 0),
+                        'date_added': app_data.get('date_added', None)
+                    })
+                
+                # Export configuration with all data
                 config_data = {
                     'version': self.version,
                     'settings': self.settings_panel.get_settings() if hasattr(self, 'settings_panel') else {},
-                    'applications': []  # Will be populated when app_manager is integrated
+                    'applications': applications
                 }
                 
                 with open(file_path, 'w') as f:
@@ -1485,16 +1590,36 @@ class MainWindowBase(QMainWindow):
         
         if file_path:
             try:
-                # Import configuration (placeholder - will need ConfigManager integration)
-                import json
                 with open(file_path, 'r') as f:
                     config_data = json.load(f)
                 
-                # Apply imported settings
-                if 'settings' in config_data and hasattr(self, 'settings_panel'):
-                    # Will be implemented when settings panel supports loading
-                    pass
+                # Validate config structure
+                if 'applications' not in config_data:
+                    self.show_message("Error", "Invalid configuration file: missing 'applications' key", "error")
+                    return
                 
-                self.show_message("Success", f"Configuration imported from:\n{file_path}", "success")
+                # Clear current applications
+                self.app_list_widget.apps_data.clear()
+                
+                # Import applications
+                imported_count = 0
+                for app in config_data.get('applications', []):
+                    app_name = app.get('name')
+                    app_path = app.get('path')
+                    
+                    if app_name and app_path:
+                        self.app_list_widget.add_app(
+                            app_name,
+                            app_path,
+                            unlock_count=app.get('unlock_count', 0),
+                            date_added=app.get('date_added', None)
+                        )
+                        imported_count += 1
+                
+                # Save the imported config
+                self.save_applications_config()
+                self.update_app_count()
+                
+                self.show_message("Success", f"Imported {imported_count} application(s) from:\n{file_path}", "success")
             except Exception as e:
                 self.show_message("Error", f"Failed to import configuration:\n{e}", "error")
