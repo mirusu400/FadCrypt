@@ -7,7 +7,7 @@ import webbrowser
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit, 
-    QFileDialog, QSystemTrayIcon
+    QFileDialog, QSystemTrayIcon, QMenu, QApplication
 )
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QRegularExpression
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase, QSyntaxHighlighter, QTextCharFormat, QColor
@@ -743,6 +743,9 @@ class MainWindowBase(QMainWindow):
                 padding: 8px 20px;
                 border-radius: 5px;
             }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
         """)
         export_button.clicked.connect(self.on_export_config)
         button_layout.addWidget(export_button)
@@ -756,12 +759,117 @@ class MainWindowBase(QMainWindow):
                 padding: 8px 20px;
                 border-radius: 5px;
             }
+            QPushButton:hover {
+                background-color: #1976d2;
+            }
         """)
         import_button.clicked.connect(self.on_import_config)
         button_layout.addWidget(import_button)
         
         button_layout.addStretch()
         config_layout.addLayout(button_layout)
+        
+        # Separator
+        separator3 = QFrame()
+        separator3.setFrameShape(QFrame.Shape.HLine)
+        separator3.setFrameShadow(QFrame.Shadow.Sunken)
+        config_layout.addWidget(separator3)
+        
+        # File Locations Section
+        locations_title = QLabel("📁 File Locations")
+        locations_title.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        config_layout.addWidget(locations_title)
+        
+        locations_desc = QLabel("Click on any path to open in file manager. Right-click to copy to clipboard.")
+        locations_desc.setWordWrap(True)
+        locations_desc.setStyleSheet("color: gray; font-size: 9pt;")
+        config_layout.addWidget(locations_desc)
+        
+        # Create clickable path labels
+        from PyQt6.QtGui import QCursor
+        import subprocess
+        
+        def create_path_label(label_text, path):
+            """Create a clickable path label with context menu"""
+            container = QWidget()
+            layout = QHBoxLayout(container)
+            layout.setContentsMargins(10, 5, 10, 5)
+            
+            # Label text
+            name_label = QLabel(label_text)
+            name_label.setStyleSheet("color: #e5e7eb; font-weight: bold;")
+            layout.addWidget(name_label)
+            
+            # Path label (clickable)
+            path_label = QLabel(path)
+            path_label.setStyleSheet("""
+                QLabel {
+                    color: #3b82f6;
+                    text-decoration: underline;
+                }
+                QLabel:hover {
+                    color: #60a5fa;
+                }
+            """)
+            path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            path_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            
+            # Click handler to open in file manager
+            def open_in_file_manager():
+                try:
+                    if sys.platform.startswith('win'):
+                        # Windows: open in Explorer
+                        if os.path.isfile(path):
+                            subprocess.Popen(['explorer', '/select,', path])
+                        else:
+                            subprocess.Popen(['explorer', path])
+                    else:
+                        # Linux: use xdg-open or nautilus
+                        subprocess.Popen(['xdg-open', path])
+                except Exception as e:
+                    print(f"Error opening path: {e}")
+            
+            # Context menu for copying
+            def show_context_menu(event):
+                if event.button() == Qt.MouseButton.RightButton:
+                    menu = QMenu()
+                    menu.setStyleSheet("""
+                        QMenu {
+                            background-color: #1a1a1a;
+                            color: #e5e7eb;
+                            border: 1px solid #333333;
+                        }
+                        QMenu::item:selected {
+                            background-color: #3b82f6;
+                        }
+                    """)
+                    copy_action = menu.addAction("📋 Copy Path")
+                    action = menu.exec(QCursor.pos())
+                    if action == copy_action:
+                        QApplication.clipboard().setText(path)
+            
+            path_label.mousePressEvent = lambda e: show_context_menu(e) if e.button() == Qt.MouseButton.RightButton else open_in_file_manager()
+            
+            layout.addWidget(path_label)
+            layout.addStretch()
+            
+            return container
+        
+        # Get actual paths - will use platform-specific paths
+        fadcrypt_folder = self.get_fadcrypt_folder()
+        backup_folder = self.get_backup_folder() if hasattr(self, 'get_backup_folder') else (
+            os.path.join(os.path.expanduser("~/.local/share/FadCrypt/Backup"))
+            if not sys.platform.startswith('win')
+            else os.path.join(os.getenv('PROGRAMDATA', 'C:\\ProgramData'), 'FadCrypt', 'Backup')
+        )
+        
+        # Add path labels
+        config_layout.addWidget(create_path_label("Config Folder:", fadcrypt_folder))
+        config_layout.addWidget(create_path_label("Password File:", os.path.join(fadcrypt_folder, "encrypted_password.bin")))
+        config_layout.addWidget(create_path_label("Apps Config:", os.path.join(fadcrypt_folder, "apps_config.json")))
+        config_layout.addWidget(create_path_label("Settings File:", os.path.join(fadcrypt_folder, "settings.json")))
+        config_layout.addWidget(create_path_label("State File:", os.path.join(fadcrypt_folder, "monitoring_state.json")))
+        config_layout.addWidget(create_path_label("Backup Folder:", backup_folder))
         
         config_layout.addStretch()
         

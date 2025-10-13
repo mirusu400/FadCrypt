@@ -162,33 +162,11 @@ class SettingsPanel(QWidget):
         self.lock_tools_checkbox.setChecked(True)
         bottom_frame.addWidget(self.lock_tools_checkbox)
         
-        # File Locations Info
+        # Uninstall Cleanup
         separator3 = QFrame()
         separator3.setFrameShape(QFrame.Shape.HLine)
         separator3.setFrameShadow(QFrame.Shadow.Sunken)
         bottom_frame.addWidget(separator3)
-        
-        locations_title = QLabel("📁 File Locations")
-        locations_title.setStyleSheet("font-size: 11px; font-weight: bold;")
-        bottom_frame.addWidget(locations_title)
-        
-        locations_info = QLabel(
-            "Main Configuration Folder:\n"
-            "  ~/.FadCrypt/\n"
-            "  (Stores: config.json, encrypted_password.bin, state.json, settings.json)\n\n"
-            "Backup Folder:\n"
-            "  ~/.local/share/FadCrypt/Backup/\n"
-            "  (Stores: backup copies of critical files for recovery)"
-        )
-        locations_info.setStyleSheet("color: #888888;")
-        locations_info.setWordWrap(True)
-        bottom_frame.addWidget(locations_info)
-        
-        # Uninstall Cleanup
-        separator4 = QFrame()
-        separator4.setFrameShape(QFrame.Shape.HLine)
-        separator4.setFrameShadow(QFrame.Shadow.Sunken)
-        bottom_frame.addWidget(separator4)
         
         cleanup_title = QLabel("🔧 Uninstall Cleanup")
         cleanup_title.setStyleSheet("font-size: 11px; font-weight: bold;")
