@@ -17,9 +17,35 @@ class AddApplicationDialog(QDialog):
     def __init__(self, resource_path, parent=None):
         super().__init__(parent)
         self.resource_path = resource_path
+        self.parent_window = parent
         self.setWindowTitle("Add Application to Encrypt")
         self.setMinimumSize(420, 580)
         self.setModal(True)
+        
+        # Apply light dialog theme for better readability against dark main app
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2b2d3a;
+            }
+            QLabel {
+                color: #e5e7eb;
+            }
+            QGroupBox {
+                background-color: #353749;
+                border: 1px solid #4a4c5e;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding: 15px;
+                font-weight: bold;
+                color: #e5e7eb;
+            }
+            QGroupBox::title {
+                color: #e5e7eb;
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px 0 5px;
+            }
+        """)
         
         # Position on left edge
         screen_geometry = self.screen().geometry()
@@ -49,11 +75,11 @@ class AddApplicationDialog(QDialog):
         self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.drop_area.setStyleSheet("""
             QTextEdit {
-                background-color: #2b2b2b;
-                color: #4ade80;
+                background-color: #404050;
+                color: #93c5fd;
                 font-size: 12px;
                 font-weight: bold;
-                border: 2px dashed #4ade80;
+                border: 2px dashed #3b82f6;
                 border-radius: 5px;
                 padding: 10px;
             }
@@ -81,18 +107,19 @@ class AddApplicationDialog(QDialog):
             "For Name, use any readable name like 'Firefox'."
         )
         helper_label.setStyleSheet("""
-            color: #60a5fa;
+            color: #93c5fd;
             font-size: 9pt;
-            background-color: #1e3a5f;
+            background-color: #404050;
             padding: 10px;
             border-radius: 5px;
-            border-left: 3px solid #60a5fa;
+            border-left: 3px solid #3b82f6;
         """)
         helper_label.setWordWrap(True)
         manual_layout.addWidget(helper_label)
         
         # Name input
         name_label = QLabel("Name:")
+        name_label.setStyleSheet("background-color: transparent;")
         manual_layout.addWidget(name_label)
         
         self.name_entry = QLineEdit()
@@ -100,20 +127,21 @@ class AddApplicationDialog(QDialog):
         self.name_entry.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
-                border: 2px solid #4a4a4a;
+                border: 2px solid #4a4c5e;
                 border-radius: 5px;
-                background-color: #2b2b2b;
-                color: #ffffff;
+                background-color: #353749;
+                color: #e5e7eb;
                 font-size: 11pt;
             }
             QLineEdit:focus {
-                border: 2px solid #4ade80;
+                border: 2px solid #3b82f6;
             }
         """)
         manual_layout.addWidget(self.name_entry)
         
         # Path input
         path_label = QLabel("Path:")
+        path_label.setStyleSheet("background-color: transparent;")
         manual_layout.addWidget(path_label)
         
         self.path_entry = QLineEdit()
@@ -121,14 +149,14 @@ class AddApplicationDialog(QDialog):
         self.path_entry.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
-                border: 2px solid #4a4a4a;
+                border: 2px solid #4a4c5e;
                 border-radius: 5px;
-                background-color: #2b2b2b;
-                color: #ffffff;
+                background-color: #353749;
+                color: #e5e7eb;
                 font-size: 11pt;
             }
             QLineEdit:focus {
-                border: 2px solid #4ade80;
+                border: 2px solid #3b82f6;
             }
         """)
         manual_layout.addWidget(self.path_entry)
@@ -316,12 +344,29 @@ class AddApplicationDialog(QDialog):
                 self.name_entry.setText(os.path.basename(file_path))
     
     def scan_for_apps(self):
-        """Open app scanner (to be implemented later)"""
-        QMessageBox.information(
-            self,
-            "Scan for Apps",
-            "App scanner feature will be implemented in the next update!"
-        )
+        """Open app scanner dialog"""
+        from ui.dialogs.app_scanner_dialog import AppScannerDialog
+        
+        print("[AddDialog] Opening app scanner...")
+        scanner_dialog = AppScannerDialog(self)
+        scanner_dialog.apps_selected.connect(self.on_apps_scanned)
+        scanner_dialog.exec()
+    
+    def on_apps_scanned(self, selected_apps):
+        """Handle apps selected from scanner"""
+        if not selected_apps:
+            return
+        
+        # For add dialog, we'll add them through parent window
+        if self.parent_window and hasattr(self.parent_window, 'on_apps_scanned'):
+            self.parent_window.on_apps_scanned(selected_apps)
+            self.accept()  # Close the add dialog
+        else:
+            QMessageBox.information(
+                self,
+                "Apps Selected",
+                f"Selected {len(selected_apps)} apps. They will be added when you close this dialog."
+            )
     
     def save_application(self):
         """Save the application"""

@@ -151,6 +151,43 @@ class MainWindowBase(QMainWindow):
         # Set initial size
         self.resize(950, 700)
         
+        # Set darker app-wide stylesheet
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #0f0f0f;
+            }
+            QWidget {
+                background-color: #1a1a1a;
+                color: #ffffff;
+            }
+            QTabWidget::pane {
+                background-color: #1a1a1a;
+                border: 1px solid #2a2a2a;
+            }
+            QTabBar::tab {
+                background-color: #222222;
+                color: #ffffff;
+                padding: 10px 20px;
+                border: 1px solid #2a2a2a;
+            }
+            QTabBar::tab:selected {
+                background-color: #2a2a2a;
+                border-bottom: 3px solid #4ade80;
+            }
+            QTabBar::tab:hover {
+                background-color: #282828;
+            }
+            QScrollArea {
+                background-color: #1a1a1a;
+                border: none;
+            }
+            QTextEdit, QPlainTextEdit {
+                background-color: #222222;
+                color: #ffffff;
+                border: 1px solid #333333;
+            }
+        """)
+        
         # Set window icon
         icon_path = self.resource_path('img/icon.png')
         if os.path.exists(icon_path):
@@ -434,8 +471,15 @@ class MainWindowBase(QMainWindow):
         
         # Connect button panel signals
         self.button_panel.add_app_clicked.connect(self.add_application)
+        self.button_panel.edit_app_clicked.connect(self.edit_application)
+        self.button_panel.remove_app_clicked.connect(self.remove_application)
         self.button_panel.select_all_clicked.connect(self.select_all_apps)
         self.button_panel.deselect_all_clicked.connect(self.deselect_all_apps)
+        
+        # Connect app list widget signals
+        self.app_list_widget.app_edited.connect(self.handle_app_edited)
+        self.app_list_widget.app_removed.connect(self.handle_app_removed)
+        self.app_list_widget.app_lock_toggled.connect(self.handle_lock_toggled)
         
         apps_layout.addWidget(self.button_panel)
         
@@ -741,6 +785,125 @@ class MainWindowBase(QMainWindow):
         
         self.app_list_widget.clearSelection()
         self.show_message("Success", "All applications deselected.", "success")
+    
+    def scan_for_applications(self):
+        """Open App Scanner dialog to scan system for installed apps"""
+        from ui.dialogs.app_scanner_dialog import AppScannerDialog
+        
+        print("[MainWindow] Opening app scanner dialog...")
+        dialog = AppScannerDialog(self)
+        dialog.apps_selected.connect(self.on_apps_scanned)
+        dialog.exec()
+    
+    def on_apps_scanned(self, selected_apps):
+        """Handle batch adding of scanned applications"""
+        added_count = 0
+        skipped_count = 0
+        
+        for app in selected_apps:
+            app_name = app['name']
+            app_path = app['path']
+            
+            # Check if already added
+            if app_name in self.app_list_widget.apps_data:
+                print(f"[Scanner] Skipping duplicate: {app_name}")
+                skipped_count += 1
+                continue
+            
+            # Add to the grid
+            self.app_list_widget.add_app(app_name, app_path, unlock_count=0)
+            added_count += 1
+        
+        if added_count > 0:
+            self.save_applications_config()
+            self.update_app_count()
+        
+        # Show summary
+        message = f"✅ Added {added_count} application(s)"
+        if skipped_count > 0:
+            message += f"\n⚠️ Skipped {skipped_count} duplicate(s)"
+        
+        self.show_message("Scan Complete", message, "success")
+        print(f"[Scanner] Added: {added_count}, Skipped: {skipped_count}")
+    
+    def edit_application(self):
+        """Edit selected application"""
+        selected_apps = self.app_list_widget.get_selected_apps()
+        
+        if not selected_apps:
+            self.show_message("Info", "Please select an application to edit.", "info")
+            return
+        
+        if len(selected_apps) > 1:
+            self.show_message("Info", "Please select only one application to edit.", "info")
+            return
+        
+        app_name = selected_apps[0]
+        app_data = self.app_list_widget.apps_data[app_name]
+        app_path = app_data['path']
+        
+        # Open edit dialog
+        from ui.dialogs.edit_application_dialog import EditApplicationDialog
+        dialog = EditApplicationDialog(app_name, app_path, self)
+        dialog.app_updated.connect(self.on_application_edited)
+        dialog.exec()
+    
+    def on_application_edited(self, old_name, new_name, new_path):
+        """Handle application edit from dialog"""
+        # Check if new name conflicts with existing app (excluding the old one)
+        if new_name != old_name and new_name in self.app_list_widget.apps_data:
+            self.show_message("Error", f"An application named '{new_name}' already exists.", "error")
+            return
+        
+        # Get old app data
+        old_data = self.app_list_widget.apps_data.get(old_name)
+        if not old_data:
+            print(f"[Edit] Error: Could not find old app data for '{old_name}'")
+            return
+        
+        # Preserve unlock count
+        unlock_count = old_data.get('unlock_count', 0)
+        
+        # Remove old entry
+        self.app_list_widget.remove_app(old_name)
+        
+        # Add new entry
+        self.app_list_widget.add_app(new_name, new_path, unlock_count=unlock_count)
+        
+        # Save config
+        self.save_applications_config()
+        self.update_app_count()
+        
+        self.show_message("Success", f"Application updated successfully:\n'{old_name}' → '{new_name}'", "success")
+        print(f"[Edit] Updated: '{old_name}' -> '{new_name}', path: '{new_path}'")
+    
+    def handle_app_edited(self, old_name, new_name, new_path):
+        """Handle app edit from context menu (app_list_widget signal)"""
+        # Reuse the edit dialog
+        app_data = self.app_list_widget.apps_data.get(old_name)
+        if not app_data:
+            return
+        
+        from ui.dialogs.edit_application_dialog import EditApplicationDialog
+        dialog = EditApplicationDialog(old_name, app_data['path'], self)
+        dialog.app_updated.connect(self.on_application_edited)
+        dialog.exec()
+    
+    def handle_app_removed(self, app_name):
+        """Handle app removal from context menu (app_list_widget signal)"""
+        # The app is already removed from the widget, just save config
+        self.save_applications_config()
+        self.update_app_count()
+        self.show_message("Success", f"Application '{app_name}' removed.", "success")
+        print(f"[Remove] Removed app: {app_name}")
+    
+    def handle_lock_toggled(self, app_name, is_locked):
+        """Handle lock toggle from context menu (app_list_widget signal)"""
+        print(f"[LockToggle] {app_name} is now {'locked' if is_locked else 'unlocked'}")
+        # Lock state is already updated in widget, just save config
+        self.save_applications_config()
+        status = "locked" if is_locked else "unlocked"
+        self.show_message("Success", f"Application '{app_name}' is now {status}.", "success")
     
     def save_applications_config(self):
         """Save applications configuration to JSON file"""

@@ -50,6 +50,12 @@ class AppCard(QFrame):
         # Icon
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("background-color: transparent;")
+        try:
+            icon_label.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            icon_label.setAutoFillBackground(False)
+        except Exception:
+            pass
         
         # Try to load app icon
         pixmap = self.load_app_icon()
@@ -58,7 +64,7 @@ class AppCard(QFrame):
         else:
             # Fallback emoji
             icon_label.setText("📦")
-            icon_label.setStyleSheet("font-size: 48px;")
+            icon_label.setStyleSheet("font-size: 48px; background-color: transparent;")
         
         layout.addWidget(icon_label)
         
@@ -70,6 +76,7 @@ class AppCard(QFrame):
             color: #ffffff;
             font-size: 12pt;
             font-weight: bold;
+            background-color: transparent;
         """)
         layout.addWidget(name_label)
         
@@ -79,6 +86,7 @@ class AppCard(QFrame):
         stats_label.setStyleSheet("""
             color: #888888;
             font-size: 9pt;
+            background-color: transparent;
         """)
         layout.addWidget(stats_label)
         
@@ -214,6 +222,11 @@ class AppCard(QFrame):
 class AppGridWidget(QWidget):
     """Grid widget for displaying application cards"""
     
+    # Signals for parent communication
+    app_edited = pyqtSignal(str, str, str)  # old_name, new_name, new_path
+    app_removed = pyqtSignal(str)  # app_name
+    app_lock_toggled = pyqtSignal(str, bool)  # app_name, is_locked
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.apps_data = {}  # {app_name: {'path': path, 'unlock_count': count}}
@@ -233,12 +246,13 @@ class AppGridWidget(QWidget):
         scroll.setStyleSheet("""
             QScrollArea {
                 border: none;
-                background-color: #1e1e1e;
+                background-color: #0f0f0f;
             }
         """)
         
         # Container for grid
         self.container = QWidget()
+        self.container.setStyleSheet("background-color: #0f0f0f;")
         self.grid_layout = QGridLayout()
         self.grid_layout.setSpacing(15)
         self.grid_layout.setContentsMargins(10, 10, 10, 10)
@@ -248,6 +262,56 @@ class AppGridWidget(QWidget):
         layout.addWidget(scroll)
         
         self.setLayout(layout)
+        
+        # Show empty state initially
+        self.empty_state_widget = None
+        self.show_empty_state()
+    
+    def show_empty_state(self):
+        """Show empty state message when no apps"""
+        if self.empty_state_widget is None:
+            self.empty_state_widget = QWidget()
+            empty_layout = QVBoxLayout()
+            empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_layout.setSpacing(15)
+            
+            # Icon
+            icon_label = QLabel("📭")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setStyleSheet("font-size: 72px;")
+            empty_layout.addWidget(icon_label)
+            
+            # Title
+            title_label = QLabel("No Applications Added")
+            title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title_label.setStyleSheet("""
+                color: #ffffff;
+                font-size: 18pt;
+                font-weight: bold;
+            """)
+            empty_layout.addWidget(title_label)
+            
+            # Description
+            desc_label = QLabel("Click the 'Add Application' button below to start\nprotecting your applications with encryption")
+            desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("""
+                color: #888888;
+                font-size: 11pt;
+            """)
+            empty_layout.addWidget(desc_label)
+            
+            self.empty_state_widget.setLayout(empty_layout)
+        
+        # Add to grid (center it by spanning columns)
+        self.grid_layout.addWidget(self.empty_state_widget, 0, 0, 1, 4, Qt.AlignmentFlag.AlignCenter)
+        self.empty_state_widget.show()
+    
+    def hide_empty_state(self):
+        """Hide empty state message"""
+        if self.empty_state_widget:
+            self.empty_state_widget.hide()
+            self.grid_layout.removeWidget(self.empty_state_widget)
     
     def add_app(self, app_name, app_path, unlock_count=0):
         """Add an application to the grid"""
@@ -267,21 +331,56 @@ class AppGridWidget(QWidget):
     def refresh_grid(self):
         """Refresh the grid display"""
         # Clear existing widgets
-        for i in reversed(range(self.grid_layout.count())): 
-            self.grid_layout.itemAt(i).widget().setParent(None)
+        for i in reversed(range(self.grid_layout.count())):
+            item = self.grid_layout.itemAt(i)
+            if item:
+                widget = item.widget()
+                if widget:
+                    widget.setParent(None)
         
         self.app_cards.clear()
         
+        # Show empty state if no apps
         if not self.apps_data:
-            # Show empty state
-            empty_label = QLabel("No applications added yet.\nClick '➕ Add Application' to get started!")
-            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty_label.setStyleSheet("""
-                color: #888888;
-                font-size: 14pt;
-                padding: 50px;
+            self.show_empty_state()
+            return
+        else:
+            self.hide_empty_state()
+        
+        if not self.apps_data:
+            # Show empty state with icon
+            empty_widget = QWidget()
+            empty_layout = QVBoxLayout()
+            empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_layout.setSpacing(20)
+            
+            # Icon
+            icon_label = QLabel("📦")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            icon_label.setStyleSheet("font-size: 72px;")
+            empty_layout.addWidget(icon_label)
+            
+            # Text
+            text_label = QLabel("No Applications Yet")
+            text_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            text_label.setStyleSheet("""
+                color: #ffffff;
+                font-size: 18pt;
+                font-weight: bold;
             """)
-            self.grid_layout.addWidget(empty_label, 0, 0, 1, 3)
+            empty_layout.addWidget(text_label)
+            
+            # Instruction
+            instruction_label = QLabel("Click '➕ Add Application' to add your first app")
+            instruction_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            instruction_label.setStyleSheet("""
+                color: #888888;
+                font-size: 13pt;
+            """)
+            empty_layout.addWidget(instruction_label)
+            
+            empty_widget.setLayout(empty_layout)
+            self.grid_layout.addWidget(empty_widget, 0, 0, 1, 3)
         else:
             # Create grid of cards (3 columns)
             columns = 3
