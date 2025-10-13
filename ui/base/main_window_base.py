@@ -1652,26 +1652,90 @@ class MainWindowBase(QMainWindow):
             print(f"Error loading monitoring state: {e}")
             self.monitoring_state = {'unlocked_apps': []}
     
+    def _launch_app_after_unlock(self, app_name, app_path):
+        """Launch application after successful password unlock"""
+        import subprocess
+        import platform
+        
+        try:
+            print(f"🚀 Launching {app_name}...")
+            
+            # Determine if it's a known GUI app
+            gui_apps = ['chrome', 'chromium', 'firefox', 'brave', 'opera', 'edge', 
+                       'vivaldi', 'code', 'slack', 'discord', 'telegram',
+                       'vlc', 'gimp', 'libreoffice', 'thunderbird', 'zoom', 'teams', 
+                       'obs', 'steam', 'nautilus', 'dolphin', 'kate', 'gedit', 
+                       'kdenlive', 'krita', 'inkscape', 'blender', 'audacity', 
+                       'shotcut', 'pycharm', 'eclipse', 'intellij', 'sublime', 
+                       'virtualbox', 'postman', 'docker', 'filezilla', 'wireshark', 
+                       'gparted', 'transmission', 'remmina']
+            
+            is_gui_app = any(gui_app in app_path.lower() or gui_app in app_name.lower() 
+                            for gui_app in gui_apps)
+            
+            if platform.system() == "Linux":
+                # Linux launch logic
+                if app_path.lower().endswith('.desktop'):
+                    # Launch .desktop files with xdg-open
+                    subprocess.Popen(['xdg-open', app_path], 
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                elif app_path.lower().endswith('.py'):
+                    # Launch Python scripts in terminal
+                    subprocess.Popen(['gnome-terminal', '--', 'python3', app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                elif is_gui_app:
+                    # Launch GUI apps directly
+                    subprocess.Popen([app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                elif any(bin_dir in app_path for bin_dir in ['/usr/bin', '/bin', '/usr/local/bin']):
+                    # Launch CLI tools in terminal
+                    subprocess.Popen(['gnome-terminal', '--', app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                else:
+                    # Launch other apps directly (assume GUI)
+                    subprocess.Popen([app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+            else:
+                # Windows launch logic
+                if app_path.lower().endswith('.py'):
+                    # Launch Python scripts
+                    subprocess.Popen(['python', app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                else:
+                    # Launch executables
+                    subprocess.Popen([app_path],
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+            
+            print(f"✅ Successfully launched {app_name}")
+            
+        except Exception as e:
+            print(f"❌ Error launching {app_name}: {e}")
+            self.show_message("Launch Error", f"Failed to start {app_name}:\n{e}", "error")
+    
     def show_password_prompt_for_app(self, app_name, app_path):
         """Show password prompt when blocked app is detected (called from monitoring thread)"""
         print(f"\n🔒 Blocked app detected: {app_name}")
         print(f"   Path: {app_path}")
         
-        # Emit signal to show dialog in main thread (thread-safe)
-        self.pending_password_result = None
+        # Emit signal to show dialog in main thread (NON-BLOCKING - monitoring continues)
         self.password_prompt_requested.emit(app_name, app_path)
         
-        # Wait for result (blocking the monitoring thread until password is entered)
-        import time
-        timeout = 60  # 60 second timeout
-        elapsed = 0
-        while self.pending_password_result is None and elapsed < timeout:
-            time.sleep(0.1)
-            elapsed += 0.1
-        
-        result = self.pending_password_result
-        self.pending_password_result = None
-        return result if result is not None else False
+        # DO NOT WAIT - return immediately so monitoring thread continues killing processes
+        # The dialog will handle unlocking asynchronously when user enters password
     
     def show_password_prompt_for_app_sync(self, app_name, app_path):
         """Show password dialog in main thread (thread-safe)"""
@@ -1689,16 +1753,28 @@ class MainWindowBase(QMainWindow):
         if password and self.password_manager.verify_password(password):
             print(f"✅ Password correct - Unlocking {app_name}")
             
+            # Add to unlocked apps (the monitoring thread will see this and stop blocking)
+            state = self.get_monitoring_state()
+            unlocked_apps = state.get('unlocked_apps', [])
+            if app_name not in unlocked_apps:
+                unlocked_apps.append(app_name)
+                self.set_monitoring_state('unlocked_apps', unlocked_apps)
+            
             # Increment unlock count
             if app_name in self.app_list_widget.apps_data:
                 self.app_list_widget.apps_data[app_name]['unlock_count'] = \
                     self.app_list_widget.apps_data[app_name].get('unlock_count', 0) + 1
                 self.save_applications_config()
             
-            self.pending_password_result = True
+            # Launch the app after successful unlock
+            self._launch_app_after_unlock(app_name, app_path)
+            
+            # Remove from showing dialog set
+            self.unified_monitor.remove_from_showing_dialog(app_name)
         else:
             print(f"❌ Password incorrect - Keeping {app_name} locked")
-            self.pending_password_result = False
+            # Remove from showing dialog set even if password wrong
+            self.unified_monitor.remove_from_showing_dialog(app_name)
         
     def on_readme_clicked(self):
         """Handle Read Me button click - show fullscreen dialog"""

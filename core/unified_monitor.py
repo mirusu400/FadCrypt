@@ -233,17 +233,29 @@ class UnifiedMonitor:
             app_processes: List of Process objects to kill
             app_name: Name of the app (for logging)
         """
+        killed_count = 0
         for proc in app_processes:
             try:
+                proc_pid = proc.pid
+                proc_name = proc.name()
+                
                 # Kill direct children first (non-recursive for performance)
                 for child in proc.children(recursive=False):
                     try:
+                        print(f"   [KILL] Terminating child process: {child.name()} (PID: {child.pid})")
                         child.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        print(f"   [SKIP] Could not kill child {child.pid}: {e}")
                         pass
+                
+                print(f"   [KILL] Terminating process: {proc_name} (PID: {proc_pid})")
                 proc.kill()
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                killed_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                print(f"   [SKIP] Could not kill process: {e}")
                 pass
+        
+        print(f"   [SUMMARY] Terminated {killed_count}/{len(app_processes)} processes for {app_name}")
     
     def _unified_monitor_loop(self, applications: List[Dict[str, str]]):
         """
@@ -304,27 +316,17 @@ class UnifiedMonitor:
                         
                         if app_name not in unlocked_apps:
                             if app_name not in self.apps_showing_dialog:
-                                # Block the app
-                                if self.enable_profiling:
-                                    print(f"[BLOCK] {app_name}: terminating {len(app_processes)} processes")
-                                
+                                # Block the app (first detection)
+                                print(f"[BLOCK] {app_name}: terminating {len(app_processes)} processes")
                                 self._block_processes(app_processes, app_name)
                                 
-                                # Show password dialog
+                                # Show password dialog (NON-BLOCKING - dialog runs async in main thread)
                                 self.apps_showing_dialog.add(app_name)
-                                password_correct = self.show_dialog(app_name, app_path)
-                                
-                                # Handle password result
-                                if password_correct:
-                                    # Add to unlocked apps
-                                    unlocked_apps.append(app_name)
-                                    self.set_state('unlocked_apps', unlocked_apps)
-                                    print(f"[UNLOCK] {app_name} unlocked successfully")
-                                
-                                # Remove from showing dialog set
-                                self.apps_showing_dialog.discard(app_name)
+                                self.show_dialog(app_name, app_path)
+                                # Dialog completion handler will add to unlocked_apps and call remove_from_showing_dialog()
                             else:
                                 # Kill additional processes while dialog is showing
+                                print(f"[BLOCK] {app_name}: terminating {len(app_processes)} additional processes (dialog showing)")
                                 self._block_processes(app_processes, app_name)
                         else:
                             # App is unlocked - reset no-process counter
