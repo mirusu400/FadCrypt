@@ -2,11 +2,12 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QScrollArea, QFrame, QGridLayout
+    QScrollArea, QFrame, QGridLayout, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QIcon, QMouseEvent
+from PyQt6.QtGui import QPixmap, QIcon, QMouseEvent, QCursor
 import os
+import subprocess
 
 
 class AppCard(QFrame):
@@ -14,6 +15,7 @@ class AppCard(QFrame):
     
     clicked = pyqtSignal(str)  # app_name
     double_clicked = pyqtSignal(str)  # app_name
+    context_menu_requested = pyqtSignal(str, object)  # app_name, position
     
     def __init__(self, app_name, app_path, unlock_count=0, parent=None):
         super().__init__(parent)
@@ -210,6 +212,8 @@ class AppCard(QFrame):
         """Handle mouse click"""
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.app_name)
+        elif event.button() == Qt.MouseButton.RightButton:
+            self.context_menu_requested.emit(self.app_name, event.globalPosition().toPoint())
         super().mousePressEvent(event)
     
     def mouseDoubleClickEvent(self, event: QMouseEvent):
@@ -395,6 +399,7 @@ class AppGridWidget(QWidget):
                 )
                 card.clicked.connect(self.on_card_clicked)
                 card.double_clicked.connect(self.on_card_double_clicked)
+                card.context_menu_requested.connect(self.show_context_menu)
                 
                 self.grid_layout.addWidget(card, row, col)
                 self.app_cards[app_name] = card
@@ -420,7 +425,86 @@ class AppGridWidget(QWidget):
     def on_card_double_clicked(self, app_name):
         """Handle card double click - could open edit dialog"""
         print(f"Double clicked: {app_name}")
-        # TODO: Implement edit dialog
+        # Emit signal to parent for edit
+        app_data = self.apps_data.get(app_name)
+        if app_data:
+            self.app_edited.emit(app_name, app_name, app_data['path'])
+    
+    def show_context_menu(self, app_name, position):
+        """Show right-click context menu for an app card"""
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #1a1a1a;
+                color: #e5e7eb;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 8px 20px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #3b82f6;
+            }
+        """)
+        
+        # Edit action
+        edit_action = menu.addAction("✏️  Edit Application")
+        edit_action.triggered.connect(lambda: self.request_edit_app(app_name))
+        
+        # Remove action
+        remove_action = menu.addAction("🗑️  Remove Application")
+        remove_action.triggered.connect(lambda: self.request_remove_app(app_name))
+        
+        menu.addSeparator()
+        
+        # Open file location
+        open_location_action = menu.addAction("📁 Open File Location")
+        open_location_action.triggered.connect(lambda: self.open_file_location(app_name))
+        
+        menu.exec(position)
+    
+    def request_edit_app(self, app_name):
+        """Request to edit application (signal to parent)"""
+        app_data = self.apps_data.get(app_name)
+        if app_data:
+            print(f"[AppGrid] Requesting edit for: {app_name}")
+            self.app_edited.emit(app_name, app_name, app_data['path'])
+    
+    def request_remove_app(self, app_name):
+        """Request to remove application (signal to parent)"""
+        print(f"[AppGrid] Requesting removal for: {app_name}")
+        self.app_removed.emit(app_name)
+    
+    def open_file_location(self, app_name):
+        """Open the file manager at the application's location"""
+        app_data = self.apps_data.get(app_name)
+        if not app_data:
+            return
+        
+        app_path = app_data['path']
+        if not os.path.exists(app_path):
+            print(f"File not found: {app_path}")
+            return
+        
+        # Get directory containing the file
+        file_dir = os.path.dirname(app_path)
+        
+        try:
+            # Try xdg-open first (works on most Linux DEs)
+            subprocess.Popen(['xdg-open', file_dir])
+        except:
+            try:
+                # Fallback to nautilus (GNOME)
+                subprocess.Popen(['nautilus', file_dir])
+            except:
+                try:
+                    # Fallback to dolphin (KDE)
+                    subprocess.Popen(['dolphin', file_dir])
+                except:
+                    print(f"Could not open file manager for: {file_dir}")
     
     def selectAll(self):
         """Select all applications"""

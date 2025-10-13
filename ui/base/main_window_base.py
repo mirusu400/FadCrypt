@@ -506,6 +506,7 @@ class MainWindowBase(QMainWindow):
                 border: 2px solid #333333;
                 border-radius: 6px;
                 padding: 8px 12px;
+                padding-right: 30px;
                 min-width: 140px;
                 font-size: 12px;
             }
@@ -514,13 +515,19 @@ class MainWindowBase(QMainWindow):
             }
             QComboBox::drop-down {
                 border: none;
+                width: 25px;
             }
             QComboBox::down-arrow {
                 image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid #e5e7eb;
-                margin-right: 8px;
+                width: 0;
+                height: 0;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 7px solid #888888;
+                margin-right: 5px;
+            }
+            QComboBox::down-arrow:hover {
+                border-top-color: #e5e7eb;
             }
             QComboBox QAbstractItemView {
                 background-color: #1a1a1a;
@@ -1060,11 +1067,24 @@ class MainWindowBase(QMainWindow):
     
     def handle_app_removed(self, app_name):
         """Handle app removal from context menu (app_list_widget signal)"""
-        # The app is already removed from the widget, just save config
-        self.save_applications_config()
-        self.update_app_count()
-        self.show_message("Success", f"Application '{app_name}' removed.", "success")
-        print(f"[Remove] Removed app: {app_name}")
+        from PyQt6.QtWidgets import QMessageBox
+        
+        # Confirm removal
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Are you sure you want to remove '{app_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # Remove from widget
+            self.app_list_widget.remove_app(app_name)
+            # Save config
+            self.save_applications_config()
+            self.update_app_count()
+            self.show_message("Success", f"Application '{app_name}' removed.", "success")
+            print(f"[Remove] Removed app: {app_name}")
     
     def handle_lock_toggled(self, app_name, is_locked):
         """Handle lock toggle from context menu (app_list_widget signal)"""
