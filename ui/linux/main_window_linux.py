@@ -23,8 +23,24 @@ class MainWindowLinux(MainWindowBase):
     
     def setup_linux_specifics(self):
         """Initialize Linux-specific features"""
-        # TODO: Set up Linux-specific initialization
-        pass
+        # Check if autostart is currently enabled and update settings UI
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, self.update_autostart_ui)
+    
+    def update_autostart_ui(self):
+        """Update autostart checkbox based on current state"""
+        is_enabled = self.is_autostart_enabled_linux()
+        if hasattr(self, 'settings_panel'):
+            self.settings_panel.autostart_checkbox.setChecked(is_enabled)
+    
+    def handle_autostart_setting(self, enable):
+        """
+        Handle autostart setting change for Linux.
+        
+        Args:
+            enable: True to enable autostart, False to disable
+        """
+        self.setup_autostart_linux(enable)
     
     def setup_autostart_linux(self, enable=True):
         """

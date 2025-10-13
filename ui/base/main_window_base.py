@@ -57,9 +57,21 @@ class MainWindowBase(QMainWindow):
         # Initialize core managers - simplified for now
         self.crypto_manager = CryptoManager()
         
-        # Password file path
-        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        # Password file path - use platform-specific folder
+        fadcrypt_folder = self.get_fadcrypt_folder()
+        password_file = os.path.join(fadcrypt_folder, "encrypted_password.bin")
         self.password_manager = PasswordManager(password_file, self.crypto_manager)
+        
+        # Log important paths at startup
+        print("\n📁 FadCrypt File Locations:")
+        print(f"   Main Config Folder: {fadcrypt_folder}")
+        print(f"   Password File: {password_file}")
+        print(f"   Config File: {os.path.join(fadcrypt_folder, 'apps_config.json')}")
+        print(f"   Settings File: {os.path.join(fadcrypt_folder, 'settings.json')}")
+        print(f"   State File: {os.path.join(fadcrypt_folder, 'monitoring_state.json')}")
+        if hasattr(self, 'get_backup_folder'):
+            print(f"   Backup Folder: {self.get_backup_folder()}")
+        print()
         
         # Config manager (will be fully integrated later)
         self.config_manager = None
@@ -77,6 +89,12 @@ class MainWindowBase(QMainWindow):
         self.load_custom_font()
         
         # Initialize UI
+        # Initialize monitoring state
+        self.monitoring_state = {
+            'unlocked_apps': []
+        }
+        self.load_monitoring_state()
+        
         self.init_ui()
         
         # Initialize system tray after UI
@@ -570,13 +588,28 @@ class MainWindowBase(QMainWindow):
         settings = self.settings_panel.get_settings()
         
         # Update instance variables
-        self.password_dialog_style = settings.get('password_dialog_style', 'simple')
-        self.wallpaper_choice = settings.get('wallpaper_choice', 'default')
+        self.password_dialog_style = settings.get('dialog_style', 'simple')
+        self.wallpaper_choice = settings.get('wallpaper', 'default')
+        
+        # Handle autostart
+        autostart_enabled = settings.get('autostart', False)
+        self.handle_autostart_setting(autostart_enabled)
         
         # Save settings to file
         self.save_settings(settings)
         
-        print(f"Settings updated: style={self.password_dialog_style}, wallpaper={self.wallpaper_choice}")
+        print(f"Settings updated: style={self.password_dialog_style}, wallpaper={self.wallpaper_choice}, autostart={autostart_enabled}")
+    
+    def handle_autostart_setting(self, enable):
+        """
+        Handle autostart setting change. Platform-specific classes should override this.
+        
+        Args:
+            enable: True to enable autostart, False to disable
+        """
+        # Base implementation does nothing, platform-specific classes override
+        print(f"Autostart {'enabled' if enable else 'disabled'} (base implementation)")
+        pass
     
     def save_settings(self, settings):
         """Save settings to JSON file"""
@@ -871,15 +904,38 @@ class MainWindowBase(QMainWindow):
     
     def get_monitoring_state(self):
         """Get current monitoring state for UnifiedMonitor"""
-        # Return state dict with unlocked apps
-        return {
-            'unlocked_apps': []  # TODO: Implement state persistence
-        }
+        return self.monitoring_state.copy()
     
     def set_monitoring_state(self, key, value):
         """Save monitoring state"""
-        # TODO: Implement state persistence
+        self.monitoring_state[key] = value
+        self.save_monitoring_state()
         print(f"💾 State saved: {key} = {value}")
+    
+    def save_monitoring_state(self):
+        """Save monitoring state to JSON file"""
+        import json
+        state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        try:
+            with open(state_file, 'w') as f:
+                json.dump(self.monitoring_state, f, indent=4)
+        except Exception as e:
+            print(f"Error saving monitoring state: {e}")
+    
+    def load_monitoring_state(self):
+        """Load monitoring state from JSON file"""
+        import json
+        state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        try:
+            if os.path.exists(state_file):
+                with open(state_file, 'r') as f:
+                    self.monitoring_state = json.load(f)
+                    print(f"Loaded monitoring state: {len(self.monitoring_state.get('unlocked_apps', []))} unlocked apps")
+            else:
+                self.monitoring_state = {'unlocked_apps': []}
+        except Exception as e:
+            print(f"Error loading monitoring state: {e}")
+            self.monitoring_state = {'unlocked_apps': []}
     
     def show_password_prompt_for_app(self, app_name, app_path):
         """Show password prompt when blocked app is detected (called from monitoring thread)"""
@@ -938,7 +994,12 @@ class MainWindowBase(QMainWindow):
         """Handle create password button click"""
         password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
         
+        print(f"\n🔐 Create Password Request")
+        print(f"   Checking password file: {password_file}")
+        print(f"   File exists: {os.path.exists(password_file)}")
+        
         if os.path.exists(password_file):
+            print(f"   ⚠️  Password file already exists, cannot create")
             self.show_message("Info", "Password already exists. Use 'Change Password' to modify.", "info")
         else:
             password = ask_password(
@@ -951,14 +1012,21 @@ class MainWindowBase(QMainWindow):
             )
             if password:
                 try:
+                    print(f"   Creating password file at: {password_file}")
                     self.password_manager.create_password(password)
+                    print(f"   ✅ Password created successfully")
                     self.show_message("Success", "Password created successfully.", "success")
                 except Exception as e:
+                    print(f"   ❌ Error creating password: {e}")
                     self.show_message("Error", f"Failed to create password:\n{e}", "error")
         
     def on_change_password(self):
         """Handle change password button click"""
         password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        
+        print(f"\n🔄 Change Password Request")
+        print(f"   Checking password file: {password_file}")
+        print(f"   File exists: {os.path.exists(password_file)}")
         
         if os.path.exists(password_file):
             old_password = ask_password(
@@ -970,6 +1038,7 @@ class MainWindowBase(QMainWindow):
                 parent=self
             )
             if old_password and self.password_manager.verify_password(old_password):
+                print(f"   ✅ Old password verified")
                 new_password = ask_password(
                     "New Password",
                     "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
@@ -980,13 +1049,18 @@ class MainWindowBase(QMainWindow):
                 )
                 if new_password:
                     try:
+                        print(f"   Changing password at: {password_file}")
                         self.password_manager.change_password(old_password, new_password)
+                        print(f"   ✅ Password changed successfully")
                         self.show_message("Success", "Password changed successfully.", "success")
                     except Exception as e:
+                        print(f"   ❌ Error changing password: {e}")
                         self.show_message("Error", f"Failed to change password:\n{e}", "error")
             else:
+                print(f"   ❌ Old password verification failed")
                 self.show_message("Error", "Incorrect old password.", "error")
         else:
+            print(f"   ⚠️  No password file found")
             self.show_message("Oops!", "How do I change a password that doesn't exist? :(", "warning")
         
     def on_snake_game(self):

@@ -33,6 +33,10 @@ class PasswordManager:
         self.password_file = password_file_path
         self.crypto = crypto_manager or CryptoManager()
         self.cached_password: Optional[bytes] = None
+        
+        # Log initialization
+        print(f"[PasswordManager] Initialized with password file: {password_file_path}")
+        print(f"[PasswordManager] Password file exists: {os.path.exists(password_file_path)}")
     
     def create_password(self, password: str) -> bool:
         """
@@ -50,6 +54,8 @@ class PasswordManager:
         try:
             password_bytes = password.encode('utf-8')
             
+            print(f"[PasswordManager] Creating password at: {self.password_file}")
+            
             # Encrypt the password with itself
             success = self.crypto.encrypt_password_hash(
                 password=password_bytes,
@@ -59,14 +65,17 @@ class PasswordManager:
             
             if success:
                 self.cached_password = password_bytes
-                print("[PasswordManager] Master password created successfully")
+                print(f"[PasswordManager] ✅ Master password created successfully")
+                print(f"[PasswordManager] File now exists: {os.path.exists(self.password_file)}")
                 return True
             else:
-                print("[PasswordManager] Failed to create master password")
+                print("[PasswordManager] ❌ Failed to create master password")
                 return False
                 
         except Exception as e:
-            print(f"[PasswordManager] Error creating password: {e}")
+            print(f"[PasswordManager] ❌ Error creating password: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def verify_password(self, password: str) -> bool:
@@ -81,10 +90,12 @@ class PasswordManager:
         """
         try:
             if not os.path.exists(self.password_file):
-                print("[PasswordManager] Password file not found")
+                print(f"[PasswordManager] ⚠️  Password file not found: {self.password_file}")
                 return False
             
             password_bytes = password.encode('utf-8')
+            
+            print(f"[PasswordManager] Verifying password from: {self.password_file}")
             
             # Try to decrypt the password hash
             decrypted_hash = self.crypto.decrypt_password_hash(
@@ -93,6 +104,7 @@ class PasswordManager:
             )
             
             if decrypted_hash is None:
+                print("[PasswordManager] ❌ Decryption returned None")
                 return False
             
             # Compare with original password
@@ -100,14 +112,16 @@ class PasswordManager:
             
             if is_valid:
                 self.cached_password = password_bytes
-                print("[PasswordManager] Password verified successfully")
+                print("[PasswordManager] ✅ Password verified successfully")
             else:
-                print("[PasswordManager] Password verification failed")
+                print("[PasswordManager] ❌ Password verification failed (mismatch)")
             
             return is_valid
             
         except Exception as e:
-            print(f"[PasswordManager] Error verifying password: {e}")
+            print(f"[PasswordManager] ❌ Error verifying password: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def change_password(
