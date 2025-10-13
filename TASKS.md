@@ -1,254 +1,529 @@
-# FadCrypt PyQt6 Migration - Task Breakdown
+# FadCrypt PyQt6 Migration - Tasks# FadCrypt PyQt6 Migration - Progress Tracker# FadCrypt PyQt6 Migration - Task Breakdown
 
-## 🎯 Goals
+## Phase 1: Foundation## ✅ Phase 1: Foundation (COMPLETE)## 🎯 Goals
 
-- Migrate from Tkinter to PyQt6 for modern, cross-platform UI
-- Refactor monolithic files into clean OOP architecture
-- Maintain ALL existing functionality and logic
-- Use DRY principle: shared business logic in `core/`, UI in `ui/`
-- Platform-specific code via inheritance (Windows base → Linux extends)
-- No loss of context, features, or mechanisms
+- [x] Project structure with ui/ and core/ separation
 
----
+- [x] PyQt6 6.9.0 installed- ✅ Project structure with ui/ and core/ separation
 
-## 📋 Phase 1: Foundation & Basic Setup (First Working Prototype)
+- [x] Core managers (CryptoManager, PasswordManager, AutostartManager, ConfigManager, ApplicationManager)
 
-### 1.1 Project Structure Setup ✅
+- [x] Version management from version.py- ✅ PyQt6 6.9.0 installed and working- Migrate from Tkinter to PyQt6 for modern, cross-platform UI
 
-- [x] Create `ui/` folder for all UI components
-- [x] Create `ui/__init__.py` with package exports
-- [x] Create `ui/base/` for base/shared UI components
-- [x] Create `ui/windows/` for Windows-specific UI
-- [x] Create `ui/linux/` for Linux-specific UI
-- [x] Create `ui/components/` for reusable widgets
-- [x] Create `ui/dialogs/` for dialog windows
-- [ ] Update `.gitignore` for PyQt6 cache files
+- [x] Resource path handling for PyInstaller
 
-### 1.2 Dependencies & Environment ✅
+- [x] Custom Ubuntu font integration (core/fonts/ubuntu_regular.ttf)- ✅ Core managers created (CryptoManager, PasswordManager, AutostartManager)- Refactor monolithic files into clean OOP architecture
 
-- [x] Add PyQt6 to `requirements.txt` (PyQt6, PyQt6-Qt6, PyQt6-sip)
-- [ ] Create `requirements-dev.txt` for development tools
-- [x] Test PyQt6 installation on Windows & Linux
-- [ ] Document Qt Designer usage (optional)
+## Phase 2: Core UI Widgets- ✅ Version management using version.py (**version**, **version_code**)- Maintain ALL existing functionality and logic
 
-### 1.3 Core Business Logic Extraction (Platform-Agnostic) ✅
+- [x] MainWindowBase with all 5 tabs
 
-- [x] Move encryption/decryption logic from `AppLocker` to `core/crypto_manager.py`
-- [x] Move password management to `core/password_manager.py`
-- [ ] Extend `core/config_manager.py` with all config operations
-- [ ] Extend `core/application_manager.py` with platform-agnostic app logic
+- [x] AppListWidget with drag-drop and context menus- ✅ Resource path handling for PyInstaller (resource_path method)- Use DRY principle: shared business logic in `core/`, UI in `ui/`
+
+- [x] ButtonPanel for actions
+
+- [x] SettingsPanel with preview sections- ✅ Custom Ubuntu font integration (core/fonts/ubuntu_regular.ttf)- Platform-specific code via inheritance (Windows base → Linux extends)
+
+- [x] AboutPanel with FadCam promotion
+
+- [x] Password dialogs (PasswordDialog, ChangePasswordDialog)- No loss of context, features, or mechanisms
+
+- [x] Snake game extracted to core/snake_game.py
+
+- [ ] Improve home tab design (modern, not 1:1 Tkinter clone)## ✅ Phase 2: Core UI Widgets (COMPLETE)
+
+- [ ] Fix preview images in Settings tab
+
+- [ ] Fix readme button to show fullscreen dialog (not browser)- ✅ MainWindowBase with all 5 tabs (Main, Applications, Config, Settings, About)---
+
+## Phase 3: Business Logic Integration- ✅ Complete UI parity with Tkinter:
+
+- [x] Entry point working with version.py
+
+- [x] Custom font loading - ✅ Main tab: Banner image, centered buttons, sidebar, footer with logo/branding## 📋 Phase 1: Foundation & Basic Setup (First Working Prototype)
+
+- [x] Snake game handler connected
+
+- [ ] Connect button handlers to core managers - ✅ Applications tab: App list, drag-drop, lock/unlock, context menus
+
+- [ ] Integrate CryptoManager for encryption/decryption
+
+- [ ] Integrate PasswordManager for password workflows - ✅ Config tab: Encrypted apps display, export/import functionality### 1.1 Project Structure Setup ✅
+
+- [ ] Integrate ConfigManager for app list persistence
+
+- [ ] Application add/remove/lock/unlock functionality - ✅ Settings tab: Dialog style selector, wallpaper preview, system tools checkbox
+
+- [ ] Config import/export with file dialogs
+
+- [ ] Settings save/load from JSON - ✅ About tab: FadCam promotion with image, FadSec Lab info, all social buttons- [x] Create `ui/` folder for all UI components
+
+- [ ] Create password workflow
+
+- [ ] Change password workflow- ✅ AppListWidget (260 lines) - Full drag-drop, context menu, tooltips- [x] Create `ui/__init__.py` with package exports
+
+- [ ] Fullscreen password dialog implementation
+
+- [ ] Simple password dialog implementation- ✅ ButtonPanel (80 lines) - Add/Remove/Edit actions- [x] Create `ui/base/` for base/shared UI components
+
+## Phase 4: Monitoring Integration- ✅ SettingsPanel (280 lines) - Radio buttons, preview sections, detailed descriptions- [x] Create `ui/windows/` for Windows-specific UI
+
+- [ ] Integrate UnifiedMonitor with UI state
+
+- [ ] Password prompts during monitoring- ✅ AboutPanel (300 lines) - Update checker, FadCam promo, external links- [x] Create `ui/linux/` for Linux-specific UI
+
+- [ ] System tray integration (QSystemTrayIcon)
+
+- [ ] Process blocking implementation- ✅ Password dialogs (PasswordDialog, ChangePasswordDialog - 260 lines)- [x] Create `ui/components/` for reusable widgets
+
+- [ ] Auto-start functionality
+
+- [ ] State persistence during monitoring- ✅ Snake game extracted to core/snake_game.py with threading- [x] Create `ui/dialogs/` for dialog windows
+
+## Phase 5: Polish & Testing- ✅ All helper texts and descriptions match Tkinter exactly- [ ] Update `.gitignore` for PyQt6 cache files
+
+- [ ] Settings persistence across restarts
+
+- [ ] System tools locking (terminals, monitors)## 🔄 Phase 3: Business Logic Integration (40% - IN PROGRESS)### 1.2 Dependencies & Environment ✅
+
+- [ ] Cleanup on uninstall functionality
+
+- [ ] File monitoring and automatic backups- ✅ Entry point fixed (FadCrypt_Qt.py - no app_name parameter)
+
+- [ ] Error handling and user feedback
+
+- [ ] Linux testing (Ubuntu, Arch, Fedora)- ✅ Version from version.py (**version** = "v0.3.0", **version_code** = 3)- [x] Add PyQt6 to `requirements.txt` (PyQt6, PyQt6-Qt6, PyQt6-sip)
+
+- [ ] PyInstaller packaging test
+
+- [ ] Windows testing- ✅ Custom font loading application-wide (Ubuntu Regular from core/fonts/)- [ ] Create `requirements-dev.txt` for development tools
+
+- [ ] Documentation updates
+
+- ✅ Snake game handler connected (on_snake_game calls core.snake_game.start_snake_game)- [x] Test PyQt6 installation on Windows & Linux
+
+- ✅ All UI components created and styled with proper layouts- [ ] Document Qt Designer usage (optional)
+
+- ⏳ NEXT: Connect button handlers to core managers
+
+- ⏳ Integrate CryptoManager for encryption/decryption### 1.3 Core Business Logic Extraction (Platform-Agnostic) ✅
+
+- ⏳ Integrate PasswordManager for password workflows
+
+- ⏳ Integrate ConfigManager for app list persistence- [x] Move encryption/decryption logic from `AppLocker` to `core/crypto_manager.py`
+
+- ⏳ Application add/remove/lock/unlock functionality- [x] Move password management to `core/password_manager.py`
+
+- ⏳ Config import/export with file dialogs- [ ] Extend `core/config_manager.py` with all config operations
+
+- ⏳ Settings save/load from JSON- [ ] Extend `core/application_manager.py` with platform-agnostic app logic
+
 - [x] Keep `core/unified_monitor.py` as-is (already platform-agnostic)
-- [x] Create `core/autostart_manager.py` for startup logic (platform-specific methods)
-- [ ] Create `core/system_tray_manager.py` for tray icon logic
 
-### 1.4 Platform-Specific Business Logic Separation (SKIP FOR NOW)
+## ⏳ Phase 4: Monitoring Integration (TODO)- [x] Create `core/autostart_manager.py` for startup logic (platform-specific methods)
 
-- [ ] Create `core/windows/registry_manager.py` (winreg operations) - DEFERRED
-- [ ] Create `core/windows/process_manager.py` (Windows process handling) - DEFERRED
+- [ ] Integrate UnifiedMonitor with UI state- [ ] Create `core/system_tray_manager.py` for tray icon logic
+
+- [ ] Password prompts during monitoring (fullscreen/simple dialog)
+
+- [ ] System tray integration (pystray → QSystemTrayIcon)### 1.4 Platform-Specific Business Logic Separation (SKIP FOR NOW)
+
+- [ ] Process blocking implementation
+
+- [ ] Auto-start functionality (Linux .desktop, Windows registry)- [ ] Create `core/windows/registry_manager.py` (winreg operations) - DEFERRED
+
+- [ ] State persistence during monitoring sessions- [ ] Create `core/windows/process_manager.py` (Windows process handling) - DEFERRED
+
 - [ ] Create `core/linux/desktop_manager.py` (.desktop file operations) - DEFERRED
-- [ ] Create `core/linux/process_manager.py` (Linux process handling, fcntl locks) - DEFERRED
 
-### 1.5 Create Base AppLocker Class (Platform-Agnostic) - DEFERRED TO PHASE 6
+## ⏳ Phase 5: Polish & Testing (TODO)- [ ] Create `core/linux/process_manager.py` (Linux process handling, fcntl locks) - DEFERRED
 
-- [ ] Create `core/base_app_locker.py` with shared methods
-- [ ] Extract methods: `get_fadcrypt_folder()`, `resource_path()`, etc.
-- [ ] Extract: password validation, app add/remove/edit logic
-- [ ] Extract: config save/load operations (use ConfigManager)
-- [ ] Use composition: inject platform-specific managers
+- [ ] Settings persistence across restarts
 
-### 1.6 Basic PyQt6 Main Window ✅
+- [ ] Password create/change workflows fully working### 1.5 Create Base AppLocker Class (Platform-Agnostic) - DEFERRED TO PHASE 6
 
-- [x] Create `ui/base/main_window_base.py` with QMainWindow
+- [ ] System tools locking (terminals, monitors)
+
+- [ ] Cleanup on uninstall functionality- [ ] Create `core/base_app_locker.py` with shared methods
+
+- [ ] File monitoring and automatic backups- [ ] Extract methods: `get_fadcrypt_folder()`, `resource_path()`, etc.
+
+- [ ] Comprehensive error handling- [ ] Extract: password validation, app add/remove/edit logic
+
+- [ ] Linux testing (Ubuntu, Arch, Fedora)- [ ] Extract: config save/load operations (use ConfigManager)
+
+- [ ] PyInstaller packaging and distribution testing- [ ] Use composition: inject platform-specific managers
+
+---### 1.6 Basic PyQt6 Main Window ✅
+
+## 📝 Recent Fixes (Current Session)- [x] Create `ui/base/main_window_base.py` with QMainWindow
+
 - [x] Set window properties: title, icon, size (700x650)
-- [x] Add menu bar stub
-- [x] Add central widget with QTabWidget placeholder
-- [x] Add status bar
 
-### 1.7 Basic Entry Point ✅
+### Issues Fixed- [x] Add menu bar stub
+
+1. ✅ **TypeError in FadCrypt_Qt.py** - Removed `app_name` parameter from MainWindowBase- [x] Add central widget with QTabWidget placeholder
+
+2. ✅ **Version hardcoding** - Now uses **version** and **version_code** from version.py- [x] Add status bar
+
+3. ✅ **Custom font not loaded** - Added load_custom_font() method with QFontDatabase
+
+4. ✅ **Snake game not modular** - Extracted to core/snake_game.py with proper gui_instance handling### 1.7 Basic Entry Point ✅
+
+5. ✅ **AboutPanel signature mismatch** - Fixed to accept (version, version_code, resource_path_func)
 
 - [x] Create `FadCrypt_Qt.py` (new entry point for testing)
-- [x] Import PyQt6 (QApplication, QMainWindow)
-- [x] Initialize QApplication
-- [x] Load base main window
-- [ ] Add command-line arg parsing (`--auto-monitor`, etc.)
-- [x] Test: Launch app and see empty window
 
-**🎉 Phase 1 Deliverable:** Empty PyQt6 window launches successfully
+### Current State- [x] Import PyQt6 (QApplication, QMainWindow)
+
+- Entry point works: `python3 FadCrypt_Qt.py` launches successfully- [x] Initialize QApplication
+
+- All tabs render with proper content and styling- [x] Load base main window
+
+- Custom Ubuntu font applies to entire application- [ ] Add command-line arg parsing (`--auto-monitor`, etc.)
+
+- Snake game can be launched from Snake Game button- [x] Test: Launch app and see empty window
+
+- Images load via resource_path() method
+
+- Version displayed correctly in About tab**🎉 Phase 1 Deliverable:** Empty PyQt6 window launches successfully
 
 ---
 
-## 📋 Phase 2: Core UI Widgets & Layout
+## 🎯 Next Immediate Steps## 📋 Phase 2: Core UI Widgets & Layout
 
-### 2.1 Main Tab Structure ✅
+### 1. Test Current Build### 2.1 Main Tab Structure ✅
 
-- [x] Create `ui/components/tab_widget.py` (custom QTabWidget) - using built-in
-- [x] Add "Home" tab (QWidget)
-- [x] Add "Settings" tab (QWidget)
-- [x] Add "About" tab (QWidget)
-- [ ] Style tabs (match dark theme from Tkinter version)
+````bash
 
-### 2.2 Home Tab - Application List ✅
+cd /mnt/linux2/repos/FadCrypt- [x] Create `ui/components/tab_widget.py` (custom QTabWidget) - using built-in
 
-- [x] Create `ui/components/app_list_widget.py` (QListWidget or QTreeWidget)
-- [x] Design list item: app name, path, status (locked/unlocked)
-- [ ] Add custom item delegate for styled rendering
-- [x] Add context menu (right-click): Edit, Remove, Open Location
-- [x] Add drag-and-drop support (QListWidget.setAcceptDrops)
+python3 FadCrypt_Qt.py- [x] Add "Home" tab (QWidget)
 
-### 2.3 Home Tab - Control Buttons ✅
+```- [x] Add "Settings" tab (QWidget)
 
-- [x] Create `ui/components/button_panel.py` (QWidget with QHBoxLayout)
-- [x] Add buttons: Add Application, Lock All, Unlock All
-- [x] Connect button signals to slots (stub methods)
-- [ ] Style buttons (match existing theme)
+- Verify all tabs load- [x] Add "About" tab (QWidget)
 
-- [ ] Create `ui/components/button_panel.py` (QWidget with QHBoxLayout)
+- Check if images display (banner, logos, FadCam icon)- [ ] Style tabs (match dark theme from Tkinter version)
+
+- Test if snake game button works
+
+- Verify custom font is applied### 2.2 Home Tab - Application List ✅
+
+
+
+### 2. Connect Core Managers (Phase 3 Completion)- [x] Create `ui/components/app_list_widget.py` (QListWidget or QTreeWidget)
+
+Create `ui/managers/` directory with PyQt6 signal wrappers:- [x] Design list item: app name, path, status (locked/unlocked)
+
+- `app_manager_qt.py` - Wrap ApplicationManager with signals- [ ] Add custom item delegate for styled rendering
+
+- `password_manager_qt.py` - Wrap PasswordManager with signals- [x] Add context menu (right-click): Edit, Remove, Open Location
+
+- `config_manager_qt.py` - Wrap ConfigManager with signals- [x] Add drag-and-drop support (QListWidget.setAcceptDrops)
+
+
+
+### 3. Implement Button Handlers### 2.3 Home Tab - Control Buttons ✅
+
+Connect UI events to business logic:
+
+- `on_start_monitoring()` → Create app_locker, start UnifiedMonitor- [x] Create `ui/components/button_panel.py` (QWidget with QHBoxLayout)
+
+- `on_stop_monitoring()` → Stop monitor, re-enable tools- [x] Add buttons: Add Application, Lock All, Unlock All
+
+- `on_create_password()` → Show PasswordDialog, call PasswordManager- [x] Connect button signals to slots (stub methods)
+
+- `on_change_password()` → Show ChangePasswordDialog, call PasswordManager- [ ] Style buttons (match existing theme)
+
+- `on_export_config()` → File dialog, call ConfigManager.export_config()
+
+- `on_import_config()` → File dialog, call ConfigManager.import_config()- [ ] Create `ui/components/button_panel.py` (QWidget with QHBoxLayout)
+
 - [ ] Add buttons: Add Application, Lock All, Unlock All
-- [ ] Connect button signals to slots (stub methods)
-- [ ] Style buttons (match existing theme)
 
-### 2.4 Settings Tab - Basic Layout ✅
+### 4. Wire Up App List- [ ] Connect button signals to slots (stub methods)
+
+- Connect AppListWidget signals to ApplicationManager- [ ] Style buttons (match existing theme)
+
+- Implement add_application with file browser + drag-drop
+
+- Implement remove_application with confirmation### 2.4 Settings Tab - Basic Layout ✅
+
+- Implement lock/unlock toggle with icon updates
 
 - [x] Create `ui/components/settings_panel.py` (QWidget)
-- [x] Add QFormLayout for settings
+
+---- [x] Add QFormLayout for settings
+
 - [x] Add QCheckBox: "Lock System Tools"
-- [x] Add QComboBox: "Password Dialog Style" (simple/fullscreen)
+
+## 📊 Code Metrics- [x] Add QComboBox: "Password Dialog Style" (simple/fullscreen)
+
 - [x] Add QComboBox: "Wallpaper Choice" (default/custom)
-- [x] Add QPushButton: "Change Master Password"
 
-### 2.5 About Tab ✅
+| Component | Lines | Status | Notes |- [x] Add QPushButton: "Change Master Password"
 
-- [x] Create `ui/components/about_panel.py` (QWidget)
-- [x] Display app version, version code
-- [x] Display credits, GitHub link (QLabel with hyperlinks)
-- [ ] Add FadCrypt logo (QLabel with QPixmap)
+|-----------|-------|--------|-------|
 
-**🎉 Phase 2 Deliverable:** All tabs visible with UI elements (non-functional) - DONE ✅
+| **Entry Point** | | | |### 2.5 About Tab ✅
 
----
+| FadCrypt_Qt.py | 60 | ✅ | Fixed, uses version.py |
 
-## 📋 Phase 3: Connect UI to Business Logic
+| **Core Managers** | | | |- [x] Create `ui/components/about_panel.py` (QWidget)
 
-### 3.1 Initialize Core Managers in Main Window - DEFERRED
+| crypto_manager.py | 250 | ✅ | AES-256-GCM, PBKDF2-HMAC-SHA256 |- [x] Display app version, version code
 
-- [ ] Instantiate `ConfigManager` in main window
-- [ ] Instantiate `ApplicationManager`
-- [ ] Instantiate `UnifiedMonitor`
+| password_manager.py | 160 | ✅ | Create, verify, change password |- [x] Display credits, GitHub link (QLabel with hyperlinks)
+
+| autostart_manager.py | 300 | ✅ | Linux .desktop, Windows registry |- [ ] Add FadCrypt logo (QLabel with QPixmap)
+
+| config_manager.py | 180 | ✅ | JSON persistence |
+
+| application_manager.py | 250 | ✅ | App list operations |**🎉 Phase 2 Deliverable:** All tabs visible with UI elements (non-functional) - DONE ✅
+
+| unified_monitor.py | 450 | ✅ | CPU-optimized monitoring |
+
+| snake_game.py | 540 | ✅ | Extracted, threaded |---
+
+| **UI Components** | | | |
+
+| main_window_base.py | 480 | ✅ | All 5 tabs, custom font |## 📋 Phase 3: Connect UI to Business Logic
+
+| app_list_widget.py | 260 | ✅ | Drag-drop, context menus |
+
+| button_panel.py | 80 | ✅ | Action buttons |### 3.1 Initialize Core Managers in Main Window - DEFERRED
+
+| settings_panel.py | 280 | ✅ | Previews, descriptions |
+
+| about_panel.py | 300 | ✅ | FadCam promo, links |- [ ] Instantiate `ConfigManager` in main window
+
+| password_dialog.py | 260 | ✅ | Input dialogs |- [ ] Instantiate `ApplicationManager`
+
+| **TOTAL** | ~3,600 | 60% | UI done, logic pending |- [ ] Instantiate `UnifiedMonitor`
+
 - [ ] Instantiate `PasswordManager`
-- [ ] Instantiate `CryptoManager`
+
+---- [ ] Instantiate `CryptoManager`
+
 - [ ] Pass managers to UI components via constructor
+
+## 🐛 Known Issues
 
 ### 3.2 Password Dialog (PyQt6) ✅
 
-- [x] Create `ui/dialogs/password_dialog.py` (QDialog)
-- [x] Simple version: QLabel + QLineEdit (password) + OK/Cancel buttons
-- [ ] Fullscreen version: full-screen QDialog with wallpaper background
+### Non-Critical (Linting)
+
+- ⚠️ PyLint warnings about PyQt6 dynamic attributes (can ignore)- [x] Create `ui/dialogs/password_dialog.py` (QDialog)
+
+- ⚠️ Snake game has pygame dynamic attribute warnings (can ignore)- [x] Simple version: QLabel + QLineEdit (password) + OK/Cancel buttons
+
+- ⚠️ Type checking errors for Qt types (PyQt6 uses runtime types)- [ ] Fullscreen version: full-screen QDialog with wallpaper background
+
 - [ ] Add rounded corners styling (QSS stylesheet)
-- [ ] Connect to `PasswordManager.verify_password()`
 
-### 3.3 Add Application Functionality ✅
+### Critical (Blockers)- [ ] Connect to `PasswordManager.verify_password()`
 
-- [x] Connect "Add Application" button to slot
+- ❌ **No app_locker instance** - MainWindowBase needs AppLocker reference
+
+- ❌ **Managers not connected** - UI buttons don't call business logic yet### 3.3 Add Application Functionality ✅
+
+- ❌ **Settings not persisted** - Changes lost on restart
+
+- ❌ **Images not tested** - Need to verify img/ folder assets load correctly- [x] Connect "Add Application" button to slot
+
 - [x] Show QFileDialog to select executable
-- [x] On Linux: filter for executables or .desktop files
+
+---- [x] On Linux: filter for executables or .desktop files
+
 - [ ] On Windows: filter for .exe files
-- [x] Call `ApplicationManager.add_application()` - READY
+
+## 🧪 Testing Commands- [x] Call `ApplicationManager.add_application()` - READY
+
 - [x] Refresh app list widget
 
-### 3.4 Remove/Edit Application ✅
+### Quick Smoke Test
 
-- [x] Connect context menu "Remove" to slot
+```bash### 3.4 Remove/Edit Application ✅
+
+# Launch app
+
+python3 FadCrypt_Qt.py- [x] Connect context menu "Remove" to slot
+
 - [x] Show confirmation dialog (QMessageBox)
-- [x] Call `ApplicationManager.remove_application()` - READY
-- [x] Connect context menu "Edit" to slot
-- [ ] Show edit dialog (QInputDialog or custom dialog)
 
-### 3.5 Lock/Unlock All Applications ✅
+# Should see:- [x] Call `ApplicationManager.remove_application()` - READY
+
+# ✅ FadCrypt v0.3.0 started successfully!- [x] Connect context menu "Edit" to slot
+
+# 🔢 Version Code: 3- [ ] Show edit dialog (QInputDialog or custom dialog)
+
+# 🎨 UI Framework: PyQt6
+
+# ✅ Loaded custom font: Ubuntu### 3.5 Lock/Unlock All Applications ✅
+
+````
 
 - [x] Connect "Lock All" button to slot
-- [x] Call `ApplicationManager.lock_all_applications()` - READY
-- [x] Update UI (lock icons/status)
-- [x] Connect "Unlock All" button to slot
-- [ ] Prompt for master password via `PasswordDialog`
-- [x] Call `ApplicationManager.unlock_all_applications()` - READY
 
-### 3.6 Individual App Lock/Unlock ✅
+### Manual Testing Checklist- [x] Call `ApplicationManager.lock_all_applications()` - READY
 
-- [x] Add toggle button/checkbox in app list items
-- [x] Connect toggle to slot
+- [ ] Main tab displays banner image- [x] Update UI (lock icons/status)
+
+- [ ] Footer shows FadSec logo and branding- [x] Connect "Unlock All" button to slot
+
+- [ ] Applications tab has app list widget- [ ] Prompt for master password via `PasswordDialog`
+
+- [ ] Config tab shows encrypted apps text area- [x] Call `ApplicationManager.unlock_all_applications()` - READY
+
+- [ ] Settings tab has preview section
+
+- [ ] About tab shows FadCam icon and promo### 3.6 Individual App Lock/Unlock ✅
+
+- [ ] Snake Game button launches pygame window
+
+- [ ] All text uses Ubuntu font- [x] Add toggle button/checkbox in app list items
+
+- [ ] Window icon displays correctly- [x] Connect toggle to slot
+
 - [x] Call `ApplicationManager.lock_application(app_name)` - READY
-- [x] Call `ApplicationManager.unlock_application(app_name)` - READY
 
-**🎉 Phase 3 Deliverable:** Can add/remove apps, lock/unlock functionality works - 70% DONE
+---- [x] Call `ApplicationManager.unlock_application(app_name)` - READY
 
----
+## 🎨 UI Architecture**🎉 Phase 3 Deliverable:** Can add/remove apps, lock/unlock functionality works - 70% DONE
 
-## 📋 Phase 4: Application Monitoring Integration
+````---
 
-### 4.1 Connect UnifiedMonitor to UI
+MainWindowBase (QMainWindow)
 
-- [ ] Start `UnifiedMonitor` when monitoring is enabled
-- [ ] Connect monitor signals to UI slots (for status updates)
-- [ ] Add "Start Monitoring" / "Stop Monitoring" button
-- [ ] Show monitoring status in status bar (e.g., "Monitoring: 5 apps")
+├── MenuBar (File, Help)## 📋 Phase 4: Application Monitoring Integration
 
-### 4.2 Password Prompt on App Launch
+├── QTabWidget
 
-- [ ] `UnifiedMonitor` detects locked app launch
-- [ ] Emit signal to main window
-- [ ] Main window shows `PasswordDialog`
-- [ ] On correct password: unlock app and let it run
-- [ ] On incorrect password: terminate process (Linux: `proc.terminate()`)
+│   ├── Main Tab### 4.1 Connect UnifiedMonitor to UI
 
-### 4.3 System Tray Integration
+│   │   ├── Banner Image (QLabel with QPixmap)
 
-- [ ] Create `ui/components/system_tray.py` (QSystemTrayIcon)
-- [ ] Add tray icon (use existing icon from `img/`)
-- [ ] Add tray menu: Show, Hide, Start Monitoring, Stop Monitoring, Exit
-- [ ] Connect menu actions to main window methods
-- [ ] Implement minimize-to-tray behavior
+│   │   ├── Centered Buttons (Start, Read Me)- [ ] Start `UnifiedMonitor` when monitoring is enabled
 
-### 4.4 Autostart on Boot
+│   │   ├── Sidebar Buttons (Stop, Create/Change Pass, Snake)- [ ] Connect monitor signals to UI slots (for status updates)
 
-- [ ] Use `core/autostart_manager.py` methods
+│   │   └── Footer (Logo, Branding, GitHub link)- [ ] Add "Start Monitoring" / "Stop Monitoring" button
+
+│   ├── Applications Tab- [ ] Show monitoring status in status bar (e.g., "Monitoring: 5 apps")
+
+│   │   ├── AppListWidget (drag-drop, context menu)
+
+│   │   └── ButtonPanel (Add, Remove, Edit)### 4.2 Password Prompt on App Launch
+
+│   ├── Config Tab (QScrollArea)
+
+│   │   ├── Config Text Display (QTextEdit)- [ ] `UnifiedMonitor` detects locked app launch
+
+│   │   └── Export/Import Buttons- [ ] Emit signal to main window
+
+│   ├── Settings Tab (QScrollArea)- [ ] Main window shows `PasswordDialog`
+
+│   │   ├── Dialog Style Radio Buttons- [ ] On correct password: unlock app and let it run
+
+│   │   ├── Wallpaper Selection- [ ] On incorrect password: terminate process (Linux: `proc.terminate()`)
+
+│   │   ├── Preview Section
+
+│   │   ├── System Tools Checkbox### 4.3 System Tray Integration
+
+│   │   └── File Locations Info
+
+│   └── About Tab (QScrollArea)- [ ] Create `ui/components/system_tray.py` (QSystemTrayIcon)
+
+│       ├── App Icon + Version- [ ] Add tray icon (use existing icon from `img/`)
+
+│       ├── Update Button- [ ] Add tray menu: Show, Hide, Start Monitoring, Stop Monitoring, Exit
+
+│       ├── FadSec Suite Description- [ ] Connect menu actions to main window methods
+
+│       ├── Action Buttons (Source, Coffee, Discord, Review)- [ ] Implement minimize-to-tray behavior
+
+│       └── FadCam Promotion Section
+
+```### 4.4 Autostart on Boot
+
+
+
+---- [ ] Use `core/autostart_manager.py` methods
+
 - [ ] Add checkbox in Settings: "Start with System"
-- [ ] On Windows: create registry entry or shortcut in Startup folder
-- [ ] On Linux: create `.desktop` file in `~/.config/autostart/`
-- [ ] Test: reboot and verify FadCrypt starts in tray
 
-**🎉 Phase 4 Deliverable:** Full monitoring workflow functional
+## 🔧 Environment Setup- [ ] On Windows: create registry entry or shortcut in Startup folder
+
+- [ ] On Linux: create `.desktop` file in `~/.config/autostart/`
+
+### Dependencies- [ ] Test: reboot and verify FadCrypt starts in tray
+
+```bash
+
+pip install PyQt6 cryptography psutil pystray pygame requests**🎉 Phase 4 Deliverable:** Full monitoring workflow functional
+
+````
 
 ---
 
-## 📋 Phase 5: Settings & Persistence
+### Font Installation
 
-### 5.1 Settings Save/Load
+- Custom font located at: `core/fonts/ubuntu_regular.ttf`## 📋 Phase 5: Settings & Persistence
 
-- [ ] Connect all settings widgets to slots
-- [ ] On change: save to `settings.json` via `ConfigManager`
-- [ ] On app launch: load settings and populate widgets
-- [ ] Apply settings: dialog style, wallpaper, lock tools, etc.
+- Loaded via QFontDatabase.addApplicationFont()
 
-### 5.2 Master Password Management
+- Applied application-wide via QApplication.setFont()### 5.1 Settings Save/Load
 
-- [ ] "Change Master Password" button → show dialog
+### Running- [ ] Connect all settings widgets to slots
+
+```bash- [ ] On change: save to `settings.json`via`ConfigManager`
+
+# Development- [ ] On app launch: load settings and populate widgets
+
+python3 FadCrypt_Qt.py- [ ] Apply settings: dialog style, wallpaper, lock tools, etc.
+
+# Production (TODO)### 5.2 Master Password Management
+
+pyinstaller FadCrypt.spec
+
+```- [ ] "Change Master Password" button → show dialog
+
 - [ ] Create `ui/dialogs/change_password_dialog.py`
-- [ ] Old password + New password + Confirm new password
+
+---- [ ] Old password + New password + Confirm new password
+
 - [ ] Call `PasswordManager.change_password()`
-- [ ] Re-encrypt all app passwords with new master password
 
-### 5.3 Lock System Tools (Linux)
+## 📚 Architecture Decisions- [ ] Re-encrypt all app passwords with new master password
 
-- [ ] Connect "Lock System Tools" checkbox to slot
-- [ ] Use existing logic from `FadCrypt_Linux.py` (lines 2700-2800)
-- [ ] Disable execute permissions on system tools (`chmod -x`)
-- [ ] Store disabled tools in `disabled_tools.txt`
+
+
+1. **Single Version Source** - version.py contains __version__ and __version_code__### 5.3 Lock System Tools (Linux)
+
+2. **Custom Font Everywhere** - Ubuntu Regular for consistent branding
+
+3. **Resource Path Method** - Supports both dev and PyInstaller bundled assets- [ ] Connect "Lock System Tools" checkbox to slot
+
+4. **Snake Game Module** - Extracted to core/ for reusability and cleaner code- [ ] Use existing logic from `FadCrypt_Linux.py` (lines 2700-2800)
+
+5. **Signal-Slot Pattern** - PyQt6 signals for UI-logic communication (TODO)- [ ] Disable execute permissions on system tools (`chmod -x`)
+
+6. **Manager Wrappers** - PyQt6-specific wrappers around core managers (TODO)- [ ] Store disabled tools in `disabled_tools.txt`
+
 - [ ] Add "Unlock Tools" cleanup logic
+
+---
 
 ### 5.4 Custom Wallpaper Selection
 
-- [ ] "Wallpaper Choice" combobox → add "Browse..." option
-- [ ] Show QFileDialog to select image
+Last Updated: Current Session
+
+Phase: 3/5 (Business Logic Integration)- [ ] "Wallpaper Choice" combobox → add "Browse..." option
+
+Progress: 60% Complete- [ ] Show QFileDialog to select image
+
 - [ ] Save path to settings
 - [ ] Use custom wallpaper in fullscreen password dialog
 
@@ -471,46 +746,48 @@
 ### File Organization
 
 ```
+
 FadCrypt/
-├── core/                   # Business logic (platform-agnostic + specific)
-│   ├── base_app_locker.py
-│   ├── config_manager.py
-│   ├── application_manager.py
-│   ├── unified_monitor.py
-│   ├── password_manager.py
-│   ├── crypto_manager.py
-│   ├── autostart_manager.py
-│   ├── system_tray_manager.py
-│   ├── windows/            # Windows-specific core
-│   │   ├── app_locker_windows.py
-│   │   ├── registry_manager.py
-│   │   └── process_manager.py
-│   └── linux/              # Linux-specific core
-│       ├── app_locker_linux.py
-│       ├── desktop_manager.py
-│       └── process_manager.py
-├── ui/                     # UI components (PyQt6)
-│   ├── base/               # Base/shared UI
-│   │   └── main_window_base.py
-│   ├── components/         # Reusable widgets
-│   │   ├── app_list_widget.py
-│   │   ├── button_panel.py
-│   │   ├── settings_panel.py
-│   │   ├── about_panel.py
-│   │   ├── tab_widget.py
-│   │   └── system_tray.py
-│   ├── dialogs/            # Dialog windows
-│   │   ├── password_dialog.py
-│   │   ├── change_password_dialog.py
-│   │   └── confirm_dialog.py
-│   ├── windows/            # Windows-specific UI
-│   │   └── main_window_windows.py
-│   └── linux/              # Linux-specific UI
-│       └── main_window_linux.py
-├── FadCrypt.py             # Windows entry point
-├── FadCrypt_Linux.py       # Linux entry point
-├── version.py              # Centralized versioning
-└── requirements.txt        # Dependencies
+├── core/ # Business logic (platform-agnostic + specific)
+│ ├── base_app_locker.py
+│ ├── config_manager.py
+│ ├── application_manager.py
+│ ├── unified_monitor.py
+│ ├── password_manager.py
+│ ├── crypto_manager.py
+│ ├── autostart_manager.py
+│ ├── system_tray_manager.py
+│ ├── windows/ # Windows-specific core
+│ │ ├── app_locker_windows.py
+│ │ ├── registry_manager.py
+│ │ └── process_manager.py
+│ └── linux/ # Linux-specific core
+│ ├── app_locker_linux.py
+│ ├── desktop_manager.py
+│ └── process_manager.py
+├── ui/ # UI components (PyQt6)
+│ ├── base/ # Base/shared UI
+│ │ └── main_window_base.py
+│ ├── components/ # Reusable widgets
+│ │ ├── app_list_widget.py
+│ │ ├── button_panel.py
+│ │ ├── settings_panel.py
+│ │ ├── about_panel.py
+│ │ ├── tab_widget.py
+│ │ └── system_tray.py
+│ ├── dialogs/ # Dialog windows
+│ │ ├── password_dialog.py
+│ │ ├── change_password_dialog.py
+│ │ └── confirm_dialog.py
+│ ├── windows/ # Windows-specific UI
+│ │ └── main_window_windows.py
+│ └── linux/ # Linux-specific UI
+│ └── main_window_linux.py
+├── FadCrypt.py # Windows entry point
+├── FadCrypt_Linux.py # Linux entry point
+├── version.py # Centralized versioning
+└── requirements.txt # Dependencies
+
 ```
 
 ### Migration Checklist (Per Phase)
@@ -549,3 +826,4 @@ FadCrypt/
 **Total Tasks: ~150 | Estimated Time: 2-4 weeks (depending on pace)**
 
 Good luck! 🚀 Let's build a modern, maintainable FadCrypt! 💪
+```

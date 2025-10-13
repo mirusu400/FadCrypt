@@ -39,11 +39,8 @@ def main():
     # Note: High DPI scaling is automatic in Qt6, no need to set attributes
     
     # Create and show main window
-    window = MainWindowBase(app_name="FadCrypt", version=__version__)
+    window = MainWindowBase(version=__version__)
     window.show()
-    
-    # Update status
-    window.update_status(f"FadCrypt v{__version__} (PyQt6 Migration - Phase 1)")
     
     print(f"✅ FadCrypt v{__version__} started successfully!")
     print(f"🔢 Version Code: {__version_code__}")

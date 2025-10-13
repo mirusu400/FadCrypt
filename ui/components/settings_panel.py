@@ -1,124 +1,308 @@
-"""
-Settings Panel - Application settings and preferences
-"""
+"""Settings Panel Component for FadCrypt"""
 
+import os
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QFormLayout, QCheckBox,
-    QComboBox, QPushButton, QGroupBox, QLabel
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QRadioButton, 
+    QCheckBox, QPushButton, QFrame, QScrollArea, QButtonGroup
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap
 
 
 class SettingsPanel(QWidget):
-    """
-    Settings panel for configuring FadCrypt behavior.
+    """Settings panel for FadCrypt configuration with preview sections"""
     
-    Signals:
-        lock_tools_changed: Emitted when "Lock System Tools" changes (bool)
-        dialog_style_changed: Emitted when dialog style changes (str)
-        wallpaper_changed: Emitted when wallpaper choice changes (str)
-        autostart_changed: Emitted when autostart setting changes (bool)
-        change_password_clicked: Emitted when change password button clicked
-    """
+    # Signals for settings changes
+    settings_changed = pyqtSignal(dict)
     
-    lock_tools_changed = pyqtSignal(bool)
-    dialog_style_changed = pyqtSignal(str)
-    wallpaper_changed = pyqtSignal(str)
-    autostart_changed = pyqtSignal(bool)
-    change_password_clicked = pyqtSignal()
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, resource_path_func=None):
+        super().__init__()
+        self.resource_path = resource_path_func or self._default_resource_path
+        self.init_ui()
         
-        # Main layout
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
-        self.setLayout(main_layout)
+    def _default_resource_path(self, path):
+        """Default resource path if none provided"""
+        return os.path.join(os.path.abspath("."), path)
         
-        # General Settings Group
-        general_group = QGroupBox("General Settings")
-        general_layout = QFormLayout()
-        general_group.setLayout(general_layout)
+    def init_ui(self):
+        """Initialize the settings panel UI"""
+        # Main scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
         
-        # Autostart
-        self.autostart_checkbox = QCheckBox()
-        self.autostart_checkbox.stateChanged.connect(
-            lambda state: self.autostart_changed.emit(state == 2)
-        )
-        general_layout.addRow("Start with System:", self.autostart_checkbox)
+        layout = QVBoxLayout(scroll_content)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         
-        # Dialog Style
-        self.dialog_style_combo = QComboBox()
-        self.dialog_style_combo.addItems(["Simple", "Fullscreen"])
-        self.dialog_style_combo.currentTextChanged.connect(
-            lambda text: self.dialog_style_changed.emit(text.lower())
-        )
-        general_layout.addRow("Password Dialog:", self.dialog_style_combo)
+        # Title
+        title_label = QLabel("Preferences")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(title_label)
+        
+        # Separator
+        separator1 = QFrame()
+        separator1.setFrameShape(QFrame.Shape.HLine)
+        separator1.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(separator1)
+        
+        # Top frame (radio buttons + preview)
+        top_frame = QHBoxLayout()
+        
+        # Left frame for radio buttons
+        left_frame = QVBoxLayout()
+        left_frame.setSpacing(10)
+        
+        # Password Dialog Style
+        dialog_style_label = QLabel("Password Dialog Style:")
+        dialog_style_label.setStyleSheet("font-weight: bold;")
+        left_frame.addWidget(dialog_style_label)
+        
+        self.dialog_style_group = QButtonGroup()
+        self.simple_dialog_radio = QRadioButton("Simple Dialog")
+        self.simple_dialog_radio.setChecked(True)
+        self.dialog_style_group.addButton(self.simple_dialog_radio, 0)
+        left_frame.addWidget(self.simple_dialog_radio)
+        
+        self.fullscreen_dialog_radio = QRadioButton("Full Screen")
+        self.dialog_style_group.addButton(self.fullscreen_dialog_radio, 1)
+        left_frame.addWidget(self.fullscreen_dialog_radio)
+        
+        left_frame.addSpacing(20)
         
         # Wallpaper Choice
-        self.wallpaper_combo = QComboBox()
-        self.wallpaper_combo.addItems(["Default", "Custom..."])
-        self.wallpaper_combo.currentTextChanged.connect(
-            lambda text: self.wallpaper_changed.emit(text.lower())
+        wallpaper_label = QLabel("Full Screen Wallpaper:")
+        wallpaper_label.setStyleSheet("font-weight: bold;")
+        left_frame.addWidget(wallpaper_label)
+        
+        self.wallpaper_group = QButtonGroup()
+        
+        self.lab_wallpaper_radio = QRadioButton("Lab (Default)")
+        self.lab_wallpaper_radio.setChecked(True)
+        self.wallpaper_group.addButton(self.lab_wallpaper_radio, 0)
+        left_frame.addWidget(self.lab_wallpaper_radio)
+        
+        self.hacker_wallpaper_radio = QRadioButton("H4ck3r")
+        self.wallpaper_group.addButton(self.hacker_wallpaper_radio, 1)
+        left_frame.addWidget(self.hacker_wallpaper_radio)
+        
+        self.binary_wallpaper_radio = QRadioButton("Binary")
+        self.wallpaper_group.addButton(self.binary_wallpaper_radio, 2)
+        left_frame.addWidget(self.binary_wallpaper_radio)
+        
+        self.encrypted_wallpaper_radio = QRadioButton("Encryptedddddd")
+        self.wallpaper_group.addButton(self.encrypted_wallpaper_radio, 3)
+        left_frame.addWidget(self.encrypted_wallpaper_radio)
+        
+        left_frame.addStretch()
+        
+        # Right frame for preview
+        right_frame = QVBoxLayout()
+        right_frame.setSpacing(10)
+        
+        preview_label = QLabel("Dialog Preview:")
+        preview_label.setStyleSheet("font-weight: bold;")
+        right_frame.addWidget(preview_label)
+        
+        # Preview frame
+        self.preview_frame = QFrame()
+        self.preview_frame.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)
+        self.preview_frame.setMinimumSize(400, 250)
+        self.preview_frame.setMaximumSize(400, 250)
+        self.preview_frame.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+        
+        preview_layout = QVBoxLayout(self.preview_frame)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
+        self.preview_label = QLabel()
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview_label.setScaledContents(True)
+        preview_layout.addWidget(self.preview_label)
+        
+        right_frame.addWidget(self.preview_frame)
+        right_frame.addStretch()
+        
+        top_frame.addLayout(left_frame, 1)
+        top_frame.addLayout(right_frame, 2)
+        
+        layout.addLayout(top_frame)
+        
+        # Separator
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setFrameShadow(QFrame.Shadow.Sunken)
+        layout.addWidget(separator2)
+        
+        # Bottom frame for checkboxes and info
+        bottom_frame = QVBoxLayout()
+        bottom_frame.setSpacing(10)
+        
+        # Disable Main Loopholes
+        loopholes_title = QLabel("Disable Main loopholes")
+        loopholes_title.setStyleSheet("font-weight: bold;")
+        bottom_frame.addWidget(loopholes_title)
+        
+        self.lock_tools_checkbox = QCheckBox(
+            "Disable common terminals and system monitors during monitoring.\n"
+            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security.\n"
+            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually;\n"
+            "otherwise, FadCrypt could be terminated via terminal.)"
         )
-        general_layout.addRow("Wallpaper:", self.wallpaper_combo)
-        
-        main_layout.addWidget(general_group)
-        
-        # Linux-Specific Settings Group
-        linux_group = QGroupBox("Linux-Specific Settings")
-        linux_layout = QFormLayout()
-        linux_group.setLayout(linux_layout)
-        
-        # Lock System Tools
-        self.lock_tools_checkbox = QCheckBox()
         self.lock_tools_checkbox.setChecked(True)
-        self.lock_tools_checkbox.stateChanged.connect(
-            lambda state: self.lock_tools_changed.emit(state == 2)
+        bottom_frame.addWidget(self.lock_tools_checkbox)
+        
+        # File Locations Info
+        separator3 = QFrame()
+        separator3.setFrameShape(QFrame.Shape.HLine)
+        separator3.setFrameShadow(QFrame.Shadow.Sunken)
+        bottom_frame.addWidget(separator3)
+        
+        locations_title = QLabel("📁 File Locations")
+        locations_title.setStyleSheet("font-size: 11px; font-weight: bold;")
+        bottom_frame.addWidget(locations_title)
+        
+        locations_info = QLabel(
+            "Main Configuration Folder:\n"
+            "  ~/.FadCrypt/\n"
+            "  (Stores: config.json, encrypted_password.bin, state.json, settings.json)\n\n"
+            "Backup Folder:\n"
+            "  ~/.local/share/FadCrypt/Backup/\n"
+            "  (Stores: backup copies of critical files for recovery)"
         )
-        linux_layout.addRow("Lock System Tools:", self.lock_tools_checkbox)
+        locations_info.setStyleSheet("color: #888888;")
+        locations_info.setWordWrap(True)
+        bottom_frame.addWidget(locations_info)
         
-        linux_layout.addRow("", QLabel("(Prevents access to terminal, system monitor, etc.)"))
+        # Uninstall Cleanup
+        separator4 = QFrame()
+        separator4.setFrameShape(QFrame.Shape.HLine)
+        separator4.setFrameShadow(QFrame.Shadow.Sunken)
+        bottom_frame.addWidget(separator4)
         
-        main_layout.addWidget(linux_group)
+        cleanup_title = QLabel("🔧 Uninstall Cleanup")
+        cleanup_title.setStyleSheet("font-size: 11px; font-weight: bold;")
+        bottom_frame.addWidget(cleanup_title)
         
-        # Security Settings Group
-        security_group = QGroupBox("Security")
-        security_layout = QVBoxLayout()
-        security_group.setLayout(security_layout)
+        cleanup_info = QLabel(
+            "Before uninstalling FadCrypt, run this cleanup to restore all system settings.\n"
+            "This will re-enable disabled terminals, system monitors, and remove autostart entries."
+        )
+        cleanup_info.setStyleSheet("color: #888888;")
+        cleanup_info.setWordWrap(True)
+        bottom_frame.addWidget(cleanup_info)
         
-        # Change Password Button
-        self.change_password_button = QPushButton("🔑 Change Master Password")
-        self.change_password_button.setMinimumHeight(35)
-        self.change_password_button.clicked.connect(self.change_password_clicked.emit)
-        security_layout.addWidget(self.change_password_button)
+        cleanup_button = QPushButton("Run Uninstall Cleanup")
+        cleanup_button.setStyleSheet("""
+            QPushButton {
+                background-color: #d32f2f;
+                color: white;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #b71c1c;
+            }
+        """)
+        cleanup_button.clicked.connect(self.on_cleanup_clicked)
+        cleanup_button.setMaximumWidth(200)
+        bottom_frame.addWidget(cleanup_button)
         
-        main_layout.addWidget(security_group)
+        layout.addLayout(bottom_frame)
+        layout.addStretch()
         
-        # Stretch at bottom
-        main_layout.addStretch()
-    
-    def get_settings(self) -> dict:
-        """Get current settings values."""
+        scroll_area.setWidget(scroll_content)
+        
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_area)
+        
+        # Connect signals
+        self.dialog_style_group.buttonClicked.connect(self.on_settings_changed)
+        self.wallpaper_group.buttonClicked.connect(self.on_settings_changed)
+        self.lock_tools_checkbox.stateChanged.connect(self.on_settings_changed)
+        
+        # Initial preview update
+        self.update_preview()
+        
+    def update_preview(self):
+        """Update the preview image based on current settings"""
+        dialog_style = "simple" if self.simple_dialog_radio.isChecked() else "fullscreen"
+        wallpaper = self.get_wallpaper_choice()
+        
+        # Determine preview path based on selection
+        if dialog_style == "simple":
+            preview_path = self.resource_path("img/preview1.png")
+        else:  # fullscreen
+            if wallpaper == "default":
+                preview_path = self.resource_path("img/wall1.png")
+            elif wallpaper == "H4ck3r":
+                preview_path = self.resource_path("img/wall2.png")
+            elif wallpaper == "Binary":
+                preview_path = self.resource_path("img/wall3.png")
+            elif wallpaper == "encrypted":
+                preview_path = self.resource_path("img/wall4.png")
+            else:
+                preview_path = self.resource_path("img/preview2.png")
+        
+        # Load and display preview image
+        if os.path.exists(preview_path):
+            pixmap = QPixmap(preview_path)
+            scaled_pixmap = pixmap.scaled(400, 250, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.preview_label.setPixmap(scaled_pixmap)
+        else:
+            self.preview_label.setText(f"Preview not found:\n{os.path.basename(preview_path)}")
+            self.preview_label.setStyleSheet("color: #999; font-size: 12px;")
+        
+    def on_settings_changed(self):
+        """Emit settings changed signal and update preview"""
+        settings = self.get_settings()
+        self.settings_changed.emit(settings)
+        self.update_preview()
+        
+    def on_cleanup_clicked(self):
+        """Handle cleanup button click"""
+        # To be implemented by main window
+        pass
+        
+    def get_settings(self):
+        """Get current settings as dictionary"""
         return {
-            'autostart': self.autostart_checkbox.isChecked(),
-            'dialog_style': self.dialog_style_combo.currentText().lower(),
-            'wallpaper': self.wallpaper_combo.currentText().lower(),
+            'dialog_style': 'simple' if self.simple_dialog_radio.isChecked() else 'fullscreen',
+            'wallpaper': self.get_wallpaper_choice(),
             'lock_tools': self.lock_tools_checkbox.isChecked()
         }
-    
-    def set_settings(self, settings: dict):
-        """Set settings values."""
-        if 'autostart' in settings:
-            self.autostart_checkbox.setChecked(settings['autostart'])
-        if 'dialog_style' in settings:
-            index = self.dialog_style_combo.findText(settings['dialog_style'].title())
-            if index >= 0:
-                self.dialog_style_combo.setCurrentIndex(index)
-        if 'wallpaper' in settings:
-            index = self.wallpaper_combo.findText(settings['wallpaper'].title())
-            if index >= 0:
-                self.wallpaper_combo.setCurrentIndex(index)
-        if 'lock_tools' in settings:
-            self.lock_tools_checkbox.setChecked(settings['lock_tools'])
+        
+    def get_wallpaper_choice(self):
+        """Get selected wallpaper"""
+        if self.lab_wallpaper_radio.isChecked():
+            return 'default'
+        elif self.hacker_wallpaper_radio.isChecked():
+            return 'H4ck3r'
+        elif self.binary_wallpaper_radio.isChecked():
+            return 'Binary'
+        elif self.encrypted_wallpaper_radio.isChecked():
+            return 'encrypted'
+        return 'default'
+        
+    def set_settings(self, settings):
+        """Set settings from dictionary"""
+        dialog_style = settings.get('dialog_style', 'simple')
+        if dialog_style == 'fullscreen':
+            self.fullscreen_dialog_radio.setChecked(True)
+        else:
+            self.simple_dialog_radio.setChecked(True)
+            
+        wallpaper = settings.get('wallpaper', 'default')
+        if wallpaper == 'H4ck3r':
+            self.hacker_wallpaper_radio.setChecked(True)
+        elif wallpaper == 'Binary':
+            self.binary_wallpaper_radio.setChecked(True)
+        elif wallpaper == 'encrypted':
+            self.encrypted_wallpaper_radio.setChecked(True)
+        else:
+            self.lab_wallpaper_radio.setChecked(True)
+            
+        self.lock_tools_checkbox.setChecked(settings.get('lock_tools', True))
+        
+        self.on_settings_changed()

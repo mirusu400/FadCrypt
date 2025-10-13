@@ -1,15 +1,23 @@
-"""
-Base Main Window for FadCrypt
-Platform-agnostic PyQt6 main window implementation
-"""
+"""Base Main Window for FadCrypt PyQt6 UI"""
 
+import sys
+import os
+import webbrowser
 from PyQt6.QtWidgets import (
-    QMainWindow, QTabWidget, QWidget, QVBoxLayout,
-    QMenuBar, QMenu, QStatusBar, QLabel, QDialog
+    QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QIcon
-import os
+from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase
+
+from ui.components.app_list_widget import AppListWidget
+from ui.components.button_panel import ButtonPanel
+from ui.components.settings_panel import SettingsPanel
+from ui.components.about_panel import AboutPanel
+from ui.dialogs.readme_dialog import ReadmeDialog
+
+# Import version info
+from version import __version__, __version_code__
 
 
 class MainWindowBase(QMainWindow):
@@ -20,315 +28,479 @@ class MainWindowBase(QMainWindow):
     - Main window setup (title, icon, geometry)
     - Menu bar structure
     - Tab widget for organizing features
-    - Status bar for app state
-    
-    Platform-specific implementations should inherit from this class
-    and override methods as needed.
+    - Complete UI matching Tkinter version (banner, footer, all tabs)
+    - Resource path handling for images
     """
     
-    def __init__(self, app_name: str = "FadCrypt", version: str = "0.4.0"):
-        """
-        Initialize the main window.
-        
-        Args:
-            app_name: Application name to display in title bar
-            version: Application version string
-        """
+    def __init__(self, version=None):
         super().__init__()
+        self.version = version or __version__
+        self.version_code = __version_code__
+        self.monitoring_active = False
         
-        self.app_name = app_name
-        self.version = version
+        # Load custom font
+        self.load_custom_font()
         
-        # Initialize UI components
-        self._init_ui()
-        self._create_menu_bar()
-        self._create_status_bar()
-        self._create_tab_widget()
+        # Initialize UI
+        self.init_ui()
         
-    def _init_ui(self):
-        """Initialize basic window properties."""
-        # Set window title
-        self.setWindowTitle(f"{self.app_name} v{self.version}")
+    def load_custom_font(self):
+        """Load Ubuntu Regular font for the entire application"""
+        font_path = self.resource_path('core/fonts/ubuntu_regular.ttf')
+        if os.path.exists(font_path):
+            font_id = QFontDatabase.addApplicationFont(font_path)
+            if font_id != -1:
+                font_families = QFontDatabase.applicationFontFamilies(font_id)
+                if font_families:
+                    self.app_font_family = font_families[0]
+                    # Set as default font for the application
+                    font = QFont(self.app_font_family, 10)
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.instance().setFont(font)
+                    print(f"✅ Loaded custom font: {self.app_font_family}")
+                else:
+                    print("⚠️ Font loaded but no families found")
+                    self.app_font_family = "Ubuntu"
+            else:
+                print(f"⚠️ Failed to load font from {font_path}")
+                self.app_font_family = "Ubuntu"
+        else:
+            print(f"⚠️ Font file not found at {font_path}")
+            self.app_font_family = "Ubuntu"
         
-        # Set window size (same as Tkinter version: 700x650)
-        self.resize(700, 650)
+    def resource_path(self, relative_path):
+        """Get absolute path to resource, works for dev and for PyInstaller"""
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
         
-        # Center window on screen
-        self._center_window()
+        return os.path.join(base_path, relative_path)
         
-        # Set fixed size (prevent resizing like Tkinter version)
-        self.setFixedSize(self.size())
+    def init_ui(self):
+        """Initialize the user interface"""
+        self.setWindowTitle(f"FadCrypt v{self.version}")
+        self.setGeometry(100, 100, 950, 700)
         
-        # Set window icon (will be implemented when resource_path is available)
-        # icon_path = self.resource_path("img/icon.png")
-        # if os.path.exists(icon_path):
-        #     self.setWindowIcon(QIcon(icon_path))
+        # Set window icon
+        icon_path = self.resource_path('img/icon.png')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
-    def _center_window(self):
-        """Center the window on the screen."""
-        frame_geometry = self.frameGeometry()
-        screen_center = self.screen().availableGeometry().center()
-        frame_geometry.moveCenter(screen_center)
-        self.move(frame_geometry.topLeft())
+        # Create menu bar
+        self.create_menu_bar()
         
-    def _create_menu_bar(self):
-        """Create the application menu bar."""
-        menu_bar = self.menuBar()
-        
-        # File menu
-        file_menu = menu_bar.addMenu("&File")
-        
-        # Import/Export actions (placeholder)
-        export_action = QAction("&Export Configuration...", self)
-        export_action.setShortcut("Ctrl+E")
-        export_action.triggered.connect(self._on_export_config)
-        file_menu.addAction(export_action)
-        
-        import_action = QAction("&Import Configuration...", self)
-        import_action.setShortcut("Ctrl+I")
-        import_action.triggered.connect(self._on_import_config)
-        file_menu.addAction(import_action)
-        
-        file_menu.addSeparator()
-        
-        # Exit action
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-        
-        # Monitoring menu
-        monitor_menu = menu_bar.addMenu("&Monitoring")
-        
-        self.start_monitor_action = QAction("&Start Monitoring", self)
-        self.start_monitor_action.triggered.connect(self._on_start_monitoring)
-        monitor_menu.addAction(self.start_monitor_action)
-        
-        self.stop_monitor_action = QAction("S&top Monitoring", self)
-        self.stop_monitor_action.setEnabled(False)
-        self.stop_monitor_action.triggered.connect(self._on_stop_monitoring)
-        monitor_menu.addAction(self.stop_monitor_action)
-        
-        # Help menu
-        help_menu = menu_bar.addMenu("&Help")
-        
-        about_action = QAction("&About FadCrypt", self)
-        about_action.triggered.connect(self._on_show_about)
-        help_menu.addAction(about_action)
-        
-        github_action = QAction("View on &GitHub", self)
-        github_action.triggered.connect(self._on_open_github)
-        help_menu.addAction(github_action)
-        
-    def _create_status_bar(self):
-        """Create the application status bar."""
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        
-        # Status label (left side)
-        self.status_label = QLabel("Ready")
-        self.status_bar.addWidget(self.status_label)
-        
-        # Monitoring status label (right side)
-        self.monitor_status_label = QLabel("Monitoring: Not Running")
-        self.status_bar.addPermanentWidget(self.monitor_status_label)
-        
-    def _create_tab_widget(self):
-        """Create the central tab widget."""
-        # Create central widget
+        # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
-        # Create main layout
-        layout = QVBoxLayout()
-        central_widget.setLayout(layout)
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create tab widget
-        self.tab_widget = QTabWidget()
-        layout.addWidget(self.tab_widget)
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
         
-        # Create placeholder tabs
-        self._create_home_tab()
-        self._create_settings_tab()
-        self._create_about_tab()
+        # Create all tabs
+        self.create_main_tab()
+        self.create_applications_tab()
+        self.create_config_tab()
+        self.create_settings_tab()
+        self.create_about_tab()
         
-    def _create_home_tab(self):
-        """Create the Home tab (application list and controls)."""
-        from ..components.app_list_widget import AppListWidget
-        from ..components.button_panel import ButtonPanel
+    def create_menu_bar(self):
+        """Create the menu bar"""
+        menubar = self.menuBar()
         
-        home_tab = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
-        home_tab.setLayout(layout)
+        # File menu
+        file_menu = menubar.addMenu("File")
         
-        # Application list
-        self.app_list = AppListWidget()
-        self.app_list.app_selected.connect(self._on_app_selected)
-        self.app_list.app_removed.connect(self._on_app_removed)
-        self.app_list.app_lock_toggled.connect(self._on_app_lock_toggled)
-        layout.addWidget(self.app_list)
+        exit_action = file_menu.addAction("Exit")
+        exit_action.triggered.connect(self.close)
+        
+        # Help menu
+        help_menu = menubar.addMenu("Help")
+        
+        about_action = help_menu.addAction("About")
+        about_action.triggered.connect(self.show_about_dialog)
+        
+    def create_main_tab(self):
+        """Create Main/Home tab with modern design"""
+        main_tab = QWidget()
+        main_layout = QVBoxLayout(main_tab)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
+        
+        # Banner image at top (using banner.png like Tkinter)
+        banner_path = self.resource_path('img/banner.png')
+        if os.path.exists(banner_path):
+            banner_label = QLabel()
+            banner_pixmap = QPixmap(banner_path)
+            # Resize to 700x200 like Tkinter
+            scaled_pixmap = banner_pixmap.scaled(700, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            banner_label.setPixmap(scaled_pixmap)
+            banner_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            main_layout.addWidget(banner_label)
+        
+        main_layout.addSpacing(20)
+        
+        # Centered buttons frame (Start Monitoring + Read Me) - compact design
+        centered_buttons_layout = QHBoxLayout()
+        centered_buttons_layout.addStretch()
+        
+        self.start_button = QPushButton("Start Monitoring")
+        self.start_button.setFixedWidth(180)
+        self.start_button.setStyleSheet("""
+            QPushButton {
+                background-color: #d32f2f;
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 5px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #b71c1c;
+            }
+        """)
+        self.start_button.clicked.connect(self.on_start_monitoring)
+        centered_buttons_layout.addWidget(self.start_button)
+        
+        centered_buttons_layout.addSpacing(15)
+        
+        readme_button = QPushButton("Read Me")
+        readme_button.setFixedWidth(180)
+        readme_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                font-size: 13px;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 5px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #0d47a1;
+            }
+        """)
+        readme_button.clicked.connect(self.on_readme_clicked)
+        centered_buttons_layout.addWidget(readme_button)
+        
+        centered_buttons_layout.addStretch()
+        main_layout.addLayout(centered_buttons_layout)
+        
+        main_layout.addSpacing(20)
+        
+        # Content area with sidebar buttons
+        content_layout = QHBoxLayout()
+        
+        # Left sidebar with compact vertical buttons
+        sidebar_layout = QVBoxLayout()
+        sidebar_layout.setSpacing(8)
+        
+        button_style = """
+            QPushButton {
+                background-color: #424242;
+                color: white;
+                font-weight: bold;
+                padding: 10px 15px;
+                border-radius: 5px;
+                text-align: left;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """
+        
+        stop_button = QPushButton("Stop Monitoring")
+        stop_button.setFixedWidth(180)
+        stop_button.setStyleSheet(button_style)
+        stop_button.clicked.connect(self.on_stop_monitoring)
+        sidebar_layout.addWidget(stop_button)
+        
+        create_pass_button = QPushButton("Create Password")
+        create_pass_button.setFixedWidth(180)
+        create_pass_button.setStyleSheet(button_style)
+        create_pass_button.clicked.connect(self.on_create_password)
+        sidebar_layout.addWidget(create_pass_button)
+        
+        change_pass_button = QPushButton("Change Password")
+        change_pass_button.setFixedWidth(180)
+        change_pass_button.setStyleSheet(button_style)
+        change_pass_button.clicked.connect(self.on_change_password)
+        sidebar_layout.addWidget(change_pass_button)
+        
+        snake_button = QPushButton("Snake 🪱")
+        snake_button.setFixedWidth(180)
+        snake_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                font-weight: bold;
+                padding: 10px 15px;
+                border-radius: 5px;
+                text-align: left;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #0d47a1;
+            }
+        """)
+        snake_button.clicked.connect(self.on_snake_game)
+        sidebar_layout.addWidget(snake_button)
+        
+        sidebar_layout.addStretch()
+        
+        content_layout.addLayout(sidebar_layout)
+        
+        # Vertical separator
+        separator_v = QFrame()
+        separator_v.setFrameShape(QFrame.Shape.VLine)
+        separator_v.setFrameShadow(QFrame.Shadow.Sunken)
+        content_layout.addWidget(separator_v)
+        
+        # Right side - spacer for clean look
+        content_layout.addStretch()
+        
+        main_layout.addLayout(content_layout)
+        
+        # Horizontal Separator before footer
+        separator_h = QFrame()
+        separator_h.setFrameShape(QFrame.Shape.HLine)
+        separator_h.setFrameShadow(QFrame.Shadow.Sunken)
+        main_layout.addWidget(separator_h)
+        
+        # Footer with logo, branding, GitHub link
+        footer_layout = QHBoxLayout()
+        
+        # Logo on left
+        logo_path = self.resource_path('img/fadsec-main-footer.png')
+        if os.path.exists(logo_path):
+            logo_label = QLabel()
+            logo_pixmap = QPixmap(logo_path)
+            # Scale to 40% as in Tkinter
+            scaled_logo = logo_pixmap.scaledToWidth(int(logo_pixmap.width() * 0.4), Qt.TransformationMode.SmoothTransformation)
+            logo_label.setPixmap(scaled_logo)
+            footer_layout.addWidget(logo_label)
+        
+        # Branding text
+        branding_label = QLabel(" © 2024-2025 | faded.dev | Licensed under GPL 3.0")
+        branding_label.setStyleSheet("color: gray; font-size: 10px;")
+        footer_layout.addWidget(branding_label)
+        
+        footer_layout.addStretch()
+        
+        # GitHub link on right
+        github_label = QLabel('<a href="https://github.com/anonfaded/FadCrypt" style="color: #FFD700; text-decoration: none;">⭐ Sponsor on GitHub</a>')
+        github_label.setOpenExternalLinks(True)
+        github_label.setStyleSheet("font-size: 10px;")
+        footer_layout.addWidget(github_label)
+        
+        main_layout.addLayout(footer_layout)
+        
+        self.tabs.addTab(main_tab, "Main")
+        
+    def create_applications_tab(self):
+        """Create Applications tab for managing locked apps"""
+        apps_tab = QWidget()
+        apps_layout = QVBoxLayout(apps_tab)
+        apps_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Title
+        title_label = QLabel("Manage Applications")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        apps_layout.addWidget(title_label)
+        
+        # App list widget
+        self.app_list_widget = AppListWidget()
+        apps_layout.addWidget(self.app_list_widget)
         
         # Button panel
         self.button_panel = ButtonPanel()
-        self.button_panel.add_app_clicked.connect(self._on_add_app_clicked)
-        self.button_panel.lock_all_clicked.connect(self._on_lock_all_clicked)
-        self.button_panel.unlock_all_clicked.connect(self._on_unlock_all_clicked)
-        layout.addWidget(self.button_panel)
+        apps_layout.addWidget(self.button_panel)
         
-        self.tab_widget.addTab(home_tab, "Home")
+        # Helper text
+        helper_label = QLabel("Just drop it in—I'll sort out the name and path, no worries")
+        helper_label.setStyleSheet("color: gray; font-style: italic; font-size: 11px;")
+        helper_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        apps_layout.addWidget(helper_label)
         
-    def _create_settings_tab(self):
-        """Create the Settings tab."""
-        from ..components.settings_panel import SettingsPanel
+        self.tabs.addTab(apps_tab, "Applications")
         
-        self.settings_panel = SettingsPanel()
-        self.settings_panel.lock_tools_changed.connect(self._on_lock_tools_changed)
-        self.settings_panel.dialog_style_changed.connect(self._on_dialog_style_changed)
-        self.settings_panel.wallpaper_changed.connect(self._on_wallpaper_changed)
-        self.settings_panel.autostart_changed.connect(self._on_autostart_changed)
-        self.settings_panel.change_password_clicked.connect(self._on_change_password_clicked)
+    def create_config_tab(self):
+        """Create Config tab for viewing encrypted apps list"""
+        config_tab = QWidget()
         
-        self.tab_widget.addTab(self.settings_panel, "Settings")
+        # Scrollable content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        config_layout = QVBoxLayout(scroll_content)
+        config_layout.setContentsMargins(15, 15, 15, 15)
         
-    def _create_about_tab(self):
-        """Create the About tab."""
-        from ..components.about_panel import AboutPanel
+        # Title
+        title_label = QLabel("Config File")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        config_layout.addWidget(title_label)
         
-        self.about_panel = AboutPanel(self.version, version_code=3)
-        self.tab_widget.addTab(self.about_panel, "About")
+        # Separator
+        separator1 = QFrame()
+        separator1.setFrameShape(QFrame.Shape.HLine)
+        separator1.setFrameShadow(QFrame.Shadow.Sunken)
+        config_layout.addWidget(separator1)
         
-    # ========== Menu Action Handlers (Placeholder) ==========
-    
-    def _on_app_selected(self, app_name: str, app_path: str):
-        """Handle app selection in list."""
-        self.status_label.setText(f"Selected: {app_name}")
-    
-    def _on_app_removed(self, app_name: str):
-        """Handle app removal."""
-        self.status_label.setText(f"Removed: {app_name}")
-    
-    def _on_app_lock_toggled(self, app_name: str, is_locked: bool):
-        """Handle lock status toggle."""
-        status = "locked" if is_locked else "unlocked"
-        self.status_label.setText(f"{app_name} {status}")
-    
-    def _on_add_app_clicked(self):
-        """Handle add application button."""
-        from PyQt6.QtWidgets import QFileDialog
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Application",
-            "",
-            "Executables (*);;All Files (*)"
+        # Config text display
+        self.config_text = QTextEdit()
+        self.config_text.setReadOnly(True)
+        self.config_text.setMinimumHeight(300)
+        self.config_text.setPlaceholderText("No applications locked yet...")
+        config_layout.addWidget(self.config_text)
+        
+        # Description
+        desc_label = QLabel(
+            "This is the list of applications currently locked by FadCrypt.\n"
+            "It is displayed in plain text here for your convenience, "
+            "but rest assured, the data is encrypted when saved on your computer,\n"
+            "keeping your locked apps confidential."
         )
-        if file_path:
-            import os
-            app_name = os.path.basename(file_path)
-            self.app_list.add_app(app_name, file_path, is_locked=True)
-            self.status_label.setText(f"Added: {app_name}")
-    
-    def _on_lock_all_clicked(self):
-        """Handle lock all button."""
-        for app in self.app_list.get_all_apps():
-            self.app_list.update_app_status(app['name'], True)
-        self.status_label.setText("All applications locked")
-    
-    def _on_unlock_all_clicked(self):
-        """Handle unlock all button."""
-        for app in self.app_list.get_all_apps():
-            self.app_list.update_app_status(app['name'], False)
-        self.status_label.setText("All applications unlocked")
-    
-    def _on_lock_tools_changed(self, enabled: bool):
-        """Handle lock system tools setting change."""
-        self.status_label.setText(f"Lock system tools: {'enabled' if enabled else 'disabled'}")
-    
-    def _on_dialog_style_changed(self, style: str):
-        """Handle dialog style change."""
-        self.status_label.setText(f"Dialog style: {style}")
-    
-    def _on_wallpaper_changed(self, wallpaper: str):
-        """Handle wallpaper choice change."""
-        self.status_label.setText(f"Wallpaper: {wallpaper}")
-    
-    def _on_autostart_changed(self, enabled: bool):
-        """Handle autostart setting change."""
-        self.status_label.setText(f"Autostart: {'enabled' if enabled else 'disabled'}")
-    
-    def _on_change_password_clicked(self):
-        """Handle change password button."""
-        from PyQt6.QtWidgets import QMessageBox
-        from ..dialogs.password_dialog import ChangePasswordDialog
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: gray;")
+        config_layout.addWidget(desc_label)
         
-        dialog = ChangePasswordDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            old_pwd, new_pwd = dialog.get_passwords()
-            # TODO: Actually change password using PasswordManager
-            QMessageBox.information(
+        # Separator
+        separator2 = QFrame()
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setFrameShadow(QFrame.Shadow.Sunken)
+        config_layout.addWidget(separator2)
+        
+        # Export/Import section
+        export_title = QLabel("Backup & Restore Configurations")
+        export_title.setStyleSheet("font-weight: bold;")
+        config_layout.addWidget(export_title)
+        
+        export_desc = QLabel("Export your lock list to a file or import a previously saved configuration.")
+        export_desc.setWordWrap(True)
+        export_desc.setStyleSheet("color: gray;")
+        config_layout.addWidget(export_desc)
+        
+        # Export/Import buttons
+        button_layout = QHBoxLayout()
+        
+        export_button = QPushButton("Export Config")
+        export_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4caf50;
+                color: white;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 5px;
+            }
+        """)
+        export_button.clicked.connect(self.on_export_config)
+        button_layout.addWidget(export_button)
+        
+        import_button = QPushButton("Import Config")
+        import_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196f3;
+                color: white;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 5px;
+            }
+        """)
+        import_button.clicked.connect(self.on_import_config)
+        button_layout.addWidget(import_button)
+        
+        button_layout.addStretch()
+        config_layout.addLayout(button_layout)
+        
+        config_layout.addStretch()
+        
+        scroll_area.setWidget(scroll_content)
+        
+        tab_layout = QVBoxLayout(config_tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.addWidget(scroll_area)
+        
+        self.tabs.addTab(config_tab, "Config")
+        
+    def create_settings_tab(self):
+        """Create Settings tab"""
+        settings_tab = QWidget()
+        tab_layout = QVBoxLayout(settings_tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Use the enhanced settings panel with resource_path
+        self.settings_panel = SettingsPanel(self.resource_path)
+        tab_layout.addWidget(self.settings_panel)
+        
+        self.tabs.addTab(settings_tab, "Settings")
+        
+    def create_about_tab(self):
+        """Create About tab"""
+        about_tab = QWidget()
+        tab_layout = QVBoxLayout(about_tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Use the enhanced about panel (pass version, version_code, resource_path_func)
+        self.about_panel = AboutPanel(self.version, self.version_code, self.resource_path)
+        tab_layout.addWidget(self.about_panel)
+        
+        self.tabs.addTab(about_tab, "About")
+        
+    def show_about_dialog(self):
+        """Show about dialog"""
+        QMessageBox.about(
+            self,
+            "About FadCrypt",
+            f"<h3>FadCrypt v{self.version}</h3>"
+            "<p>An open-source application lock and encryption software.</p>"
+            "<p>© 2024 FadSec Lab. All rights reserved.</p>"
+        )
+        
+    # Button handlers (to be overridden by subclasses)
+    def on_start_monitoring(self):
+        """Handle start monitoring button click"""
+        pass
+        
+    def on_stop_monitoring(self):
+        """Handle stop monitoring button click"""
+        pass
+        
+    def on_readme_clicked(self):
+        """Handle Read Me button click - show fullscreen dialog"""
+        readme_dialog = ReadmeDialog(self.resource_path, self)
+        readme_dialog.exec()
+        
+    def on_create_password(self):
+        """Handle create password button click"""
+        pass
+        
+    def on_change_password(self):
+        """Handle change password button click"""
+        pass
+        
+    def on_snake_game(self):
+        """Handle snake game button click"""
+        try:
+            from core.snake_game import start_snake_game
+            # Pass self as the GUI instance
+            start_snake_game(self)
+        except Exception as e:
+            QMessageBox.warning(
                 self,
-                "Success",
-                "Password changed successfully!\n(Not implemented yet - Phase 5)"
+                "Snake Game Error",
+                f"Failed to start snake game:\n{e}"
             )
-            self.status_label.setText("Password changed")
-        else:
-            self.status_label.setText("Password change cancelled")
-    
-    # ========== Original Menu Handlers ==========
-    
-    def _on_export_config(self):
-        """Handle export configuration action."""
-        self.status_label.setText("Export configuration (not implemented)")
         
-    def _on_import_config(self):
-        """Handle import configuration action."""
-        self.status_label.setText("Import configuration (not implemented)")
+    def on_export_config(self):
+        """Handle export config button click"""
+        pass
         
-    def _on_start_monitoring(self):
-        """Handle start monitoring action."""
-        self.start_monitor_action.setEnabled(False)
-        self.stop_monitor_action.setEnabled(True)
-        self.monitor_status_label.setText("Monitoring: Running")
-        self.status_label.setText("Monitoring started")
-        
-    def _on_stop_monitoring(self):
-        """Handle stop monitoring action."""
-        self.start_monitor_action.setEnabled(True)
-        self.stop_monitor_action.setEnabled(False)
-        self.monitor_status_label.setText("Monitoring: Stopped")
-        self.status_label.setText("Monitoring stopped")
-        
-    def _on_show_about(self):
-        """Handle show about dialog action."""
-        self.status_label.setText("About FadCrypt")
-        
-    def _on_open_github(self):
-        """Handle open GitHub repository action."""
-        import webbrowser
-        webbrowser.open("https://github.com/anonfaded/FadCrypt")
-        self.status_label.setText("Opening GitHub repository...")
-        
-    # ========== Public Methods ==========
-    
-    def update_status(self, message: str):
-        """
-        Update the status bar message.
-        
-        Args:
-            message: Status message to display
-        """
-        self.status_label.setText(message)
-        
-    def update_monitoring_status(self, is_running: bool, app_count: int = 0):
-        """
-        Update the monitoring status display.
-        
-        Args:
-            is_running: Whether monitoring is currently active
-            app_count: Number of apps being monitored
-        """
-        if is_running:
-            self.monitor_status_label.setText(f"Monitoring: {app_count} app(s)")
-        else:
-            self.monitor_status_label.setText("Monitoring: Not Running")
+    def on_import_config(self):
+        """Handle import config button click"""
+        pass
