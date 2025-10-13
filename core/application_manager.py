@@ -350,10 +350,10 @@ class ApplicationManager:
         self.apps_container.bind('<Configure>', self._on_frame_configure)
         self.apps_canvas.bind('<Configure>', self._on_canvas_configure)
 
-        # Mouse wheel scrolling
-        self.apps_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        self.apps_canvas.bind_all("<Button-4>", self._on_mousewheel)
-        self.apps_canvas.bind_all("<Button-5>", self._on_mousewheel)
+        # Mouse wheel scrolling - only on canvas, not bind_all
+        self.apps_canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.apps_canvas.bind("<Button-4>", self._on_mousewheel)
+        self.apps_canvas.bind("<Button-5>", self._on_mousewheel)
 
         self.update_apps_listbox()
 
@@ -413,9 +413,342 @@ class ApplicationManager:
         else:
             print("Add application callback not set")
     
+    def scan_installed_applications(self):
+        """Scan system for installed applications (cross-platform)"""
+        apps = []
+        
+        if self.is_linux:
+            # Scan .desktop files
+            desktop_dirs = [
+                '/usr/share/applications',
+                '/usr/local/share/applications',
+                os.path.expanduser('~/.local/share/applications')
+            ]
+            
+            for desktop_dir in desktop_dirs:
+                if not os.path.exists(desktop_dir):
+                    continue
+                
+                for filename in os.listdir(desktop_dir):
+                    if not filename.endswith('.desktop'):
+                        continue
+                    
+                    filepath = os.path.join(desktop_dir, filename)
+                    try:
+                        with open(filepath, 'r') as f:
+                            name = None
+                            exec_path = None
+                            icon = None
+                            no_display = False
+                            
+                            for line in f:
+                                line = line.strip()
+                                if line.startswith('Name='):
+                                    name = line.split('=', 1)[1]
+                                elif line.startswith('Exec='):
+                                    exec_line = line.split('=', 1)[1]
+                                    # Extract executable path (remove %u, %f etc.)
+                                    exec_parts = exec_line.split()
+                                    if exec_parts:
+                                        exec_path = exec_parts[0]
+                                elif line.startswith('Icon='):
+                                    icon = line.split('=', 1)[1]
+                                elif line.startswith('NoDisplay=true'):
+                                    no_display = True
+                            
+                            # Only add if has name, exec, not hidden, and not already in config
+                            if name and exec_path and not no_display:
+                                # Check if already added
+                                already_added = any(
+                                    app['name'] == name or app['path'] == exec_path
+                                    for app in self.app_locker.config["applications"]
+                                )
+                                
+                                if not already_added:
+                                    apps.append({
+                                        'name': name,
+                                        'path': exec_path,
+                                        'icon': icon,
+                                        'desktop_file': filepath
+                                    })
+                    except Exception as e:
+                        print(f"Error reading {filepath}: {e}")
+        else:
+            # Windows: Scan common program directories
+            program_dirs = [
+                r"C:\Program Files",
+                r"C:\Program Files (x86)",
+                os.path.expanduser(r"~\AppData\Local\Programs")
+            ]
+            
+            for prog_dir in program_dirs:
+                if not os.path.exists(prog_dir):
+                    continue
+                
+                for root, dirs, files in os.walk(prog_dir):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            filepath = os.path.join(root, file)
+                            name = os.path.splitext(file)[0]
+                            
+                            # Check if already added
+                            already_added = any(
+                                app['path'] == filepath
+                                for app in self.app_locker.config["applications"]
+                            )
+                            
+                            if not already_added:
+                                apps.append({
+                                    'name': name,
+                                    'path': filepath,
+                                    'icon': filepath  # Windows can extract icon from exe
+                                })
+        
+        # Sort by name
+        apps.sort(key=lambda x: x['name'].lower())
+        return apps
+    
+    def show_app_scanner_dialog(self):
+        """Show dialog with scanned applications for batch adding"""
+        # Create loading dialog
+        loading_dialog = tk.Toplevel(self.master)
+        loading_dialog.title("Scanning Applications")
+        loading_dialog.geometry("400x150")
+        loading_dialog.transient(self.master)
+        loading_dialog.grab_set()
+        loading_dialog.resizable(False, False)
+        
+        # Center the loading dialog
+        loading_dialog.update_idletasks()
+        x = (loading_dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (loading_dialog.winfo_screenheight() // 2) - (150 // 2)
+        loading_dialog.geometry(f"400x150+{x}+{y}")
+        
+        # Loading content
+        loading_frame = ttk.Frame(loading_dialog, padding=20)
+        loading_frame.pack(fill=tk.BOTH, expand=True)
+        
+        loading_label = ttk.Label(loading_frame, text="🔍 Scanning system for applications...", 
+                                 font=("Arial", 12, "bold"))
+        loading_label.pack(pady=10)
+        
+        progress = ttk.Progressbar(loading_frame, mode='indeterminate', length=300)
+        progress.pack(pady=10)
+        progress.start(10)
+        
+        status_label = ttk.Label(loading_frame, text="This may take a few seconds...", 
+                                font=("Arial", 9), foreground="gray")
+        status_label.pack(pady=5)
+        
+        # Force update to show the loading dialog
+        loading_dialog.update()
+        
+        # Scan for applications (this may take a few seconds)
+        try:
+            scanned_apps = self.scan_installed_applications()
+            loading_dialog.destroy()
+        except Exception as e:
+            loading_dialog.destroy()
+            self.show_message("Scan Error", f"Failed to scan applications: {str(e)}", "error")
+            return
+        
+        if not scanned_apps:
+            self.show_message("No Apps Found", "No new applications found to add.", "info")
+            return
+        
+        # Create dialog
+        dialog = tk.Toplevel(self.master)
+        dialog.title(f"Scan Applications - Found {len(scanned_apps)} apps")
+        dialog.attributes('-topmost', True)
+        
+        # Set size and position
+        dialog_width = 800
+        dialog_height = 600
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width // 2) - (dialog_width // 2)
+        y = (screen_height // 2) - (dialog_height // 2)
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        dialog.resizable(True, True)
+        
+        # Main frame
+        main_frame = ttk.Frame(dialog, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title
+        title_label = ttk.Label(
+            main_frame,
+            text=f"📦 Found {len(scanned_apps)} Applications",
+            font=("TkDefaultFont", 14, "bold")
+        )
+        title_label.pack(pady=(0, 10))
+        
+        # Instructions
+        inst_label = ttk.Label(
+            main_frame,
+            text="Select applications to add (Ctrl+Click for multiple, Shift+Click for range):",
+            font=("TkDefaultFont", 10)
+        )
+        inst_label.pack(pady=(0, 5))
+        
+        # Create scrollable canvas for grid
+        canvas_frame = ttk.Frame(main_frame)
+        canvas_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        scan_canvas = tk.Canvas(canvas_frame, bg='#1e1e1e', highlightthickness=0)
+        scan_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=scan_canvas.yview)
+        scan_canvas.configure(yscrollcommand=scan_scrollbar.set)
+        
+        scan_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        scan_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        scan_container = ttk.Frame(scan_canvas)
+        canvas_window = scan_canvas.create_window((0, 0), window=scan_container, anchor='nw')
+        
+        # Track selected apps
+        selected_scan_apps = []
+        
+        # Create grid of scanned app cards
+        columns = 4
+        for index, app in enumerate(scanned_apps):
+            row = index // columns
+            col = index % columns
+            
+            # Create mini card
+            card = tk.Frame(
+                scan_container,
+                bg='#2a2a2a',
+                relief=tk.RAISED,
+                borderwidth=1,
+                highlightthickness=2,
+                highlightbackground='#444444'
+            )
+            card.grid(row=row, column=col, padx=5, pady=5, sticky='nsew')
+            card.app_data = app
+            card.is_selected = False
+            
+            inner = tk.Frame(card, bg='#2a2a2a')
+            inner.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+            
+            # Icon (smaller)
+            icon_photo = self.get_app_icon(app['path'])
+            if icon_photo:
+                try:
+                    icon_path = self.find_desktop_icon(app['path'])
+                    if icon_path and os.path.exists(icon_path):
+                        img = Image.open(icon_path)
+                        img = img.resize((32, 32), Image.Resampling.LANCZOS)
+                        photo = ImageTk.PhotoImage(img)
+                        icon_label = tk.Label(inner, image=photo, bg='#2a2a2a')
+                        icon_label.image = photo
+                        icon_label.pack()
+                except:
+                    tk.Label(inner, text="📦", font=("TkDefaultFont", 16), bg='#2a2a2a').pack()
+            else:
+                tk.Label(inner, text="📦", font=("TkDefaultFont", 16), bg='#2a2a2a').pack()
+            
+            # Name
+            name_label = tk.Label(
+                inner,
+                text=app['name'],
+                font=("TkDefaultFont", 9),
+                bg='#2a2a2a',
+                fg='#ffffff',
+                wraplength=120
+            )
+            name_label.pack(pady=(5, 0))
+            
+            # Click to select/deselect
+            def make_click_handler(card_widget):
+                def on_click(e):
+                    if card_widget.is_selected:
+                        card_widget.configure(highlightbackground='#444444')
+                        card_widget.is_selected = False
+                        if card_widget.app_data in selected_scan_apps:
+                            selected_scan_apps.remove(card_widget.app_data)
+                    else:
+                        card_widget.configure(highlightbackground='#009E60', highlightthickness=3)
+                        card_widget.is_selected = True
+                        if card_widget.app_data not in selected_scan_apps:
+                            selected_scan_apps.append(card_widget.app_data)
+                    status_label.config(text=f"Selected: {len(selected_scan_apps)} apps")
+                return on_click
+            
+            for widget in [card, inner, name_label]:
+                widget.bind('<Button-1>', make_click_handler(card))
+        
+        # Configure grid
+        for col in range(columns):
+            scan_container.grid_columnconfigure(col, weight=1, minsize=150)
+        
+        # Bind canvas configure
+        def on_scan_configure(e):
+            scan_canvas.configure(scrollregion=scan_canvas.bbox("all"))
+        scan_container.bind('<Configure>', on_scan_configure)
+        
+        def on_canvas_configure(e):
+            scan_canvas.itemconfig(canvas_window, width=e.width)
+        scan_canvas.bind('<Configure>', on_canvas_configure)
+        
+        # Status label
+        status_label = ttk.Label(
+            main_frame,
+            text="Selected: 0 apps",
+            font=("TkDefaultFont", 10, "bold")
+        )
+        status_label.pack(pady=5)
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+        
+        def select_all():
+            for widget in scan_container.winfo_children():
+                if hasattr(widget, 'app_data') and not widget.is_selected:
+                    widget.configure(highlightbackground='#009E60', highlightthickness=3)
+                    widget.is_selected = True
+                    if widget.app_data not in selected_scan_apps:
+                        selected_scan_apps.append(widget.app_data)
+            status_label.config(text=f"Selected: {len(selected_scan_apps)} apps")
+        
+        def deselect_all():
+            for widget in scan_container.winfo_children():
+                if hasattr(widget, 'app_data') and widget.is_selected:
+                    widget.configure(highlightbackground='#444444', highlightthickness=2)
+                    widget.is_selected = False
+            selected_scan_apps.clear()
+            status_label.config(text="Selected: 0 apps")
+        
+        def add_selected():
+            if not selected_scan_apps:
+                self.show_message("No Selection", "Please select at least one application to add.")
+                return
+            
+            # Add all selected apps
+            for app in selected_scan_apps:
+                self.app_locker.add_application(app['name'], app['path'])
+            
+            dialog.destroy()
+            self.update_apps_listbox()
+            self.show_message("Success", f"Added {len(selected_scan_apps)} application(s) successfully!")
+        
+        ttk.Button(button_frame, text="Select All", command=select_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Deselect All", command=deselect_all).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text=f"➕ Add Selected", command=add_selected, style="green.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
+    
     def _on_frame_configure(self, event=None):
         """Reset the scroll region to encompass the inner frame"""
+        # Update scroll region
         self.apps_canvas.configure(scrollregion=self.apps_canvas.bbox("all"))
+        
+        # Check if scrolling is needed
+        canvas_height = self.apps_canvas.winfo_height()
+        content_height = self.apps_container.winfo_reqheight()
+        
+        # If content fits, reset scroll to top
+        if content_height <= canvas_height:
+            self.apps_canvas.yview_moveto(0)
     
     def _on_canvas_configure(self, event):
         """When canvas is resized, adjust the container width to match canvas"""
@@ -424,11 +757,16 @@ class ApplicationManager:
         self.apps_canvas.itemconfig(self.canvas_window, width=canvas_width)
     
     def _on_mousewheel(self, event):
-        """Handle mouse wheel scrolling"""
-        if event.num == 4 or event.delta > 0:
-            self.apps_canvas.yview_scroll(-1, "units")
-        elif event.num == 5 or event.delta < 0:
-            self.apps_canvas.yview_scroll(1, "units")
+        """Handle mouse wheel scrolling - only if content exceeds canvas"""
+        canvas_height = self.apps_canvas.winfo_height()
+        content_height = self.apps_container.winfo_reqheight()
+        
+        # Only scroll if content is larger than canvas
+        if content_height > canvas_height:
+            if event.num == 4 or event.delta > 0:
+                self.apps_canvas.yview_scroll(-1, "units")
+            elif event.num == 5 or event.delta < 0:
+                self.apps_canvas.yview_scroll(1, "units")
     
     def on_double_click(self, event):
         """Handle double-click on application card"""

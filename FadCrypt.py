@@ -186,12 +186,38 @@ class AppLockerGUI:
         browse_button = ttk.Button(manual_frame, text="Browse", command=self.browse_for_file, style="navy.TButton")
         browse_button.pack(pady=5)
 
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.add_dialog)
+        buttons_frame.pack(pady=10)
+        
+        # Scan Apps Button (new feature!)
+        scan_button = ttk.Button(
+            buttons_frame,
+            text="🔍 Scan for Apps",
+            command=self.scan_for_apps,
+            width=15,
+            style="navy.TButton"
+        )
+        scan_button.pack(side=tk.LEFT, padx=5)
+        
         # Save Button
-        save_button = ttk.Button(self.add_dialog, text="Save", command=self.save_application, width=11, style="green.TButton")
-        save_button.pack(pady=10)
+        save_button = ttk.Button(
+            buttons_frame,
+            text="💾 Save",
+            command=self.save_application,
+            width=11,
+            style="green.TButton"
+        )
+        save_button.pack(side=tk.LEFT, padx=5)
 
         # Bind the Enter key to the Save button
         self.add_dialog.bind('<Return>', lambda event: save_button.invoke())
+    
+    def scan_for_apps(self):
+        """Open app scanner dialog"""
+        if hasattr(self, 'add_dialog'):
+            self.add_dialog.destroy()  # Close add dialog
+        self.app_manager.show_app_scanner_dialog()
 
 
     def on_drop(self, event):

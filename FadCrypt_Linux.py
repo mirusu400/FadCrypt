@@ -327,12 +327,38 @@ class AppLockerGUI:
         browse_button = ttk.Button(manual_frame, text="Browse", command=self.browse_for_file, style="navy.TButton")
         browse_button.pack(pady=5)
 
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.add_dialog)
+        buttons_frame.pack(pady=10)
+        
+        # Scan Apps Button (new feature!)
+        scan_button = ttk.Button(
+            buttons_frame,
+            text="🔍 Scan for Apps",
+            command=self.scan_for_apps,
+            width=15,
+            style="navy.TButton"
+        )
+        scan_button.pack(side=tk.LEFT, padx=5)
+        
         # Save Button
-        save_button = ttk.Button(self.add_dialog, text="Save", command=self.save_application, width=11, style="green.TButton")
-        save_button.pack(pady=10)
+        save_button = ttk.Button(
+            buttons_frame,
+            text="💾 Save",
+            command=self.save_application,
+            width=11,
+            style="green.TButton"
+        )
+        save_button.pack(side=tk.LEFT, padx=5)
 
         # Bind the Enter key to the Save button
         self.add_dialog.bind('<Return>', lambda event: save_button.invoke())
+    
+    def scan_for_apps(self):
+        """Open app scanner dialog"""
+        if hasattr(self, 'add_dialog'):
+            self.add_dialog.destroy()  # Close add dialog
+        self.app_manager.show_app_scanner_dialog()
 
 
     def on_drop(self, event):
@@ -2577,86 +2603,85 @@ class AppLocker:
         self.save_config()
 
     def block_application(self, app_name, app_path):
+        # Cache process name to avoid repeated path parsing
+        process_name = os.path.basename(app_path) if app_path else app_name
+        if app_path.endswith('.desktop'):
+            process_name = self._get_exec_from_desktop(app_path)
+        
+        process_name_lower = process_name.lower()
+        is_chrome_based = 'chrome' in process_name_lower
+        
         while self.monitoring:
             try:
-                # Get process name from path for better matching
-                process_name = os.path.basename(app_path) if app_path else app_name
-                
-                # Handle .desktop files
-                if app_path.endswith('.desktop'):
-                    process_name = self._get_exec_from_desktop(app_path)
-                
                 app_processes = []
-                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status', 'ppid']):
+                
+                # Optimized process iteration - only get needed attributes
+                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status']):
                     try:
-                        # Skip zombie processes - they are already dead but not reaped
+                        # Skip zombie processes immediately
                         if proc.info['status'] == psutil.STATUS_ZOMBIE:
-                            continue  # Skip zombie processes silently
+                            continue
                         
-                        # Match by process name or command line
                         proc_name = proc.info['name'].lower()
-                        proc_cmdline = proc.info['cmdline'] if proc.info['cmdline'] else []
                         
-                        # Direct name match
-                        if proc_name == process_name.lower():
+                        # Fast path: direct name match
+                        if proc_name == process_name_lower:
                             app_processes.append(proc)
-                        # Command line match
-                        elif proc_cmdline and any(process_name.lower() in cmd.lower() for cmd in proc_cmdline if cmd):
+                            continue
+                        
+                        # Chrome-based apps: check chrome in name
+                        if is_chrome_based and 'chrome' in proc_name:
                             app_processes.append(proc)
-                        # Special handling for Chrome/Chromium-based apps - catch all child processes
-                        elif 'chrome' in process_name.lower() and ('chrome' in proc_name or 
-                                                                   any('chrome' in str(cmd).lower() for cmd in proc_cmdline if cmd)):
-                            app_processes.append(proc)
+                            continue
+                        
+                        # Slower path: check command line if available
+                        proc_cmdline = proc.info.get('cmdline')
+                        if proc_cmdline:
+                            cmdline_str = ' '.join(proc_cmdline).lower()
+                            if process_name_lower in cmdline_str:
+                                app_processes.append(proc)
+                            elif is_chrome_based and 'chrome' in cmdline_str:
+                                app_processes.append(proc)
+                    
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
 
                 if app_processes:
-                    print(f"Found {len(app_processes)} processes for {app_name}, unlocked_apps: {self.state['unlocked_apps']}, showing_dialog: {app_name in self.apps_showing_dialog}")
                     if app_name not in self.state["unlocked_apps"]:
                         if app_name not in self.apps_showing_dialog:
                             print(f"Blocking {app_name}: terminating {len(app_processes)} processes")
-                            for proc in app_processes:
-                                print(f"Killing process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
-                                # Kill child processes first
-                                for child in proc.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                        print(f"Killed child process {child.pid}")
-                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                        print(f"Failed to kill child {child.pid}: {e}")
-                                try:
-                                    proc.kill()  # Use kill instead of terminate for immediate blocking
-                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
                             
-                            print(f"Showing password dialog for {app_name}")
+                            # Kill processes efficiently
+                            for proc in app_processes:
+                                try:
+                                    # Kill children first (don't recurse too deep to save CPU)
+                                    for child in proc.children(recursive=False):
+                                        try:
+                                            child.kill()
+                                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                            pass
+                                    proc.kill()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                            
                             self.apps_showing_dialog.add(app_name)
                             self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-                            time.sleep(1)
                         else:
-                            # App is showing dialog, but new processes appeared - kill them too
-                            print(f"Blocking additional {app_name} processes while dialog is showing: terminating {len(app_processes)} processes")
+                            # Kill additional processes while dialog is showing
                             for proc in app_processes:
-                                print(f"Killing additional process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
-                                # Kill child processes first
-                                for child in proc.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                        print(f"Killed child process {child.pid}")
-                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                        print(f"Failed to kill child {child.pid}: {e}")
                                 try:
-                                    proc.kill()  # Use kill instead of terminate for immediate blocking
-                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
+                                    proc.kill()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
                     else:
-                        print(f"{app_name} is unlocked, sleeping for 7 seconds")
-                        time.sleep(7)
+                        # Unlocked - reset counter and skip checks for longer
+                        if hasattr(self, f"{app_name}_no_process_count"):
+                            delattr(self, f"{app_name}_no_process_count")
+                        time.sleep(5)  # Longer sleep when unlocked
+                        continue
                 
-                # Only remove from unlocked_apps if no processes found for an extended period
-                # This prevents premature removal right after launching
+                # Auto-lock logic when no processes found
                 if app_name in self.state["unlocked_apps"] and not app_processes:
-                    # Check if we've seen no processes for this app recently
                     if not hasattr(self, f"{app_name}_no_process_count"):
                         setattr(self, f"{app_name}_no_process_count", 0)
                     
@@ -2664,21 +2689,22 @@ class AppLocker:
                     count += 1
                     setattr(self, f"{app_name}_no_process_count", count)
                     
-                    # Only remove after 10 consecutive checks with no processes (about 0.5 seconds)
+                    # Auto-lock after 10 checks with no processes
                     if count >= 10:
                         print(f"Auto-locking {app_name} (no active processes found)")
                         self.state["unlocked_apps"].remove(app_name)
                         self.save_state()
                         delattr(self, f"{app_name}_no_process_count")
-                    # Don't print the counting to avoid terminal clutter
                 elif app_name in self.state["unlocked_apps"] and app_processes:
-                    # Reset counter if processes are found
                     if hasattr(self, f"{app_name}_no_process_count"):
                         delattr(self, f"{app_name}_no_process_count")
-
-                time.sleep(1)  # Check every 1 second - balances responsiveness and CPU usage
+                
+                # CRITICAL: Always sleep to prevent CPU spike
+                time.sleep(0.1)  # 100ms check interval - responsive but efficient
+                
             except Exception as e:
-                print(f"Error in block_application: {e}")
+                print(f"Error in block_application for {app_name}: {e}")
+                time.sleep(1)  # Sleep longer on error
 
     def _get_exec_from_desktop(self, desktop_path):
         """Extract executable name from .desktop file"""
