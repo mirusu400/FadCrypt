@@ -140,7 +140,7 @@ class UnifiedMonitor:
                 'name': app_name,
                 'path': app_path,
                 'process_name': process_name.lower(),
-                'is_chrome': 'chrome' in process_name.lower(),
+                'is_chrome': 'chrome' in process_name.lower() or 'chrome' in app_path.lower(),
                 'no_process_count': 0
             })
         
@@ -200,26 +200,28 @@ class UnifiedMonitor:
         if process_name in all_processes:
             app_processes.extend(all_processes[process_name])
         
-        # Chrome-based apps: match any chrome process
-        if is_chrome:
-            for pname, procs in all_processes.items():
-                if 'chrome' in pname:
-                    app_processes.extend(procs)
-        
-        # Also check cmdline for matches (handles cases where process name differs from executable)
-        # For example: firefox-bin vs firefox, brave-browser-s vs brave-browser, wrapper scripts, etc.
-        if not app_processes:  # Only check cmdline if we didn't find by name (performance optimization)
+        # Cmdline fallback (handles wrapper scripts, renamed binaries, etc.)
+        if not app_processes:
             for pname, procs in all_processes.items():
                 for proc in procs:
                     try:
                         cmdline = proc.cmdline()
                         if cmdline:
                             cmdline_str = ' '.join(cmdline).lower()
-                            # Check if process_name OR app_path is in cmdline
-                            if process_name in cmdline_str or (app_path and app_path in cmdline_str):
+                            
+                            # For Chrome apps: match any chrome process
+                            # (PWAs, regular Chrome, etc. all share chrome processes)
+                            if is_chrome and 'chrome' in pname:
+                                app_processes.extend(procs)
+                                break  # Found chrome processes, no need to continue
+                            # For non-Chrome apps: match by process_name or app_path
+                            elif process_name in cmdline_str or (app_path and app_path in cmdline_str):
                                 app_processes.append(proc)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
+                
+                if app_processes and is_chrome:
+                    break  # Already found chrome processes
         
         return app_processes
     
@@ -270,6 +272,12 @@ class UnifiedMonitor:
                 state = self.get_state()
                 unlocked_apps = state.get('unlocked_apps', [])
                 
+                # Check if any Chrome app is unlocked (they all share processes)
+                chrome_unlocked = any(
+                    monitor['name'] in unlocked_apps and monitor['is_chrome']
+                    for monitor in app_monitors
+                )
+                
                 # Check each app against the single process scan
                 for monitor in app_monitors:
                     app_name = monitor['name']
@@ -278,8 +286,22 @@ class UnifiedMonitor:
                     # Find matching processes from the scan
                     app_processes = self._find_app_processes(monitor, all_processes)
                     
+                    # Debug logging for Chrome-based apps
+                    if self.enable_profiling and monitor['is_chrome'] and app_processes:
+                        print(f"[DEBUG] {app_name}: found {len(app_processes)} processes")
+                        for proc in app_processes[:2]:
+                            try:
+                                print(f"  - PID {proc.pid}: {' '.join(proc.cmdline()[:3])}")
+                            except:
+                                pass
+                    
                     # Handle found processes
                     if app_processes:
+                        # For Chrome apps: if ANY Chrome app is unlocked, skip blocking for ALL
+                        if monitor['is_chrome'] and chrome_unlocked:
+                            monitor['no_process_count'] = 0
+                            continue
+                        
                         if app_name not in unlocked_apps:
                             if app_name not in self.apps_showing_dialog:
                                 # Block the app
