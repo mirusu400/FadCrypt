@@ -312,7 +312,17 @@ class UnifiedMonitor:
                                 
                                 # Show password dialog
                                 self.apps_showing_dialog.add(app_name)
-                                self.show_dialog(app_name, app_path)
+                                password_correct = self.show_dialog(app_name, app_path)
+                                
+                                # Handle password result
+                                if password_correct:
+                                    # Add to unlocked apps
+                                    unlocked_apps.append(app_name)
+                                    self.set_state('unlocked_apps', unlocked_apps)
+                                    print(f"[UNLOCK] {app_name} unlocked successfully")
+                                
+                                # Remove from showing dialog set
+                                self.apps_showing_dialog.discard(app_name)
                             else:
                                 # Kill additional processes while dialog is showing
                                 self._block_processes(app_processes, app_name)

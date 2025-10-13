@@ -14,6 +14,7 @@ class SystemTray(QObject):
     hide_window_requested = pyqtSignal()
     start_monitoring_requested = pyqtSignal()
     stop_monitoring_requested = pyqtSignal()
+    snake_game_requested = pyqtSignal()
     exit_requested = pyqtSignal()
     
     def __init__(self, resource_path_func, parent=None):
@@ -66,6 +67,13 @@ class SystemTray(QObject):
         self.stop_monitoring_action.triggered.connect(self.stop_monitoring_requested.emit)
         self.stop_monitoring_action.setEnabled(False)
         menu.addAction(self.stop_monitoring_action)
+        
+        menu.addSeparator()
+        
+        # Snake Game action
+        snake_action = QAction('🐍 Snake Game', self)
+        snake_action.triggered.connect(self.snake_game_requested.emit)
+        menu.addAction(snake_action)
         
         menu.addSeparator()
         

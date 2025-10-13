@@ -316,6 +316,7 @@ class MainWindowBase(QMainWindow):
         self.system_tray.show_window_requested.connect(self.show_window_from_tray)
         self.system_tray.start_monitoring_requested.connect(self.on_start_monitoring)
         self.system_tray.stop_monitoring_requested.connect(self.on_stop_monitoring)
+        self.system_tray.snake_game_requested.connect(self.on_snake_game)
         self.system_tray.exit_requested.connect(self.on_exit_requested)
         
         # Show tray icon
@@ -502,11 +503,12 @@ class MainWindowBase(QMainWindow):
             }
         """
         
-        stop_button = QPushButton("Stop Monitoring")
-        stop_button.setFixedWidth(180)
-        stop_button.setStyleSheet(button_style)
-        stop_button.clicked.connect(self.on_stop_monitoring)
-        sidebar_layout.addWidget(stop_button)
+        self.stop_button = QPushButton("Stop Monitoring")
+        self.stop_button.setFixedWidth(180)
+        self.stop_button.setStyleSheet(button_style)
+        self.stop_button.clicked.connect(self.on_stop_monitoring)
+        self.stop_button.setEnabled(False)  # Disabled by default
+        sidebar_layout.addWidget(self.stop_button)
         
         create_pass_button = QPushButton("Create Password")
         create_pass_button.setFixedWidth(180)
@@ -1503,6 +1505,11 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
+        # Update UI buttons - disable start, enable stop
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        print("🔘 Buttons updated: Start disabled, Stop enabled")
+        
         # CRITICAL: Disable system tools if lock_tools setting is enabled
         # This prevents users from terminating FadCrypt via terminal/task manager
         if hasattr(self, 'settings_panel') and self.settings_panel.lock_tools_checkbox.isChecked():
@@ -1561,6 +1568,11 @@ class MainWindowBase(QMainWindow):
                 print("🛑 Monitoring stopped successfully")
             
             self.monitoring_active = False
+            
+            # Update UI buttons - enable start, disable stop
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            print("🔘 Buttons updated: Start enabled, Stop disabled")
             
             # CRITICAL: Re-enable system tools if they were disabled
             # This restores access to terminals/task manager

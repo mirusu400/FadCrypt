@@ -284,3 +284,8 @@ class SettingsPanel(QWidget):
         self.lock_tools_checkbox.setChecked(settings.get('lock_tools', True))
         
         self.on_settings_changed()
+    
+    def apply_settings(self, settings):
+        """Alias for set_settings - apply settings from dictionary"""
+        self.set_settings(settings)
+
