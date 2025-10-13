@@ -270,8 +270,8 @@ class MainWindowBase(QMainWindow):
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
         
-        # Banner image at top (using banner.png like Tkinter)
-        banner_path = self.resource_path('img/banner.png')
+        # Banner image at top (using banner-rounder.png)
+        banner_path = self.resource_path('img/banner-rounded.png')
         if os.path.exists(banner_path):
             banner_label = QLabel()
             banner_pixmap = QPixmap(banner_path)

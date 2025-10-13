@@ -1212,7 +1212,7 @@ class AppLockerGUI:
     def load_image(self):
         # Open and prepare the image
         try:
-            image = Image.open(self.resource_path('img/banner.png'))  # Update this path
+            image = Image.open(self.resource_path('img/banner-rounded.png'))  # Update this path
             image = image.resize((700, 200), Image.LANCZOS)  # Resize using LANCZOS filter
             self.img = ImageTk.PhotoImage(image)
         except:
