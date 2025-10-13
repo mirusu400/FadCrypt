@@ -12,13 +12,13 @@ class ButtonPanel(QWidget):
     
     Signals:
         add_app_clicked: User wants to add a new application
-        lock_all_clicked: User wants to lock all applications
-        unlock_all_clicked: User wants to unlock all applications
+        select_all_clicked: User wants to select all applications
+        deselect_all_clicked: User wants to deselect all applications
     """
     
     add_app_clicked = pyqtSignal()
-    lock_all_clicked = pyqtSignal()
-    unlock_all_clicked = pyqtSignal()
+    select_all_clicked = pyqtSignal()
+    deselect_all_clicked = pyqtSignal()
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -34,17 +34,17 @@ class ButtonPanel(QWidget):
         self.add_button.clicked.connect(self.add_app_clicked.emit)
         layout.addWidget(self.add_button)
         
-        # Lock All button
-        self.lock_all_button = QPushButton("🔒 Lock All")
-        self.lock_all_button.setMinimumHeight(35)
-        self.lock_all_button.clicked.connect(self.lock_all_clicked.emit)
-        layout.addWidget(self.lock_all_button)
+        # Select All button
+        self.select_all_button = QPushButton("✅ Select All")
+        self.select_all_button.setMinimumHeight(35)
+        self.select_all_button.clicked.connect(self.select_all_clicked.emit)
+        layout.addWidget(self.select_all_button)
         
-        # Unlock All button
-        self.unlock_all_button = QPushButton("🔓 Unlock All")
-        self.unlock_all_button.setMinimumHeight(35)
-        self.unlock_all_button.clicked.connect(self.unlock_all_clicked.emit)
-        layout.addWidget(self.unlock_all_button)
+        # Deselect All button
+        self.deselect_all_button = QPushButton("❌ Deselect All")
+        self.deselect_all_button.setMinimumHeight(35)
+        self.deselect_all_button.clicked.connect(self.deselect_all_clicked.emit)
+        layout.addWidget(self.deselect_all_button)
         
         # Stretch at the end
         layout.addStretch()

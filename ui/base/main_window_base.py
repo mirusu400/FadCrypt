@@ -2,6 +2,7 @@
 
 import sys
 import os
+import json
 import webbrowser
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
@@ -345,6 +346,12 @@ class MainWindowBase(QMainWindow):
         
         # Button panel
         self.button_panel = ButtonPanel()
+        
+        # Connect button panel signals
+        self.button_panel.add_app_clicked.connect(self.add_application)
+        self.button_panel.select_all_clicked.connect(self.select_all_apps)
+        self.button_panel.deselect_all_clicked.connect(self.deselect_all_apps)
+        
         apps_layout.addWidget(self.button_panel)
         
         # Helper text
@@ -354,6 +361,9 @@ class MainWindowBase(QMainWindow):
         apps_layout.addWidget(helper_label)
         
         self.tabs.addTab(apps_tab, "Applications")
+        
+        # Load saved applications
+        self.load_applications_config()
         
     def create_config_tab(self):
         """Create Config tab for viewing encrypted apps list"""
@@ -548,6 +558,132 @@ class MainWindowBase(QMainWindow):
             QMessageBox.critical(self, title, message)
         elif msg_type == "success":
             QMessageBox.information(self, title, message)
+    
+    # Application management methods
+    def add_application(self):
+        """Open the Add Application dialog"""
+        from ui.dialogs.add_application_dialog import AddApplicationDialog
+        
+        dialog = AddApplicationDialog(self.resource_path, self)
+        dialog.application_added.connect(self.on_application_added)
+        dialog.exec()
+    
+    def on_application_added(self, app_name, app_path):
+        """Handle application added from dialog"""
+        # Check if already added
+        if app_name in self.app_list_widget.apps_data:
+            self.show_message("Info", f"Application '{app_name}' is already in the list.", "info")
+            return
+        
+        # Add to the list (with is_locked=False by default)
+        self.app_list_widget.add_app(app_name, app_path, is_locked=False)
+        self.save_applications_config()
+        self.show_message("Success", f"Application '{app_name}' added successfully.", "success")
+    
+    def remove_application(self):
+        """Remove selected application from the locked apps list"""
+        current_item = self.app_list_widget.currentItem()
+        if not current_item:
+            self.show_message("Info", "Please select an application to remove.", "info")
+            return
+        
+        app_name = current_item.data(Qt.ItemDataRole.UserRole)
+        
+        # Confirm removal
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Are you sure you want to remove '{app_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            self.app_list_widget.remove_app(app_name)
+            self.save_applications_config()
+            self.show_message("Success", f"Application '{app_name}' removed successfully.", "success")
+    
+    def toggle_app_lock(self):
+        """Toggle lock status of selected application"""
+        current_item = self.app_list_widget.currentItem()
+        if not current_item:
+            self.show_message("Info", "Please select an application to toggle.", "info")
+            return
+        
+        app_name = current_item.data(Qt.ItemDataRole.UserRole)
+        app_data = self.app_list_widget.apps_data.get(app_name)
+        
+        if app_data:
+            # Toggle lock status
+            new_status = not app_data['is_locked']
+            self.app_list_widget.update_app_status(app_name, new_status)
+            self.save_applications_config()
+            
+            status_text = "locked" if new_status else "unlocked"
+            self.show_message("Success", f"Application '{app_name}' is now {status_text}.", "success")
+    
+    def select_all_apps(self):
+        """Select all applications in the list"""
+        if not self.app_list_widget.apps_data:
+            self.show_message("Info", "No applications to select.", "info")
+            return
+        
+        self.app_list_widget.selectAll()
+        self.show_message("Success", "All applications selected.", "success")
+    
+    def deselect_all_apps(self):
+        """Deselect all applications in the list"""
+        if not self.app_list_widget.apps_data:
+            self.show_message("Info", "No applications to deselect.", "info")
+            return
+        
+        self.app_list_widget.clearSelection()
+        self.show_message("Success", "All applications deselected.", "success")
+    
+    def save_applications_config(self):
+        """Save applications configuration to JSON file"""
+        config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
+        
+        # Build config data
+        config_data = {}
+        for app_name, app_data in self.app_list_widget.apps_data.items():
+            config_data[app_name] = {
+                'path': app_data['path'],
+                'is_locked': app_data['is_locked']
+            }
+        
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(config_data, f, indent=4)
+            print(f"Applications config saved: {len(config_data)} apps")
+        except Exception as e:
+            print(f"Error saving applications config: {e}")
+    
+    def load_applications_config(self):
+        """Load applications configuration from JSON file"""
+        config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
+        
+        if not os.path.exists(config_file):
+            return
+        
+        try:
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+            
+            # Clear current list
+            self.app_list_widget.clear()
+            self.app_list_widget.apps_data.clear()
+            
+            # Load apps
+            for app_name, app_data in config_data.items():
+                self.app_list_widget.add_app(
+                    app_name,
+                    app_data['path'],
+                    app_data.get('is_locked', True)
+                )
+            
+            print(f"Applications config loaded: {len(config_data)} apps")
+        except Exception as e:
+            print(f"Error loading applications config: {e}")
         
     # Button handlers (to be overridden by subclasses)
     def on_start_monitoring(self):
