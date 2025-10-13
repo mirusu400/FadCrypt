@@ -1,249 +1,232 @@
-"""
-Password Dialog - Master password input dialog
-"""
+"""Password Dialog for FadCrypt"""
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QLineEdit,
-    QPushButton, QHBoxLayout
+    QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QFrame
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
-from typing import Optional
+from PyQt6.QtGui import QPixmap, QFont
 
 
 class PasswordDialog(QDialog):
-    """
-    Simple password input dialog.
+    """Custom password dialog with optional fullscreen wallpaper background"""
     
-    Args:
-        title: Dialog window title
-        prompt: Password prompt message
-        parent: Parent widget
-    """
-    
-    def __init__(self, title: str = "Password Required", prompt: str = "Enter master password:", parent=None):
+    def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None):
         super().__init__(parent)
+        self.resource_path = resource_path
+        self.fullscreen = fullscreen
+        self.wallpaper_choice = wallpaper_choice
+        self.password_value = None
         
-        self.password_value: Optional[str] = None
-        
-        # Window setup
         self.setWindowTitle(title)
-        self.setModal(True)
-        self.setMinimumWidth(400)
-        self.setFixedHeight(180)
+        self.init_ui(title, prompt)
         
-        # Center on screen
-        if parent:
-            parent_geo = parent.geometry()
-            x = parent_geo.x() + (parent_geo.width() - 400) // 2
-            y = parent_geo.y() + (parent_geo.height() - 180) // 2
+    def init_ui(self, title, prompt):
+        """Initialize the password dialog UI"""
+        if self.fullscreen:
+            # Fullscreen mode with wallpaper
+            self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+            self.showFullScreen()
+            
+            # Set wallpaper background
+            self.set_wallpaper_background()
+        else:
+            # Simple dialog mode
+            self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
+            self.setFixedSize(400, 250)
+            self.setStyleSheet("QDialog { background-color: white; }")
+            
+            # Center on screen
+            screen_geometry = self.screen().geometry()
+            x = (screen_geometry.width() - self.width()) // 2
+            y = (screen_geometry.height() - self.height()) // 2
             self.move(x, y)
         
-        # Layout
-        layout = QVBoxLayout()
-        layout.setContentsMargins(30, 20, 30, 20)
-        layout.setSpacing(15)
-        self.setLayout(layout)
+        # Main layout
+        main_layout = QVBoxLayout()
+        
+        if self.fullscreen:
+            main_layout.setContentsMargins(0, 0, 0, 0)
+            main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        else:
+            main_layout.setContentsMargins(20, 20, 20, 20)
+            main_layout.setSpacing(15)
+        
+        # Content frame (white background for text and inputs)
+        content_frame = QFrame()
+        content_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border: 2px solid #ddd;
+                border-radius: 10px;
+                padding: 20px;
+            }
+        """)
+        
+        if self.fullscreen:
+            content_frame.setFixedSize(400, 250)
+        
+        content_layout = QVBoxLayout(content_frame)
+        content_layout.setSpacing(15)
         
         # Title label
         title_label = QLabel(title)
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
+        title_label.setStyleSheet("QLabel { font-size: 16px; font-weight: bold; color: black; border: none; }")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
+        content_layout.addWidget(title_label)
         
         # Prompt label
         prompt_label = QLabel(prompt)
-        prompt_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         prompt_label.setWordWrap(True)
-        layout.addWidget(prompt_label)
+        prompt_label.setStyleSheet("QLabel { font-size: 12px; color: #333; border: none; }")
+        prompt_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        content_layout.addWidget(prompt_label)
         
         # Password input
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setMinimumHeight(35)
-        self.password_input.setPlaceholderText("Password")
-        self.password_input.returnPressed.connect(self._on_ok_clicked)
-        layout.addWidget(self.password_input)
+        self.password_input.setPlaceholderText("Enter password...")
+        self.password_input.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid #4CAF50;
+            }
+        """)
+        self.password_input.returnPressed.connect(self.on_ok)
+        content_layout.addWidget(self.password_input)
         
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
         
-        self.ok_button = QPushButton("OK")
-        self.ok_button.setMinimumHeight(35)
-        self.ok_button.setDefault(True)
-        self.ok_button.clicked.connect(self._on_ok_clicked)
-        button_layout.addWidget(self.ok_button)
+        ok_button = QPushButton("OK")
+        ok_button.setFixedSize(100, 35)
+        ok_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:pressed {
+                background-color: #3d8b40;
+            }
+        """)
+        ok_button.clicked.connect(self.on_ok)
         
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.setMinimumHeight(35)
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.setFixedSize(100, 35)
+        cancel_button.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #da190b;
+            }
+            QPushButton:pressed {
+                background-color: #c41700;
+            }
+        """)
+        cancel_button.clicked.connect(self.reject)
         
-        layout.addLayout(button_layout)
+        button_layout.addStretch()
+        button_layout.addWidget(ok_button)
+        button_layout.addWidget(cancel_button)
+        button_layout.addStretch()
         
-        # Focus on password input
+        content_layout.addLayout(button_layout)
+        
+        main_layout.addWidget(content_frame)
+        self.setLayout(main_layout)
+        
+        # Set focus to password input
         self.password_input.setFocus()
+        
+    def set_wallpaper_background(self):
+        """Set wallpaper background for fullscreen mode"""
+        try:
+            # Map wallpaper choices to image files
+            wallpaper_map = {
+                'default': 'wall1.png',
+                'H4ck3r': 'wall2.png',
+                'Binary': 'wall3.png',
+                'encrypted': 'wall4.png'
+            }
+            
+            wallpaper_file = wallpaper_map.get(self.wallpaper_choice, 'wall1.png')
+            wallpaper_path = self.resource_path(f"img/{wallpaper_file}")
+            
+            pixmap = QPixmap(wallpaper_path)
+            if not pixmap.isNull():
+                # Scale to screen size
+                scaled_pixmap = pixmap.scaled(
+                    self.width(), 
+                    self.height(), 
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                
+                # Set as background using palette
+                from PyQt6.QtGui import QPalette, QBrush
+                palette = self.palette()
+                palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
+                self.setPalette(palette)
+        except Exception as e:
+            print(f"Error loading wallpaper: {e}")
+            # Fallback to dark background
+            self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
     
-    def _on_ok_clicked(self):
-        """Handle OK button click."""
+    def on_ok(self):
+        """Handle OK button click"""
         self.password_value = self.password_input.text()
         if self.password_value:
             self.accept()
     
-    def get_password(self) -> Optional[str]:
-        """Get the entered password."""
+    def get_password(self):
+        """Get the entered password"""
         return self.password_value
     
-    @staticmethod
-    def get_password_input(title: str = "Password Required", 
-                          prompt: str = "Enter master password:",
-                          parent=None) -> Optional[str]:
-        """
-        Show password dialog and return entered password.
-        
-        Args:
-            title: Dialog title
-            prompt: Password prompt message
-            parent: Parent widget
-            
-        Returns:
-            Entered password or None if cancelled
-        """
-        dialog = PasswordDialog(title, prompt, parent)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            return dialog.get_password()
-        return None
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        if event.key() == Qt.Key.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
 
 
-class ChangePasswordDialog(QDialog):
+def ask_password(title, prompt, resource_path, style="simple", wallpaper="default", parent=None):
     """
-    Dialog for changing the master password.
+    Helper function to show password dialog.
+    
+    Args:
+        title: Dialog title
+        prompt: Prompt text
+        resource_path: Function to get resource paths
+        style: "simple" or "fullscreen"
+        wallpaper: Wallpaper choice ("default", "H4ck3r", "Binary", "encrypted")
+        parent: Parent widget
+    
+    Returns:
+        Password string or None if cancelled
     """
+    fullscreen = (style == "fullscreen")
+    dialog = PasswordDialog(title, prompt, resource_path, fullscreen, wallpaper, parent)
     
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        self.old_password: Optional[str] = None
-        self.new_password: Optional[str] = None
-        
-        # Window setup
-        self.setWindowTitle("Change Master Password")
-        self.setModal(True)
-        self.setMinimumWidth(450)
-        self.setFixedHeight(260)
-        
-        # Center on screen
-        if parent:
-            parent_geo = parent.geometry()
-            x = parent_geo.x() + (parent_geo.width() - 450) // 2
-            y = parent_geo.y() + (parent_geo.height() - 260) // 2
-            self.move(x, y)
-        
-        # Layout
-        layout = QVBoxLayout()
-        layout.setContentsMargins(30, 20, 30, 20)
-        layout.setSpacing(12)
-        self.setLayout(layout)
-        
-        # Title
-        title_label = QLabel("🔑 Change Master Password")
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
-        
-        # Old password
-        old_label = QLabel("Current Password:")
-        layout.addWidget(old_label)
-        
-        self.old_password_input = QLineEdit()
-        self.old_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.old_password_input.setMinimumHeight(35)
-        self.old_password_input.setPlaceholderText("Current password")
-        layout.addWidget(self.old_password_input)
-        
-        # New password
-        new_label = QLabel("New Password:")
-        layout.addWidget(new_label)
-        
-        self.new_password_input = QLineEdit()
-        self.new_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.new_password_input.setMinimumHeight(35)
-        self.new_password_input.setPlaceholderText("New password")
-        layout.addWidget(self.new_password_input)
-        
-        # Confirm password
-        confirm_label = QLabel("Confirm New Password:")
-        layout.addWidget(confirm_label)
-        
-        self.confirm_password_input = QLineEdit()
-        self.confirm_password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.confirm_password_input.setMinimumHeight(35)
-        self.confirm_password_input.setPlaceholderText("Confirm new password")
-        self.confirm_password_input.returnPressed.connect(self._on_ok_clicked)
-        layout.addWidget(self.confirm_password_input)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
-        
-        self.ok_button = QPushButton("Change Password")
-        self.ok_button.setMinimumHeight(35)
-        self.ok_button.setDefault(True)
-        self.ok_button.clicked.connect(self._on_ok_clicked)
-        button_layout.addWidget(self.ok_button)
-        
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.setMinimumHeight(35)
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-        
-        layout.addLayout(button_layout)
-        
-        # Focus on old password
-        self.old_password_input.setFocus()
-    
-    def _on_ok_clicked(self):
-        """Handle OK button click."""
-        from PyQt6.QtWidgets import QMessageBox
-        
-        old_pwd = self.old_password_input.text()
-        new_pwd = self.new_password_input.text()
-        confirm_pwd = self.confirm_password_input.text()
-        
-        # Validation
-        if not old_pwd:
-            QMessageBox.warning(self, "Error", "Please enter your current password.")
-            self.old_password_input.setFocus()
-            return
-        
-        if not new_pwd:
-            QMessageBox.warning(self, "Error", "Please enter a new password.")
-            self.new_password_input.setFocus()
-            return
-        
-        if new_pwd != confirm_pwd:
-            QMessageBox.warning(self, "Error", "New passwords do not match.")
-            self.confirm_password_input.clear()
-            self.confirm_password_input.setFocus()
-            return
-        
-        if len(new_pwd) < 4:
-            QMessageBox.warning(self, "Error", "Password must be at least 4 characters.")
-            self.new_password_input.setFocus()
-            return
-        
-        # Store passwords
-        self.old_password = old_pwd
-        self.new_password = new_pwd
-        self.accept()
-    
-    def get_passwords(self) -> tuple[Optional[str], Optional[str]]:
-        """Get old and new passwords."""
-        return self.old_password, self.new_password
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        return dialog.get_password()
+    return None

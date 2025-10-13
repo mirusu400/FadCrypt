@@ -5,7 +5,7 @@ import os
 import webbrowser
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit
+    QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit, QFileDialog
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase
@@ -15,6 +15,13 @@ from ui.components.button_panel import ButtonPanel
 from ui.components.settings_panel import SettingsPanel
 from ui.components.about_panel import AboutPanel
 from ui.dialogs.readme_dialog import ReadmeDialog
+from ui.dialogs.password_dialog import ask_password
+
+# Import core managers
+from core.crypto_manager import CryptoManager
+from core.password_manager import PasswordManager
+from core.config_manager import ConfigManager
+from core.application_manager import ApplicationManager
 
 # Import version info
 from version import __version__, __version_code__
@@ -38,11 +45,29 @@ class MainWindowBase(QMainWindow):
         self.version_code = __version_code__
         self.monitoring_active = False
         
+        # Initialize settings (will be loaded from JSON later)
+        self.password_dialog_style = "simple"
+        self.wallpaper_choice = "default"
+        
+        # Initialize core managers - simplified for now
+        self.crypto_manager = CryptoManager()
+        
+        # Password file path
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        self.password_manager = PasswordManager(password_file, self.crypto_manager)
+        
+        # Config manager (will be fully integrated later)
+        self.config_manager = None
+        self.app_manager = None
+        
         # Load custom font
         self.load_custom_font()
         
         # Initialize UI
         self.init_ui()
+        
+        # Connect settings signal
+        self.settings_panel.settings_changed.connect(self.on_settings_changed)
         
     def load_custom_font(self):
         """Load Ubuntu Regular font for the entire application"""
@@ -461,6 +486,68 @@ class MainWindowBase(QMainWindow):
             "<p>An open-source application lock and encryption software.</p>"
             "<p>© 2024 FadSec Lab. All rights reserved.</p>"
         )
+    
+    # Helper methods
+    def get_fadcrypt_folder(self):
+        """Get FadCrypt configuration folder path"""
+        home_dir = os.path.expanduser('~')
+        fadcrypt_folder = os.path.join(home_dir, '.FadCrypt')
+        
+        # Create if not exists
+        if not os.path.exists(fadcrypt_folder):
+            os.makedirs(fadcrypt_folder, exist_ok=True)
+        
+        return fadcrypt_folder
+    
+    def on_settings_changed(self):
+        """Handle settings changes from SettingsPanel"""
+        # Get current settings
+        settings = self.settings_panel.get_settings()
+        
+        # Update instance variables
+        self.password_dialog_style = settings.get('password_dialog_style', 'simple')
+        self.wallpaper_choice = settings.get('wallpaper_choice', 'default')
+        
+        # Save settings to file
+        self.save_settings(settings)
+        
+        print(f"Settings updated: style={self.password_dialog_style}, wallpaper={self.wallpaper_choice}")
+    
+    def save_settings(self, settings):
+        """Save settings to JSON file"""
+        import json
+        settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
+        try:
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=4)
+            print(f"Settings saved to {settings_file}")
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+    
+    def load_settings(self):
+        """Load settings from JSON file"""
+        import json
+        settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
+        try:
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+                    self.password_dialog_style = settings.get('password_dialog_style', 'simple')
+                    self.wallpaper_choice = settings.get('wallpaper_choice', 'default')
+                    print(f"Settings loaded: {settings}")
+        except Exception as e:
+            print(f"Error loading settings: {e}")
+    
+    def show_message(self, title, message, msg_type="info"):
+        """Show a message dialog"""
+        if msg_type == "info":
+            QMessageBox.information(self, title, message)
+        elif msg_type == "warning":
+            QMessageBox.warning(self, title, message)
+        elif msg_type == "error":
+            QMessageBox.critical(self, title, message)
+        elif msg_type == "success":
+            QMessageBox.information(self, title, message)
         
     # Button handlers (to be overridden by subclasses)
     def on_start_monitoring(self):
@@ -478,11 +565,58 @@ class MainWindowBase(QMainWindow):
         
     def on_create_password(self):
         """Handle create password button click"""
-        pass
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        
+        if os.path.exists(password_file):
+            self.show_message("Info", "Password already exists. Use 'Change Password' to modify.", "info")
+        else:
+            password = ask_password(
+                "Create Password",
+                "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            if password:
+                try:
+                    self.password_manager.create_password(password)
+                    self.show_message("Success", "Password created successfully.", "success")
+                except Exception as e:
+                    self.show_message("Error", f"Failed to create password:\n{e}", "error")
         
     def on_change_password(self):
         """Handle change password button click"""
-        pass
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        
+        if os.path.exists(password_file):
+            old_password = ask_password(
+                "Change Password",
+                "Enter your old password:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            if old_password and self.password_manager.verify_password(old_password):
+                new_password = ask_password(
+                    "New Password",
+                    "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
+                    self.resource_path,
+                    style=self.password_dialog_style,
+                    wallpaper=self.wallpaper_choice,
+                    parent=self
+                )
+                if new_password:
+                    try:
+                        self.password_manager.change_password(old_password, new_password)
+                        self.show_message("Success", "Password changed successfully.", "success")
+                    except Exception as e:
+                        self.show_message("Error", f"Failed to change password:\n{e}", "error")
+            else:
+                self.show_message("Error", "Incorrect old password.", "error")
+        else:
+            self.show_message("Oops!", "How do I change a password that doesn't exist? :(", "warning")
         
     def on_snake_game(self):
         """Handle snake game button click"""
@@ -499,8 +633,51 @@ class MainWindowBase(QMainWindow):
         
     def on_export_config(self):
         """Handle export config button click"""
-        pass
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Configuration",
+            os.path.expanduser("~/fadcrypt_config.json"),
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Export configuration (placeholder - will need ConfigManager integration)
+                import json
+                config_data = {
+                    'version': self.version,
+                    'settings': self.settings_panel.get_settings() if hasattr(self, 'settings_panel') else {},
+                    'applications': []  # Will be populated when app_manager is integrated
+                }
+                
+                with open(file_path, 'w') as f:
+                    json.dump(config_data, f, indent=4)
+                
+                self.show_message("Success", f"Configuration exported to:\n{file_path}", "success")
+            except Exception as e:
+                self.show_message("Error", f"Failed to export configuration:\n{e}", "error")
         
     def on_import_config(self):
         """Handle import config button click"""
-        pass
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Configuration",
+            os.path.expanduser("~"),
+            "JSON Files (*.json);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Import configuration (placeholder - will need ConfigManager integration)
+                import json
+                with open(file_path, 'r') as f:
+                    config_data = json.load(f)
+                
+                # Apply imported settings
+                if 'settings' in config_data and hasattr(self, 'settings_panel'):
+                    # Will be implemented when settings panel supports loading
+                    pass
+                
+                self.show_message("Success", f"Configuration imported from:\n{file_path}", "success")
+            except Exception as e:
+                self.show_message("Error", f"Failed to import configuration:\n{e}", "error")
