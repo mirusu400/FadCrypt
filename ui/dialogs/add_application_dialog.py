@@ -49,10 +49,13 @@ class AddApplicationDialog(QDialog):
         self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.drop_area.setStyleSheet("""
             QTextEdit {
-                background-color: #f0f0f0;
-                color: #00ff00;
-                font-size: 11px;
-                border: 2px dashed #ccc;
+                background-color: #2b2b2b;
+                color: #4ade80;
+                font-size: 12px;
+                font-weight: bold;
+                border: 2px dashed #4ade80;
+                border-radius: 5px;
+                padding: 10px;
             }
         """)
         self.drop_area.setText("Just drop it in—I'll sort out the name and path,\nno worries")
@@ -77,7 +80,14 @@ class AddApplicationDialog(QDialog):
             "Paste the exact path (with slashes) in the Path field below.\n"
             "For Name, use any readable name like 'Firefox'."
         )
-        helper_label.setStyleSheet("color: blue; font-size: 9pt;")
+        helper_label.setStyleSheet("""
+            color: #60a5fa;
+            font-size: 9pt;
+            background-color: #1e3a5f;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #60a5fa;
+        """)
         helper_label.setWordWrap(True)
         manual_layout.addWidget(helper_label)
         
@@ -87,6 +97,19 @@ class AddApplicationDialog(QDialog):
         
         self.name_entry = QLineEdit()
         self.name_entry.setPlaceholderText("e.g., Firefox")
+        self.name_entry.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #4a4a4a;
+                border-radius: 5px;
+                background-color: #2b2b2b;
+                color: #ffffff;
+                font-size: 11pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #4ade80;
+            }
+        """)
         manual_layout.addWidget(self.name_entry)
         
         # Path input
@@ -95,19 +118,37 @@ class AddApplicationDialog(QDialog):
         
         self.path_entry = QLineEdit()
         self.path_entry.setPlaceholderText("e.g., /usr/bin/firefox")
+        self.path_entry.setStyleSheet("""
+            QLineEdit {
+                padding: 8px;
+                border: 2px solid #4a4a4a;
+                border-radius: 5px;
+                background-color: #2b2b2b;
+                color: #ffffff;
+                font-size: 11pt;
+            }
+            QLineEdit:focus {
+                border: 2px solid #4ade80;
+            }
+        """)
         manual_layout.addWidget(self.path_entry)
         
         # Browse button
-        browse_button = QPushButton("Browse")
+        browse_button = QPushButton("📁 Browse")
         browse_button.setStyleSheet("""
             QPushButton {
-                background-color: #4C516D;
+                background-color: #4a5568;
                 color: white;
-                padding: 5px 15px;
-                border-radius: 3px;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 10pt;
             }
             QPushButton:hover {
-                background-color: #3a3f5c;
+                background-color: #5a6578;
+            }
+            QPushButton:pressed {
+                background-color: #3a4558;
             }
         """)
         browse_button.clicked.connect(self.browse_for_file)
@@ -122,17 +163,21 @@ class AddApplicationDialog(QDialog):
         
         # Scan Apps Button
         scan_button = QPushButton("🔍 Scan for Apps")
-        scan_button.setMinimumWidth(120)
+        scan_button.setMinimumWidth(130)
         scan_button.setStyleSheet("""
             QPushButton {
-                background-color: #4C516D;
+                background-color: #6366f1;
                 color: white;
-                padding: 8px 15px;
-                border-radius: 3px;
+                padding: 10px 20px;
+                border-radius: 5px;
                 font-weight: bold;
+                font-size: 10pt;
             }
             QPushButton:hover {
-                background-color: #3a3f5c;
+                background-color: #7c3aed;
+            }
+            QPushButton:pressed {
+                background-color: #5b21b6;
             }
         """)
         scan_button.clicked.connect(self.scan_for_apps)
@@ -140,17 +185,21 @@ class AddApplicationDialog(QDialog):
         
         # Save Button
         save_button = QPushButton("💾 Save")
-        save_button.setMinimumWidth(100)
+        save_button.setMinimumWidth(120)
         save_button.setStyleSheet("""
             QPushButton {
-                background-color: #009E60;
+                background-color: #10b981;
                 color: white;
-                padding: 8px 15px;
-                border-radius: 3px;
+                padding: 10px 20px;
+                border-radius: 5px;
                 font-weight: bold;
+                font-size: 10pt;
             }
             QPushButton:hover {
-                background-color: #007a4d;
+                background-color: #059669;
+            }
+            QPushButton:pressed {
+                background-color: #047857;
             }
         """)
         save_button.clicked.connect(self.save_application)
@@ -222,10 +271,13 @@ class AddApplicationDialog(QDialog):
         
         self.drop_area.setStyleSheet("""
             QTextEdit {
-                background-color: #d4edda;
-                color: #155724;
-                font-size: 11px;
-                border: 2px solid #28a745;
+                background-color: #064e3b;
+                color: #6ee7b7;
+                font-size: 12px;
+                font-weight: bold;
+                border: 2px solid #10b981;
+                border-radius: 5px;
+                padding: 10px;
             }
         """)
         self.drop_area.setText(f"✓ File added:\n{app_name}\n{file_path}")

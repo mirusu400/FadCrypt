@@ -331,17 +331,26 @@ class MainWindowBase(QMainWindow):
         
     def create_applications_tab(self):
         """Create Applications tab for managing locked apps"""
+        from ui.components.app_grid_widget import AppGridWidget
+        
         apps_tab = QWidget()
         apps_layout = QVBoxLayout(apps_tab)
         apps_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Title
-        title_label = QLabel("Manage Applications")
-        title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
-        apps_layout.addWidget(title_label)
+        # Header with app count
+        header_layout = QHBoxLayout()
+        self.app_count_label = QLabel("Applications: 0")
+        self.app_count_label.setStyleSheet("""
+            color: #ffffff;
+            font-size: 13pt;
+            font-weight: bold;
+        """)
+        header_layout.addWidget(self.app_count_label)
+        header_layout.addStretch()
+        apps_layout.addLayout(header_layout)
         
-        # App list widget
-        self.app_list_widget = AppListWidget()
+        # App grid widget (replaces simple list)
+        self.app_list_widget = AppGridWidget()
         apps_layout.addWidget(self.app_list_widget)
         
         # Button panel
@@ -353,12 +362,6 @@ class MainWindowBase(QMainWindow):
         self.button_panel.deselect_all_clicked.connect(self.deselect_all_apps)
         
         apps_layout.addWidget(self.button_panel)
-        
-        # Helper text
-        helper_label = QLabel("Just drop it in—I'll sort out the name and path, no worries")
-        helper_label.setStyleSheet("color: gray; font-style: italic; font-size: 11px;")
-        helper_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        apps_layout.addWidget(helper_label)
         
         self.tabs.addTab(apps_tab, "Applications")
         
@@ -575,51 +578,45 @@ class MainWindowBase(QMainWindow):
             self.show_message("Info", f"Application '{app_name}' is already in the list.", "info")
             return
         
-        # Add to the list (with is_locked=False by default)
-        self.app_list_widget.add_app(app_name, app_path, is_locked=False)
+        # Add to the grid (with unlock_count=0 by default)
+        self.app_list_widget.add_app(app_name, app_path, unlock_count=0)
         self.save_applications_config()
+        self.update_app_count()
         self.show_message("Success", f"Application '{app_name}' added successfully.", "success")
     
+    def update_app_count(self):
+        """Update the application count label"""
+        count = len(self.app_list_widget.apps_data)
+        self.app_count_label.setText(f"Applications: {count}")
+    
     def remove_application(self):
-        """Remove selected application from the locked apps list"""
-        current_item = self.app_list_widget.currentItem()
-        if not current_item:
-            self.show_message("Info", "Please select an application to remove.", "info")
+        """Remove selected applications from the list"""
+        selected_apps = self.app_list_widget.get_selected_apps()
+        
+        if not selected_apps:
+            self.show_message("Info", "Please select at least one application to remove.", "info")
             return
         
-        app_name = current_item.data(Qt.ItemDataRole.UserRole)
-        
         # Confirm removal
+        app_names = ", ".join(selected_apps)
         reply = QMessageBox.question(
             self,
             "Confirm Removal",
-            f"Are you sure you want to remove '{app_name}'?",
+            f"Are you sure you want to remove:\n{app_names}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            self.app_list_widget.remove_app(app_name)
+            for app_name in selected_apps:
+                self.app_list_widget.remove_app(app_name)
             self.save_applications_config()
-            self.show_message("Success", f"Application '{app_name}' removed successfully.", "success")
+            self.update_app_count()
+            self.show_message("Success", f"Removed {len(selected_apps)} application(s) successfully.", "success")
     
     def toggle_app_lock(self):
-        """Toggle lock status of selected application"""
-        current_item = self.app_list_widget.currentItem()
-        if not current_item:
-            self.show_message("Info", "Please select an application to toggle.", "info")
-            return
-        
-        app_name = current_item.data(Qt.ItemDataRole.UserRole)
-        app_data = self.app_list_widget.apps_data.get(app_name)
-        
-        if app_data:
-            # Toggle lock status
-            new_status = not app_data['is_locked']
-            self.app_list_widget.update_app_status(app_name, new_status)
-            self.save_applications_config()
-            
-            status_text = "locked" if new_status else "unlocked"
-            self.show_message("Success", f"Application '{app_name}' is now {status_text}.", "success")
+        """Toggle lock status of selected applications - NOT USED IN PyQt6 VERSION"""
+        # This method is for backward compatibility but not used in new design
+        pass
     
     def select_all_apps(self):
         """Select all applications in the list"""
@@ -648,15 +645,42 @@ class MainWindowBase(QMainWindow):
         for app_name, app_data in self.app_list_widget.apps_data.items():
             config_data[app_name] = {
                 'path': app_data['path'],
-                'is_locked': app_data['is_locked']
+                'unlock_count': app_data.get('unlock_count', 0)
             }
         
         try:
             with open(config_file, 'w') as f:
                 json.dump(config_data, f, indent=4)
             print(f"Applications config saved: {len(config_data)} apps")
+            
+            # Also update the config tab display
+            self.update_config_display()
         except Exception as e:
             print(f"Error saving applications config: {e}")
+    
+    def update_config_display(self):
+        """Update the config display in Config tab"""
+        config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    config_data = json.load(f)
+                
+                # Format the display
+                display_text = f"Applications Locked: {len(config_data)}\n"
+                display_text += "=" * 50 + "\n\n"
+                
+                for i, (app_name, app_data) in enumerate(config_data.items(), 1):
+                    display_text += f"{i}. {app_name}\n"
+                    display_text += f"   Path: {app_data['path']}\n"
+                    display_text += f"   Unlocked: {app_data.get('unlock_count', 0)} times\n\n"
+                
+                self.config_text.setPlainText(display_text)
+            except Exception as e:
+                self.config_text.setPlainText(f"Error loading config: {e}")
+        else:
+            self.config_text.setPlainText("No applications locked yet...")
     
     def load_applications_config(self):
         """Load applications configuration from JSON file"""
@@ -669,8 +693,7 @@ class MainWindowBase(QMainWindow):
             with open(config_file, 'r') as f:
                 config_data = json.load(f)
             
-            # Clear current list
-            self.app_list_widget.clear()
+            # Clear current grid
             self.app_list_widget.apps_data.clear()
             
             # Load apps
@@ -678,9 +701,10 @@ class MainWindowBase(QMainWindow):
                 self.app_list_widget.add_app(
                     app_name,
                     app_data['path'],
-                    app_data.get('is_locked', True)
+                    unlock_count=app_data.get('unlock_count', 0)
                 )
             
+            self.update_app_count()
             print(f"Applications config loaded: {len(config_data)} apps")
         except Exception as e:
             print(f"Error loading applications config: {e}")
@@ -688,11 +712,47 @@ class MainWindowBase(QMainWindow):
     # Button handlers (to be overridden by subclasses)
     def on_start_monitoring(self):
         """Handle start monitoring button click"""
-        pass
+        # Check if password is set
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        if not os.path.exists(password_file):
+            self.show_message(
+                "Hey!",
+                "Please set your password, and I'll enjoy some biryani 🍚.\nBy the way, do you like biryani as well?",
+                "info"
+            )
+            return
+        
+        # Check if any apps are added
+        if not self.app_list_widget.apps_data:
+            self.show_message(
+                "No Applications",
+                "Please add applications to monitor first.",
+                "info"
+            )
+            return
+        
+        # Start monitoring
+        self.show_message(
+            "Monitoring Started",
+            "Application monitoring has been started.\n\nThe window will minimize to system tray.",
+            "success"
+        )
+        
+        # TODO: Initialize UnifiedMonitor and start monitoring thread
+        # TODO: Add to system tray
+        # TODO: Minimize window
+        self.showMinimized()
         
     def on_stop_monitoring(self):
         """Handle stop monitoring button click"""
-        pass
+        # TODO: Implement password verification before stopping
+        # TODO: Stop UnifiedMonitor
+        # TODO: Remove from system tray
+        self.show_message(
+            "Monitoring Stopped",
+            "Application monitoring has been stopped.",
+            "info"
+        )
         
     def on_readme_clicked(self):
         """Handle Read Me button click - show fullscreen dialog"""

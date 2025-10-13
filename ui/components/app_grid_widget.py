@@ -1,0 +1,340 @@
+"""Application Grid Widget for FadCrypt Qt"""
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QScrollArea, QFrame, QGridLayout
+)
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QPixmap, QIcon, QMouseEvent
+import os
+
+
+class AppCard(QFrame):
+    """Individual application card widget"""
+    
+    clicked = pyqtSignal(str)  # app_name
+    double_clicked = pyqtSignal(str)  # app_name
+    
+    def __init__(self, app_name, app_path, unlock_count=0, parent=None):
+        super().__init__(parent)
+        self.app_name = app_name
+        self.app_path = app_path
+        self.unlock_count = unlock_count
+        self.is_selected = False
+        
+        self.init_ui()
+        
+    def init_ui(self):
+        """Initialize the card UI"""
+        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
+        self.setLineWidth(2)
+        self.setStyleSheet("""
+            AppCard {
+                background-color: #2a2a2a;
+                border: 2px solid #444444;
+                border-radius: 10px;
+                padding: 10px;
+            }
+            AppCard:hover {
+                border: 2px solid #4ade80;
+                background-color: #333333;
+            }
+        """)
+        self.setMinimumSize(200, 180)
+        self.setMaximumSize(250, 220)
+        
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(10)
+        
+        # Icon
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Try to load app icon
+        pixmap = self.load_app_icon()
+        if pixmap:
+            icon_label.setPixmap(pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        else:
+            # Fallback emoji
+            icon_label.setText("📦")
+            icon_label.setStyleSheet("font-size: 48px;")
+        
+        layout.addWidget(icon_label)
+        
+        # App name
+        name_label = QLabel(self.app_name)
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setWordWrap(True)
+        name_label.setStyleSheet("""
+            color: #ffffff;
+            font-size: 12pt;
+            font-weight: bold;
+        """)
+        layout.addWidget(name_label)
+        
+        # Stats
+        stats_label = QLabel(f"🔓 {self.unlock_count}× unlocked")
+        stats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        stats_label.setStyleSheet("""
+            color: #888888;
+            font-size: 9pt;
+        """)
+        layout.addWidget(stats_label)
+        
+        self.setLayout(layout)
+    
+    def load_app_icon(self):
+        """Load icon for the application"""
+        try:
+            # Try to find icon from .desktop file
+            icon_path = self.find_desktop_icon()
+            if icon_path and os.path.exists(icon_path):
+                if not icon_path.endswith('.svg'):
+                    return QPixmap(icon_path)
+            
+            # Try common icon locations
+            app_name = os.path.basename(self.app_path).lower()
+            icon_locations = [
+                f'/usr/share/pixmaps/{app_name}.png',
+                f'/usr/share/icons/hicolor/48x48/apps/{app_name}.png',
+                f'/usr/share/icons/hicolor/64x64/apps/{app_name}.png',
+            ]
+            
+            for path in icon_locations:
+                if os.path.exists(path):
+                    return QPixmap(path)
+        except Exception as e:
+            print(f"Error loading icon for {self.app_name}: {e}")
+        
+        return None
+    
+    def find_desktop_icon(self):
+        """Find icon from .desktop file"""
+        try:
+            desktop_dirs = [
+                '/usr/share/applications',
+                '/usr/local/share/applications',
+                os.path.expanduser('~/.local/share/applications')
+            ]
+            
+            app_name = os.path.basename(self.app_path)
+            
+            for desktop_dir in desktop_dirs:
+                if not os.path.exists(desktop_dir):
+                    continue
+                
+                for filename in os.listdir(desktop_dir):
+                    if not filename.endswith('.desktop'):
+                        continue
+                    
+                    filepath = os.path.join(desktop_dir, filename)
+                    try:
+                        with open(filepath, 'r') as f:
+                            exec_path = None
+                            icon_path = None
+                            
+                            for line in f:
+                                line = line.strip()
+                                if line.startswith('Exec='):
+                                    exec_path = line.split('=', 1)[1].split()[0]
+                                elif line.startswith('Icon='):
+                                    icon_path = line.split('=', 1)[1]
+                            
+                            if exec_path and (app_name in exec_path or exec_path in self.app_path):
+                                if icon_path:
+                                    # If icon_path is not absolute, search for it
+                                    if not os.path.isabs(icon_path):
+                                        return self.find_icon_by_name(icon_path)
+                                    return icon_path
+                    except:
+                        continue
+        except Exception as e:
+            print(f"Error finding desktop icon: {e}")
+        return None
+    
+    def find_icon_by_name(self, icon_name):
+        """Find icon by name in standard directories"""
+        icon_dirs = [
+            '/usr/share/icons/hicolor/48x48/apps',
+            '/usr/share/icons/hicolor/64x64/apps',
+            '/usr/share/pixmaps',
+        ]
+        
+        for icon_dir in icon_dirs:
+            if not os.path.exists(icon_dir):
+                continue
+            
+            for ext in ['.png', '.xpm', '']:
+                icon_path = os.path.join(icon_dir, icon_name + ext)
+                if os.path.exists(icon_path):
+                    return icon_path
+        
+        return None
+    
+    def set_selected(self, selected):
+        """Set selection state"""
+        self.is_selected = selected
+        if selected:
+            self.setStyleSheet("""
+                AppCard {
+                    background-color: #064e3b;
+                    border: 2px solid #10b981;
+                    border-radius: 10px;
+                    padding: 10px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                AppCard {
+                    background-color: #2a2a2a;
+                    border: 2px solid #444444;
+                    border-radius: 10px;
+                    padding: 10px;
+                }
+                AppCard:hover {
+                    border: 2px solid #4ade80;
+                    background-color: #333333;
+                }
+            """)
+    
+    def mousePressEvent(self, event: QMouseEvent):
+        """Handle mouse click"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.app_name)
+        super().mousePressEvent(event)
+    
+    def mouseDoubleClickEvent(self, event: QMouseEvent):
+        """Handle double click"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit(self.app_name)
+        super().mouseDoubleClickEvent(event)
+
+
+class AppGridWidget(QWidget):
+    """Grid widget for displaying application cards"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.apps_data = {}  # {app_name: {'path': path, 'unlock_count': count}}
+        self.app_cards = {}  # {app_name: AppCard widget}
+        self.selected_apps = set()
+        
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the UI"""
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #1e1e1e;
+            }
+        """)
+        
+        # Container for grid
+        self.container = QWidget()
+        self.grid_layout = QGridLayout()
+        self.grid_layout.setSpacing(15)
+        self.grid_layout.setContentsMargins(10, 10, 10, 10)
+        self.container.setLayout(self.grid_layout)
+        
+        scroll.setWidget(self.container)
+        layout.addWidget(scroll)
+        
+        self.setLayout(layout)
+    
+    def add_app(self, app_name, app_path, unlock_count=0):
+        """Add an application to the grid"""
+        self.apps_data[app_name] = {
+            'path': app_path,
+            'unlock_count': unlock_count
+        }
+        self.refresh_grid()
+    
+    def remove_app(self, app_name):
+        """Remove an application from the grid"""
+        if app_name in self.apps_data:
+            del self.apps_data[app_name]
+            self.selected_apps.discard(app_name)
+            self.refresh_grid()
+    
+    def refresh_grid(self):
+        """Refresh the grid display"""
+        # Clear existing widgets
+        for i in reversed(range(self.grid_layout.count())): 
+            self.grid_layout.itemAt(i).widget().setParent(None)
+        
+        self.app_cards.clear()
+        
+        if not self.apps_data:
+            # Show empty state
+            empty_label = QLabel("No applications added yet.\nClick '➕ Add Application' to get started!")
+            empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty_label.setStyleSheet("""
+                color: #888888;
+                font-size: 14pt;
+                padding: 50px;
+            """)
+            self.grid_layout.addWidget(empty_label, 0, 0, 1, 3)
+        else:
+            # Create grid of cards (3 columns)
+            columns = 3
+            row = 0
+            col = 0
+            
+            for app_name, app_data in self.apps_data.items():
+                card = AppCard(
+                    app_name,
+                    app_data['path'],
+                    app_data.get('unlock_count', 0)
+                )
+                card.clicked.connect(self.on_card_clicked)
+                card.double_clicked.connect(self.on_card_double_clicked)
+                
+                self.grid_layout.addWidget(card, row, col)
+                self.app_cards[app_name] = card
+                
+                # Update selection state
+                if app_name in self.selected_apps:
+                    card.set_selected(True)
+                
+                col += 1
+                if col >= columns:
+                    col = 0
+                    row += 1
+    
+    def on_card_clicked(self, app_name):
+        """Handle card click - toggle selection"""
+        if app_name in self.selected_apps:
+            self.selected_apps.discard(app_name)
+            self.app_cards[app_name].set_selected(False)
+        else:
+            self.selected_apps.add(app_name)
+            self.app_cards[app_name].set_selected(True)
+    
+    def on_card_double_clicked(self, app_name):
+        """Handle card double click - could open edit dialog"""
+        print(f"Double clicked: {app_name}")
+        # TODO: Implement edit dialog
+    
+    def selectAll(self):
+        """Select all applications"""
+        self.selected_apps = set(self.apps_data.keys())
+        for app_name, card in self.app_cards.items():
+            card.set_selected(True)
+    
+    def clearSelection(self):
+        """Clear all selections"""
+        self.selected_apps.clear()
+        for card in self.app_cards.values():
+            card.set_selected(False)
+    
+    def get_selected_apps(self):
+        """Get list of selected app names"""
+        return list(self.selected_apps)
