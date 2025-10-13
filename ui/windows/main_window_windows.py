@@ -3,6 +3,7 @@
 import os
 import sys
 import subprocess
+import ctypes
 from PyQt6.QtWidgets import QMessageBox
 
 try:
@@ -210,3 +211,100 @@ class MainWindowWindows(MainWindowBase):
         backup_dir = os.path.join(programdata, 'FadCrypt', 'Backup')
         os.makedirs(backup_dir, exist_ok=True)
         return backup_dir
+    
+    def disable_system_tools(self):
+        """
+        Disable Command Prompt, Task Manager, Control Panel, and Registry Editor.
+        This is called when "Disable Main loopholes" is enabled before monitoring starts.
+        Note: Does NOT disable PowerShell as it's harder to detect and manage.
+        """
+        if not WINDOWS_AVAILABLE:
+            print("Warning: Windows registry tools not available on this platform")
+            return False
+        
+        try:
+            # Check for admin privileges
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to disable system tools.")
+                QMessageBox.warning(
+                    self,
+                    "Admin Required",
+                    "Administrator privileges are required to disable system tools.\n"
+                    "Please run FadCrypt as Administrator."
+                )
+                return False
+
+            # Registry keys to modify
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    # Create/open the registry key
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+                    # Set the value to disable
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key)
+                    print(f"✓ {value_name} disabled successfully")
+                except Exception as e:
+                    print(f"✗ Error disabling {value_name}: {e}")
+
+            print("System tools disabled successfully")
+            return True
+
+        except Exception as e:
+            print(f"Failed to disable system tools: {e}")
+            return False
+    
+    def enable_system_tools(self):
+        """
+        Re-enable Command Prompt, Task Manager, Control Panel, and Registry Editor.
+        This is called when monitoring stops or during cleanup.
+        """
+        if not WINDOWS_AVAILABLE:
+            print("Warning: Windows registry tools not available on this platform")
+            return False
+        
+        try:
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to enable system tools.")
+                QMessageBox.warning(
+                    self,
+                    "Admin Required",
+                    "Administrator privileges are required to enable system tools.\n"
+                    "Please run FadCrypt as Administrator."
+                )
+                return False
+
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                    try:
+                        winreg.DeleteValue(key, value_name)
+                        print(f"✓ {value_name} enabled successfully")
+                    except FileNotFoundError:
+                        print(f"ℹ {value_name} was not disabled (already enabled)")
+                    winreg.CloseKey(key)
+                except FileNotFoundError:
+                    print(f"ℹ Registry key for {value_name} doesn't exist (already enabled)")
+                except Exception as e:
+                    print(f"✗ Error enabling {value_name}: {e}")
+
+            print("System tools enabled successfully")
+            return True
+
+        except Exception as e:
+            print(f"Failed to enable system tools: {e}")
+            return False
+

@@ -95,17 +95,6 @@ class SettingsPanel(QWidget):
         self.wallpaper_group.addButton(self.encrypted_wallpaper_radio, 3)
         left_frame.addWidget(self.encrypted_wallpaper_radio)
         
-        left_frame.addSpacing(20)
-        
-        # Autostart Section
-        autostart_label = QLabel("Startup:")
-        autostart_label.setStyleSheet("font-weight: bold;")
-        left_frame.addWidget(autostart_label)
-        
-        self.autostart_checkbox = QCheckBox("Start monitoring automatically on login")
-        self.autostart_checkbox.setToolTip("Enable autostart with monitoring on system startup")
-        left_frame.addWidget(self.autostart_checkbox)
-        
         left_frame.addStretch()
         
         # Right frame for preview
@@ -259,8 +248,7 @@ class SettingsPanel(QWidget):
         return {
             'dialog_style': 'simple' if self.simple_dialog_radio.isChecked() else 'fullscreen',
             'wallpaper': self.get_wallpaper_choice(),
-            'lock_tools': self.lock_tools_checkbox.isChecked(),
-            'autostart': self.autostart_checkbox.isChecked()
+            'lock_tools': self.lock_tools_checkbox.isChecked()
         }
         
     def get_wallpaper_choice(self):
@@ -294,6 +282,5 @@ class SettingsPanel(QWidget):
             self.lab_wallpaper_radio.setChecked(True)
             
         self.lock_tools_checkbox.setChecked(settings.get('lock_tools', True))
-        self.autostart_checkbox.setChecked(settings.get('autostart', False))
         
         self.on_settings_changed()

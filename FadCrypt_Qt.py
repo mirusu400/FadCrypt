@@ -67,6 +67,17 @@ def main():
     # Detect platform
     system = platform.system()
     
+    # Step 1: Single Instance Check - Prevent multiple instances
+    from core.single_instance_manager import check_single_instance
+    single_instance = check_single_instance(exit_if_running=True)
+    print("🔒 Single instance lock acquired - no other FadCrypt instances running")
+    
+    # Step 2: Start File Monitor Daemon - Monitors and backs up config files
+    from core.file_monitor import start_file_monitor_daemon
+    
+    # Store reference to prevent garbage collection
+    _file_monitor = None
+    
     # Create QApplication instance
     app = QApplication(sys.argv)
     app.setApplicationName("FadCrypt")
@@ -98,12 +109,33 @@ def main():
     splash.show_message("Starting application...")
     splash.close_splash(window, delay_ms=2500)
     
+    # Check for --auto-monitor flag (startup autostart mode)
+    auto_monitor_mode = '--auto-monitor' in sys.argv
+    
+    if auto_monitor_mode:
+        print("🚀 Auto-monitor mode detected - will start monitoring automatically")
+    
     # Show window after splash closes
     def show_window():
         window.show()
         # Re-center after window is fully rendered
         QTimer.singleShot(100, window.center_on_screen)
+        
+        # Start file monitor daemon after window is created
+        # This monitors config files and auto-restores them if deleted
+        nonlocal _file_monitor
+        _file_monitor = start_file_monitor_daemon(
+            config_folder_func=window.get_fadcrypt_folder,
+            backup_folder_func=window.get_backup_folder if hasattr(window, 'get_backup_folder') else window.get_fadcrypt_folder
+        )
+        print("📁 File monitoring daemon started for config protection")
+        
         print("✅ FadCrypt started successfully!")
+        
+        # If --auto-monitor flag is present, start monitoring automatically
+        if auto_monitor_mode:
+            print("🔄 Starting automatic monitoring...")
+            QTimer.singleShot(500, window.on_start_monitoring)  # Start monitoring after 500ms
     
     QTimer.singleShot(2550, show_window)  # Show window 50ms after splash closes
     

@@ -201,3 +201,125 @@ X-GNOME-Autostart-enabled=true
         backup_dir = os.path.expanduser("~/.local/share/FadCrypt/Backup")
         os.makedirs(backup_dir, exist_ok=True)
         return backup_dir
+    
+    def disable_system_tools(self):
+        """
+        Disable system tools on Linux (terminals and system monitors).
+        Uses chmod to remove execute permissions. Requires pkexec for elevation.
+        This is called when "Disable Main loopholes" is enabled before monitoring starts.
+        """
+        import subprocess
+        
+        try:
+            # List of common terminal and system monitor executables
+            tools_to_disable = [
+                '/usr/bin/gnome-terminal',
+                '/usr/bin/konsole',
+                '/usr/bin/xterm',
+                '/usr/bin/gnome-system-monitor',
+                '/usr/bin/htop',
+                '/usr/bin/top'
+            ]
+            
+            disabled_tools = []
+            chmod_commands = []
+            for tool in tools_to_disable:
+                if os.path.exists(tool) and os.access(tool, os.X_OK):
+                    chmod_commands.append(f'chmod 644 "{tool}"')
+                    disabled_tools.append(tool)
+            
+            if chmod_commands:
+                # Run all chmod commands in one pkexec call
+                command = '; '.join(chmod_commands)
+                try:
+                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+                    print(f"✓ Disabled tools: {disabled_tools}")
+                    
+                    # Save the list of modified tools for re-enabling later
+                    disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+                    with open(disabled_tools_file, 'w') as f:
+                        f.write('\n'.join(disabled_tools))
+                    
+                    return True
+                except subprocess.CalledProcessError as e:
+                    print(f"✗ Failed to disable tools: {e}")
+                    QMessageBox.warning(
+                        self,
+                        "Permission Required",
+                        f"Failed to disable system tools:\n{str(e)}\n\n"
+                        "Please enter your password when prompted."
+                    )
+                    return False
+            else:
+                print("ℹ No tools were disabled (tools not found or already disabled)")
+                return True
+                
+        except Exception as e:
+            print(f"Error in disable_system_tools: {e}")
+            return False
+    
+    def enable_system_tools(self):
+        """
+        Re-enable previously disabled tools on Linux.
+        Restores execute permissions using chmod. Requires pkexec for elevation.
+        This is called when monitoring stops or during cleanup.
+        """
+        import subprocess
+        
+        try:
+            # First try to read from the tracking file
+            disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
+            tools_to_enable = []
+            
+            if os.path.exists(disabled_tools_file):
+                with open(disabled_tools_file, 'r') as f:
+                    tools_to_enable = [tool.strip() for tool in f.read().strip().split('\n') if tool.strip()]
+            
+            # If no tracking file, try to re-enable all common tools
+            if not tools_to_enable:
+                tools_to_enable = [
+                    '/usr/bin/gnome-terminal',
+                    '/usr/bin/konsole',
+                    '/usr/bin/xterm',
+                    '/usr/bin/gnome-system-monitor',
+                    '/usr/bin/htop',
+                    '/usr/bin/top'
+                ]
+
+            chmod_commands = []
+            valid_tools = []
+            for tool in tools_to_enable:
+                if tool and os.path.exists(tool):
+                    chmod_commands.append(f'chmod 755 "{tool}"')
+                    valid_tools.append(tool)
+
+            if chmod_commands:
+                # Run all chmod commands in one pkexec call
+                command = '; '.join(chmod_commands)
+                try:
+                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+                    for tool in valid_tools:
+                        print(f"✓ Re-enabled: {tool}")
+                    
+                    # Clean up the record file after restoring permissions
+                    if os.path.exists(disabled_tools_file):
+                        os.remove(disabled_tools_file)
+                    
+                    return True
+                except subprocess.CalledProcessError as e:
+                    print(f"✗ Failed to restore permissions: {e}")
+                    QMessageBox.warning(
+                        self,
+                        "Permission Required",
+                        f"Failed to enable system tools:\n{str(e)}\n\n"
+                        "Please enter your password when prompted."
+                    )
+                    return False
+            else:
+                print("ℹ No valid tools found to re-enable")
+                return True
+                
+        except Exception as e:
+            print(f"Error in enable_system_tools: {e}")
+            return False
+

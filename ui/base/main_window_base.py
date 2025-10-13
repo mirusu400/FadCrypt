@@ -1406,12 +1406,16 @@ class MainWindowBase(QMainWindow):
         
         # Initialize UnifiedMonitor
         from core.unified_monitor import UnifiedMonitor
+        import platform
+        
+        # Detect platform
+        is_linux = platform.system() == "Linux"
         
         self.unified_monitor = UnifiedMonitor(
             get_state_func=self.get_monitoring_state,
             set_state_func=self.set_monitoring_state,
             show_dialog_func=self.show_password_prompt_for_app,
-            is_linux=True,  # TODO: Platform detection
+            is_linux=is_linux,
             sleep_interval=1.0,
             enable_profiling=True
         )
@@ -1419,6 +1423,26 @@ class MainWindowBase(QMainWindow):
         # Start monitoring
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
+        
+        # CRITICAL: Disable system tools if lock_tools setting is enabled
+        # This prevents users from terminating FadCrypt via terminal/task manager
+        if hasattr(self, 'settings_panel') and self.settings_panel.lock_tools_checkbox.isChecked():
+            print("🔒 Disabling system tools (terminals, task manager, etc.)...")
+            if hasattr(self, 'disable_system_tools'):
+                self.disable_system_tools()
+                print("✅ System tools disabled successfully")
+            else:
+                print("⚠️  Warning: disable_system_tools method not found")
+        
+        # CRITICAL: Enable autostart when monitoring starts (same as legacy code)
+        # This ensures FadCrypt starts automatically on system boot
+        print("🔧 Enabling autostart for FadCrypt...")
+        if hasattr(self, 'handle_autostart_setting'):
+            # Call platform-specific autostart method
+            self.handle_autostart_setting(enable=True)
+            print("✅ Autostart enabled successfully")
+        else:
+            print("⚠️  Warning: handle_autostart_setting method not found")
         
         # Update UI
         if self.system_tray:
@@ -1458,6 +1482,26 @@ class MainWindowBase(QMainWindow):
                 print("🛑 Monitoring stopped successfully")
             
             self.monitoring_active = False
+            
+            # CRITICAL: Re-enable system tools if they were disabled
+            # This restores access to terminals/task manager
+            if hasattr(self, 'settings_panel') and self.settings_panel.lock_tools_checkbox.isChecked():
+                print("🔓 Re-enabling system tools (terminals, task manager, etc.)...")
+                if hasattr(self, 'enable_system_tools'):
+                    self.enable_system_tools()
+                    print("✅ System tools re-enabled successfully")
+                else:
+                    print("⚠️  Warning: enable_system_tools method not found")
+            
+            # CRITICAL: Disable autostart when monitoring stops (same as legacy code)
+            # This removes FadCrypt from system startup
+            print("🔧 Disabling autostart for FadCrypt...")
+            if hasattr(self, 'handle_autostart_setting'):
+                # Call platform-specific autostart method
+                self.handle_autostart_setting(enable=False)
+                print("✅ Autostart disabled successfully")
+            else:
+                print("⚠️  Warning: handle_autostart_setting method not found")
             
             # Update UI
             if self.system_tray:
