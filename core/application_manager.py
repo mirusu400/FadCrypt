@@ -65,7 +65,13 @@ class ApplicationManager:
         self.is_linux = is_linux
         
         # UI components
-        self.apps_listbox = None
+        self.app_count_label = None
+        self.apps_frame = None
+        self.apps_container = None  # Scrollable container for grid
+        self.apps_canvas = None  # Canvas for scrolling
+        self.selected_apps = []  # Track selected application cards
+        self.app_cards = []  # Store card widgets for selection
+        self.selected_cards = set()  # Track selected cards
         self.app_count_label = None
         self.apps_frame = None
         
@@ -134,7 +140,10 @@ class ApplicationManager:
         Get icon for an application.
         Returns cached icon if available, otherwise tries to extract/load icon.
         """
+        print(f"\n🔍 [ICON LOADING] Attempting to load icon for: {app_path}")
+        
         if app_path in self.icon_cache:
+            print(f"✅ [ICON CACHE] Found cached icon for: {app_path}")
             return self.icon_cache[app_path]
         
         try:
@@ -142,36 +151,60 @@ class ApplicationManager:
             
             # Try to get icon from .desktop file on Linux
             if self.is_linux:
+                print(f"🐧 [LINUX] Searching for .desktop file...")
                 icon_path = self.find_desktop_icon(app_path)
+                if icon_path:
+                    print(f"✅ [DESKTOP] Found icon from .desktop file: {icon_path}")
+                else:
+                    print(f"❌ [DESKTOP] No icon found in .desktop files")
             
             # If no icon found, try to find by app name
             if not icon_path or not os.path.exists(icon_path):
                 app_name = os.path.basename(app_path).lower()
+                print(f"🔎 [NAME SEARCH] Searching by app name: {app_name}")
                 # Try common icon locations
                 icon_path = self.find_icon_by_name(app_name)
+                if icon_path:
+                    print(f"✅ [NAME SEARCH] Found icon: {icon_path}")
+                else:
+                    print(f"❌ [NAME SEARCH] No icon found by name")
             
             # Load the icon if found
             if icon_path and os.path.exists(icon_path):
+                print(f"📁 [FILE CHECK] Icon file exists: {icon_path}")
                 # Handle SVG files
                 if icon_path.endswith('.svg'):
+                    print(f"🎨 [SVG] Found SVG file, looking for PNG alternative...")
                     # For SVG, we'll use a default icon or convert
                     # For now, try to find PNG version
                     png_path = icon_path.replace('.svg', '.png')
                     if os.path.exists(png_path):
                         icon_path = png_path
+                        print(f"✅ [SVG->PNG] Using PNG version: {png_path}")
                     else:
                         # Try without extension
                         icon_path = self.find_icon_by_name(os.path.splitext(os.path.basename(icon_path))[0])
+                        if icon_path:
+                            print(f"✅ [SVG->PNG] Found alternative: {icon_path}")
                 
                 if icon_path and icon_path.endswith(('.png', '.jpg', '.jpeg', '.xpm')):
+                    print(f"🖼️ [IMAGE LOAD] Loading image file: {icon_path}")
                     image = Image.open(icon_path)
                     image = image.resize(size, Image.Resampling.LANCZOS)
                     photo = ImageTk.PhotoImage(image)
                     self.icon_cache[app_path] = photo
+                    print(f"✅ [SUCCESS] Icon loaded and cached successfully!")
                     return photo
+                else:
+                    print(f"⚠️ [FORMAT] Unsupported format or no valid path: {icon_path}")
+            else:
+                print(f"❌ [NOT FOUND] Icon path not found or doesn't exist")
         except Exception as e:
-            print(f"Error loading icon for {app_path}: {e}")
+            print(f"❌ [ERROR] Error loading icon for {app_path}: {e}")
+            import traceback
+            traceback.print_exc()
         
+        print(f"❌ [FINAL] Returning None - no icon loaded for {app_path}")
         return None
     
     def find_icon_by_name(self, app_name: str) -> Optional[str]:
@@ -270,56 +303,57 @@ class ApplicationManager:
         return None
     
     def create_applications_tab(self):
-        """Create the Applications tab with all UI components"""
+        """Create the Applications tab with grid-based UI components"""
         self.apps_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.apps_frame, text="Applications")
 
         # Header frame with app count
         header_frame = ttk.Frame(self.apps_frame)
-        header_frame.pack(pady=(5, 0), padx=5, fill=tk.X)
+        header_frame.pack(pady=(5, 0), padx=10, fill=tk.X)
 
         self.app_count_label = ttk.Label(
             header_frame, 
             text="Applications: 0", 
-            font=("TkDefaultFont", 10, "bold")
+            font=("TkDefaultFont", 11, "bold")
         )
         self.app_count_label.pack(side=tk.LEFT, padx=5)
 
-        # Create a frame to hold the listbox and scrollbar
-        list_frame = ttk.Frame(self.apps_frame)
-        list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
+        # Create scrollable canvas for grid
+        canvas_frame = ttk.Frame(self.apps_frame)
+        canvas_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
 
-        # Create the listbox with scrollbar (EXTENDED selectmode for multi-selection)
-        self.apps_listbox = tk.Listbox(
-            list_frame,
-            width=50,
-            font=("Helvetica", 10),
-            selectmode=tk.EXTENDED,
-            bg='#222222',
-            fg='#ffffff',
-            selectbackground='#555555',
-            selectforeground='#009E60',
-            activestyle='none',
-            highlightcolor='#ED2939',
-            highlightbackground='#444444',
-            highlightthickness=1
+        # Canvas with scrollbar
+        self.apps_canvas = tk.Canvas(
+            canvas_frame,
+            bg='#1e1e1e',
+            highlightthickness=0
         )
-        self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
         scrollbar = ttk.Scrollbar(
-            list_frame, 
-            orient=tk.VERTICAL, 
-            command=self.apps_listbox.yview
+            canvas_frame,
+            orient=tk.VERTICAL,
+            command=self.apps_canvas.yview
         )
+        
+        self.apps_canvas.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.apps_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.apps_listbox.config(yscrollcommand=scrollbar.set)
+        # Container frame inside canvas for grid
+        self.apps_container = ttk.Frame(self.apps_canvas)
+        self.canvas_window = self.apps_canvas.create_window(
+            (0, 0),
+            window=self.apps_container,
+            anchor='nw'
+        )
 
-        # Bind events
-        self.apps_listbox.bind('<Double-Button-1>', self.on_double_click)
-        self.apps_listbox.bind('<Delete>', lambda e: self.remove_applications())
-        self.apps_listbox.bind('<Control-a>', lambda e: self.select_all_apps())
-        self.apps_listbox.bind('<Button-3>', self.show_context_menu)  # Right-click
+        # Bind canvas resize
+        self.apps_container.bind('<Configure>', self._on_frame_configure)
+        self.apps_canvas.bind('<Configure>', self._on_canvas_configure)
+
+        # Mouse wheel scrolling
+        self.apps_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.apps_canvas.bind_all("<Button-4>", self._on_mousewheel)
+        self.apps_canvas.bind_all("<Button-5>", self._on_mousewheel)
 
         self.update_apps_listbox()
 
@@ -379,18 +413,32 @@ class ApplicationManager:
         else:
             print("Add application callback not set")
     
+    def _on_frame_configure(self, event=None):
+        """Reset the scroll region to encompass the inner frame"""
+        self.apps_canvas.configure(scrollregion=self.apps_canvas.bbox("all"))
+    
+    def _on_canvas_configure(self, event):
+        """When canvas is resized, adjust the container width to match canvas"""
+        canvas_width = event.width
+        # Only set width, let height be determined by content
+        self.apps_canvas.itemconfig(self.canvas_window, width=canvas_width)
+    
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling"""
+        if event.num == 4 or event.delta > 0:
+            self.apps_canvas.yview_scroll(-1, "units")
+        elif event.num == 5 or event.delta < 0:
+            self.apps_canvas.yview_scroll(1, "units")
+    
     def on_double_click(self, event):
-        """Handle double-click on listbox item"""
+        """Handle double-click on application card"""
         # Add small delay to ensure window is properly created
         self.master.after(100, self.edit_application)
     
     def show_context_menu(self, event):
-        """Show context menu on right-click"""
-        # Select the item under cursor
-        index = self.apps_listbox.nearest(event.y)
-        self.apps_listbox.selection_clear(0, tk.END)
-        self.apps_listbox.selection_set(index)
-        self.apps_listbox.activate(index)
+        """Show context menu on right-click for grid cards"""
+        if not self.selected_apps:
+            return
         
         # Create context menu
         context_menu = tk.Menu(self.master, tearoff=0)
@@ -409,44 +457,201 @@ class ApplicationManager:
             context_menu.grab_release()
     
     def update_apps_listbox(self):
-        """Update the applications listbox with current apps"""
-        self.apps_listbox.delete(0, tk.END)
-        app_count = len(self.app_locker.config["applications"])
+        """Update the applications grid with current apps"""
+        print("\n=== UPDATE_APPS_GRID START ===")
         
-        for index, app in enumerate(self.app_locker.config["applications"]):
-            # Get metadata
-            meta = self.get_app_metadata(app['name'])
-            unlock_count = meta.get('unlock_count', 0)
+        # Clear existing cards
+        for widget in self.apps_container.winfo_children():
+            widget.destroy()
+        
+        self.selected_apps = []
+        app_count = len(self.app_locker.config["applications"])
+        print(f"Total applications: {app_count}")
+        
+        if app_count == 0:
+            # Show empty state
+            empty_label = ttk.Label(
+                self.apps_container,
+                text="No applications added yet.\nClick '➕ Add' to get started!",
+                font=("TkDefaultFont", 12),
+                foreground='#888888',
+                justify='center'
+            )
+            empty_label.pack(expand=True, pady=50)
+        else:
+            # Create grid of application cards
+            columns = 3  # Number of cards per row
             
-            # Format the display text with icon placeholder and stats
-            item = f"  📦 {app['name']} → {app['path']}  [Unlocked: {unlock_count}×]"
-            self.apps_listbox.insert(tk.END, item)
+            for index, app in enumerate(self.app_locker.config["applications"]):
+                print(f"\n  App {index + 1}: {app['name']}")
+                print(f"    Path: {app['path']}")
+                
+                # Get metadata
+                meta = self.get_app_metadata(app['name'])
+                unlock_count = meta.get('unlock_count', 0)
+                print(f"    Unlock count: {unlock_count}")
+                
+                # Calculate grid position
+                row = index // columns
+                col = index % columns
+                
+                # Create application card
+                card = self.create_app_card(app, meta, index)
+                card.grid(row=row, column=col, padx=10, pady=10, sticky='nsew')
             
-            # Apply alternating row colors for dark theme
-            if index % 2 == 0:
-                self.apps_listbox.itemconfig(index, {'bg': '#2a2a2a', 'fg': '#ffffff'})
-            else:
-                self.apps_listbox.itemconfig(index, {'bg': '#1f1f1f', 'fg': '#ffffff'})
+            # Configure grid weights for responsiveness
+            for col in range(columns):
+                self.apps_container.grid_columnconfigure(col, weight=1, minsize=200)
         
         # Update app count label
         self.app_count_label.config(text=f"Applications: {app_count}")
+        print(f"\n=== UPDATE_APPS_GRID END (Total: {app_count}) ===\n")
         self.update_config_display()
+    
+    def create_app_card(self, app, meta, index):
+        """Create a single application card with icon, name, and stats"""
+        # Main card frame with border
+        card_frame = tk.Frame(
+            self.apps_container,
+            bg='#2a2a2a',
+            relief=tk.RAISED,
+            borderwidth=1,
+            highlightthickness=2,
+            highlightbackground='#444444'
+        )
+        
+        # Store app data
+        card_frame.app_name = app['name']
+        card_frame.app_path = app['path']
+        card_frame.app_index = index
+        card_frame.is_selected = False
+        
+        # Inner padding frame
+        inner_frame = tk.Frame(card_frame, bg='#2a2a2a')
+        inner_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Icon section
+        icon_frame = tk.Frame(inner_frame, bg='#2a2a2a')
+        icon_frame.pack(pady=(0, 10))
+        
+        # Try to get actual icon (returns PhotoImage or None)
+        photo = self.get_app_icon(app['path'])
+        if photo:
+            print(f"    ✓ Icon found and loaded")
+            try:
+                # Resize the cached PhotoImage
+                # Note: get_app_icon returns 48x48, we want 64x64
+                # So we need to get the path and reload
+                icon_path = self.find_desktop_icon(app['path'])
+                if icon_path and os.path.exists(icon_path):
+                    img = Image.open(icon_path)
+                    img = img.resize((64, 64), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    
+                    icon_label = tk.Label(icon_frame, image=photo, bg='#2a2a2a')
+                    icon_label.image = photo  # Keep reference
+                    icon_label.pack()
+                else:
+                    raise Exception("Could not find icon file")
+            except Exception as e:
+                print(f"    ✗ Error resizing icon: {e}")
+                # Fallback to emoji
+                icon_label = tk.Label(
+                    icon_frame,
+                    text="📦",
+                    font=("TkDefaultFont", 32),
+                    bg='#2a2a2a'
+                )
+                icon_label.pack()
+        else:
+            print(f"    ✗ No icon found, using emoji fallback")
+            icon_label = tk.Label(
+                icon_frame,
+                text="📦",
+                font=("TkDefaultFont", 32),
+                bg='#2a2a2a'
+            )
+            icon_label.pack()
+        
+        # App name
+        name_label = tk.Label(
+            inner_frame,
+            text=app['name'],
+            font=("TkDefaultFont", 11, "bold"),
+            bg='#2a2a2a',
+            fg='#ffffff',
+            wraplength=180
+        )
+        name_label.pack(pady=(0, 5))
+        
+        # Stats
+        unlock_count = meta.get('unlock_count', 0)
+        stats_label = tk.Label(
+            inner_frame,
+            text=f"🔓 {unlock_count}× unlocked",
+            font=("TkDefaultFont", 9),
+            bg='#2a2a2a',
+            fg='#888888'
+        )
+        stats_label.pack()
+        
+        # Bind events for interaction
+        def on_click(event):
+            self.toggle_card_selection(card_frame)
+        
+        def on_double_click(event):
+            self.edit_application_from_card(card_frame)
+        
+        def on_right_click(event):
+            self.show_card_context_menu(event, card_frame)
+        
+        # Bind to all widgets in card
+        for widget in [card_frame, inner_frame, icon_frame, icon_label, name_label, stats_label]:
+            widget.bind('<Button-1>', on_click)
+            widget.bind('<Double-Button-1>', on_double_click)
+            widget.bind('<Button-3>', on_right_click)
+        
+        return card_frame
+    
+    def toggle_card_selection(self, card):
+        """Toggle selection state of a card"""
+        if card.is_selected:
+            # Deselect
+            card.configure(highlightbackground='#444444', highlightthickness=2)
+            card.is_selected = False
+            if card.app_name in self.selected_apps:
+                self.selected_apps.remove(card.app_name)
+        else:
+            # Select
+            card.configure(highlightbackground='#009E60', highlightthickness=3)
+            card.is_selected = True
+            if card.app_name not in self.selected_apps:
+                self.selected_apps.append(card.app_name)
+        
+        print(f"Selected apps: {self.selected_apps}")
+    
+    def edit_application_from_card(self, card):
+        """Edit application from card"""
+        # Ensure only this card is selected
+        self.selected_apps = [card.app_name]
+        self.edit_application()
+    
+    def show_card_context_menu(self, event, card):
+        """Show context menu for a card"""
+        # Select this card if not already selected
+        if not card.is_selected:
+            self.toggle_card_selection(card)
+        
+        # Show context menu at cursor position
+        self.show_context_menu(event)
     
     def remove_applications(self):
         """Remove selected applications with confirmation"""
-        selections = self.apps_listbox.curselection()
-        if not selections:
+        if not self.selected_apps:
             self.show_message("Error", "Please select at least one application to remove.")
             return
         
-        # Get all selected app names
-        app_names = []
-        for idx in selections:
-            item_text = self.apps_listbox.get(idx)
-            # Extract name from formatted text: "  📦 name → path  [Unlocked: X×]"
-            name = item_text.split('📦')[1].split('→')[0].strip()
-            app_names.append(name)
-        
+        app_names = self.selected_apps.copy()
         count = len(app_names)
         
         # Show confirmation dialog
@@ -478,25 +683,24 @@ class ApplicationManager:
     
     def edit_application(self):
         """Edit both name and path of selected application"""
-        selection = self.apps_listbox.curselection()
-        if not selection:
+        if not self.selected_apps:
             self.show_message("Error", "Please select an application to edit.")
             return
         
-        if len(selection) > 1:
+        if len(self.selected_apps) > 1:
             self.show_message("Error", "Please select only one application to edit.")
             return
         
-        # Get current app info
-        item_text = self.apps_listbox.get(selection[0])
-        old_name = item_text.split('📦')[1].split('→')[0].strip()
-        old_path = item_text.split('→')[1].split('[')[0].strip()
+        # Get the selected app name
+        old_name = self.selected_apps[0]
         
         # Find the app in config
         app_index = None
+        old_path = None
         for idx, app in enumerate(self.app_locker.config["applications"]):
             if app["name"] == old_name:
                 app_index = idx
+                old_path = app["path"]
                 break
         
         if app_index is None:
@@ -644,14 +848,11 @@ class ApplicationManager:
     
     def show_statistics(self):
         """Show detailed statistics for selected application"""
-        selection = self.apps_listbox.curselection()
-        if not selection:
+        if not self.selected_apps:
             self.show_message("Error", "Please select an application to view statistics.")
             return
         
-        item_text = self.apps_listbox.get(selection[0])
-        app_name = item_text.split('📦')[1].split('→')[0].strip()
-        
+        app_name = self.selected_apps[0]
         meta = self.get_app_metadata(app_name)
         
         # Format statistics
@@ -672,40 +873,57 @@ class ApplicationManager:
     
     def copy_path(self):
         """Copy selected application path to clipboard"""
-        selection = self.apps_listbox.curselection()
-        if not selection:
+        if not self.selected_apps:
             return
         
-        item_text = self.apps_listbox.get(selection[0])
-        path = item_text.split('→')[1].split('[')[0].strip()
+        app_name = self.selected_apps[0]
         
-        self.master.clipboard_clear()
-        self.master.clipboard_append(path)
-        self.show_message("Copied", f"Path copied to clipboard:\n{path}")
+        # Find path in config
+        path = None
+        for app in self.app_locker.config["applications"]:
+            if app["name"] == app_name:
+                path = app["path"]
+                break
+        
+        if path:
+            self.master.clipboard_clear()
+            self.master.clipboard_append(path)
+            self.show_message("Copied", f"Path copied to clipboard:\n{path}")
     
     def open_file_location(self):
         """Open file manager at the application's location"""
-        selection = self.apps_listbox.curselection()
-        if not selection:
+        if not self.selected_apps:
             return
         
-        item_text = self.apps_listbox.get(selection[0])
-        path = item_text.split('→')[1].split('[')[0].strip()
+        app_name = self.selected_apps[0]
         
-        directory = os.path.dirname(path)
-        if os.path.exists(directory):
-            if self.is_linux:
-                os.system(f'xdg-open "{directory}" &')
+        # Find path in config
+        path = None
+        for app in self.app_locker.config["applications"]:
+            if app["name"] == app_name:
+                path = app["path"]
+                break
+        
+        if path:
+            directory = os.path.dirname(path)
+            if os.path.exists(directory):
+                if self.is_linux:
+                    os.system(f'xdg-open "{directory}" &')
+                else:
+                    os.system(f'explorer "{directory}"')
             else:
-                os.system(f'explorer "{directory}"')
-        else:
-            self.show_message("Error", f"Directory does not exist:\n{directory}")
+                self.show_message("Error", f"Directory does not exist:\n{directory}")
     
     def select_all_apps(self):
-        """Select all applications in the listbox"""
-        self.apps_listbox.select_set(0, tk.END)
+        """Select all application cards"""
+        for widget in self.apps_container.winfo_children():
+            if hasattr(widget, 'app_name') and not widget.is_selected:
+                self.toggle_card_selection(widget)
         return 'break'  # Prevent default Ctrl+A behavior
     
     def deselect_all_apps(self):
-        """Deselect all applications in the listbox"""
-        self.apps_listbox.selection_clear(0, tk.END)
+        """Deselect all application cards"""
+        for widget in self.apps_container.winfo_children():
+            if hasattr(widget, 'app_name') and widget.is_selected:
+                self.toggle_card_selection(widget)
+

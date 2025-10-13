@@ -259,15 +259,16 @@ class AppLockerGUI:
         # Center the dialog on the screen
         screen_width = self.add_dialog.winfo_screenwidth()
         screen_height = self.add_dialog.winfo_screenheight()
-        dialog_width = 400  # Adjust width as needed
-        dialog_height = 500  # Adjust height as needed
+        dialog_width = 420  # Increased width slightly
+        dialog_height = 580  # Increased height to accommodate all content
         # position_x = (screen_width // 2) - (dialog_width // 2)
         position_x = 50  # Position the dialog on the left edge of the screen
         position_y = (screen_height // 2) - (dialog_height // 2)
         self.add_dialog.geometry(f"{dialog_width}x{dialog_height}+{position_x}+{position_y}")
         
-        # Prevent resizing
-        self.add_dialog.resizable(False, False)
+        # Allow resizing so user can expand if needed
+        self.add_dialog.resizable(True, True)
+        self.add_dialog.minsize(400, 550)  # Set minimum size
 
         # Ensure the dialog is focused
         self.add_dialog.attributes('-topmost', True)
@@ -595,9 +596,8 @@ class AppLockerGUI:
         # Set callback for Add button
         self.app_manager.add_application_callback = self.open_add_application_dialog
         
-        # Keep references to ApplicationManager's components for backward compatibility
+        # Keep references to ApplicationManager's components
         self.apps_frame = self.app_manager.apps_frame
-        self.apps_listbox = self.app_manager.apps_listbox
         self.app_count_label = self.app_manager.app_count_label
 
 
