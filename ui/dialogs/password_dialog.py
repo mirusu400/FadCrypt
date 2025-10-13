@@ -179,7 +179,6 @@ class PasswordDialog(QDialog):
         button_layout.addWidget(cancel_button)
         button_layout.addWidget(ok_button)
         button_layout.addStretch()
-        button_layout.addStretch()
         
         content_layout.addLayout(button_layout)
         

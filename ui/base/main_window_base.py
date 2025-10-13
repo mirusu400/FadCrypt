@@ -451,6 +451,10 @@ class MainWindowBase(QMainWindow):
             QPushButton:hover {
                 background-color: #b71c1c;
             }
+            QPushButton:disabled {
+                background-color: #9e9e9e;
+                color: #616161;
+            }
         """)
         self.start_button.clicked.connect(self.on_start_monitoring)
         centered_buttons_layout.addWidget(self.start_button)
