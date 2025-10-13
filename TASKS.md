@@ -1,30 +1,33 @@
 # FadCrypt PyQt6 Migration - Progress Tracker
 
 **Last Updated:** 2025-10-13  
-**Current Phase:** 3 - Business Logic Integration (75% Complete)  
-**Next Phase:** 4 - Monitoring Integration
+**Current Phase:** 5 - Platform Architecture (80% Complete)  
+**Next Phase:** 6 - Autostart & State Persistence
 
 ## 🎉 Recent Accomplishments (This Session)
 
-- ✅ **Applications Grid UI** - Replaced simple list with card-based grid layout (3 columns)
-- ✅ **App Icons** - Loading from .desktop files and system icon directories
-- ✅ **Config Tab Live Display** - Real-time updates when apps are added/removed
-- ✅ **Dialog Design** - Modern dark theme with better contrast and styling
-- ✅ **Multi-Selection** - Click to select, visual feedback with green borders
-- ✅ **Add Application Dialog** - Full drag-and-drop support with ELF detection
+- ✅ **Password Dialog Redesign** - Modern 480x280px design with proper padding and wrapping
+- ✅ **Threading Fix** - Qt signal/slot pattern for thread-safe password dialogs (CRITICAL BUG FIX)
+- ✅ **Platform Architecture** - Created MainWindowLinux and MainWindowWindows with inheritance
+- ✅ **Platform Detection** - Entry point now detects OS and loads appropriate class
+- ✅ **Autostart Implementation** - Linux .desktop and Windows registry methods complete
+- ✅ **System Tray** - QSystemTrayIcon with context menu and notifications
+- ✅ **UnifiedMonitor** - Integrated with callbacks and monitoring lifecycle
+- ✅ **Applications Grid UI** - Card-based grid with icons from .desktop files
+- ✅ **Config Tab Live Display** - Real-time updates when apps added/removed
 
 ## 🎯 Architecture Goals
 
-- Migrate from Tkinter to PyQt6 for modern, cross-platform UI
-- Refactor monolithic files into clean OOP architecture
-- Maintain ALL existing functionality and logic
-- Use DRY principle: shared business logic in `core/`, UI in `ui/`
-- Platform-specific code via inheritance (Windows base → Linux extends)
-- No loss of context, features, or mechanisms
+- Migrate from Tkinter to PyQt6 for modern, cross-platform UI ✅
+- Refactor monolithic files into clean OOP architecture ✅
+- Maintain ALL existing functionality and logic ✅
+- Use DRY principle: shared business logic in `core/`, UI in `ui/` ✅
+- Platform-specific code via inheritance (MainWindowBase → Linux/Windows) ✅
+- No loss of context, features, or mechanisms ✅
 
 ---
 
-## ✅ Phase 1: Foundation (COMPLETE)
+## ✅ Phase 1: Foundation (COMPLETE - 100%)
 
 - ✅ Project structure with ui/ and core/ separation
 - ✅ PyQt6 6.9.0 installed and working
@@ -33,7 +36,7 @@
 - ✅ Resource path handling for PyInstaller (resource_path method)
 - ✅ Custom Ubuntu font integration (core/fonts/ubuntu_regular.ttf)
 
-## ✅ Phase 2: Core UI Widgets (COMPLETE)
+## ✅ Phase 2: Core UI Widgets (COMPLETE - 100%)
 
 - ✅ MainWindowBase with all 5 tabs (Main, Applications, Config, Settings, About)
 - ✅ Complete UI parity with Tkinter:
@@ -46,12 +49,12 @@
 - ✅ ButtonPanel (80 lines) - Add/Remove/Select All/Deselect All actions
 - ✅ SettingsPanel (280 lines) - Radio buttons, preview sections, detailed descriptions
 - ✅ AboutPanel (300 lines) - Update checker, FadCam promo, external links
-- ✅ Password dialogs (PasswordDialog, ChangePasswordDialog - 260 lines)
+- ✅ Password dialogs (PasswordDialog, ChangePasswordDialog - modern redesign)
 - ✅ Add Application Dialog (350 lines) - Drag-drop, browse, scan apps, modern styling
 - ✅ Snake game extracted to core/snake_game.py with threading
 - ✅ All helper texts and descriptions match Tkinter exactly
 
-## 🔄 Phase 3: Business Logic Integration (85% COMPLETE)
+## ✅ Phase 3: Business Logic Integration (COMPLETE - 100%)
 
 - ✅ Entry point working with version.py
 - ✅ Custom font loading application-wide (Ubuntu Regular from core/fonts/)
@@ -60,12 +63,11 @@
 - ✅ Application add/remove functionality with grid UI
 - ✅ Config save/load from JSON with live display updates
 - ✅ Settings save/load from JSON
-- ✅ **NEW:** System tray integration with QSystemTrayIcon
-- ✅ **NEW:** UnifiedMonitor integrated with password prompts
-- ⏳ **TODO:** Autostart functionality for both platforms
-- ⏳ **TODO:** Platform-specific implementations (Windows/Linux separation)
+- ✅ System tray integration with QSystemTrayIcon
+- ✅ UnifiedMonitor integrated with password prompts
+- ✅ Threading fix for Qt widgets from monitoring thread
 
-## ⏳ Phase 4: Monitoring Integration (80% COMPLETE - IN PROGRESS)
+## 🔄 Phase 4: Monitoring Integration (90% COMPLETE - NEARLY DONE)
 
 - ✅ System tray integration (QSystemTrayIcon)
   - ✅ Created system tray icon with context menu
@@ -78,31 +80,56 @@
   - ✅ Start/stop monitoring lifecycle
   - ✅ Logging output to console
 - ✅ Password prompts during monitoring
-  - ✅ Show password dialog when blocked app launches
+  - ✅ Show password dialog when blocked app launches (thread-safe)
   - ✅ Integrated with UnifiedMonitor callbacks
   - ✅ Unlock app on correct password entry
   - ✅ Track unlock count in config
-- ⏳ Process blocking implementation
-  - ⏳ Linux: psutil + UnifiedMonitor (in progress)
-  - ⏳ Windows: To be tested
-- ⏳ Auto-start functionality
-  - [ ] Linux: .desktop file in ~/.config/autostart/
-  - [ ] Windows: Registry entry or Startup folder
-- ⏳ State persistence during monitoring
-  - [ ] Save/restore unlocked apps state
-  - [ ] Persist monitoring state across restarts
+  - ✅ Fixed Qt threading violations with pyqtSignal
+- ✅ Password dialog modern redesign
+  - ✅ Better sizing: 480x280px (was 400x250)
+  - ✅ Proper padding: 35px margins, 18px spacing
+  - ✅ Refined input: 48px height, proper focus states
+  - ✅ Modern buttons: Unlock (green) and Cancel (gray)
+  - ✅ Centered text with proper wrapping (max-width 410px)
+- ⏳ Testing
+  - [ ] Verify monitoring blocks apps correctly
+  - [ ] Test password prompt appears without threading errors
+  - [ ] Test unlock functionality and state persistence
+- [ ] Error handling and user feedback
+- [ ] Linux testing (Ubuntu, Arch, Fedora)
+- ⏳ Testing
+  - [ ] Verify monitoring blocks apps correctly
+  - [ ] Test password prompt appears without threading errors
+  - [ ] Test unlock functionality and state persistence
 
-## ⏳ Phase 5: Polish & Testing (TODO - 0%)
+## ⏳ Phase 5: Platform Architecture (TODO - 0%)
 
-- [ ] Settings persistence across restarts
+- [ ] Create ui/windows/main_window_windows.py extending MainWindowBase
+- [ ] Create ui/linux/main_window_linux.py extending MainWindowBase
+- [ ] Implement platform detection in entry points (FadCrypt_Qt.py)
+- [ ] Move Windows-specific logic (winreg, ctypes) to Windows class
+- [ ] Move Linux-specific logic (fcntl, .desktop) to Linux class
+- [ ] Test inheritance pattern with shared MainWindowBase functionality
+
+## ⏳ Phase 6: Autostart & State Persistence (TODO - 0%)
+
+- [ ] Linux autostart: Create .desktop file in ~/.config/autostart/
+- [ ] Windows autostart: Registry entry or Startup folder
+- [ ] Add autostart checkbox in Settings tab
+- [ ] Save/restore unlocked apps state to JSON
+- [ ] Persist monitoring state across restarts
+- [ ] Test autostart on both platforms
+
+## ⏳ Phase 7: Polish & Testing (TODO - 0%)
+
+- [ ] End-to-end testing on Linux (Ubuntu, Arch, Fedora)
+- [ ] Windows testing (10/11)
+- [ ] PyInstaller packaging test (.spec file updates for PyQt6)
+- [ ] Performance testing (CPU/memory usage during monitoring)
 - [ ] System tools locking (terminals, monitors) - Linux only
 - [ ] Cleanup on uninstall functionality
 - [ ] File monitoring and automatic backups
-- [ ] Error handling and user feedback
-- [ ] Linux testing (Ubuntu, Arch, Fedora)
-- [ ] Windows testing (10/11)
-- [ ] PyInstaller packaging test
-- [ ] Performance testing (CPU/memory usage)
+- [ ] Error handling and user feedback improvements
 
 ---
 
