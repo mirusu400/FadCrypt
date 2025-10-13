@@ -181,6 +181,7 @@ import fcntl
 
 # Import shared core modules
 from core.config_manager import ConfigManager
+from core.application_manager import ApplicationManager
 import atexit
 
 # App Version Information - imported from central version file
@@ -258,15 +259,16 @@ class AppLockerGUI:
         # Center the dialog on the screen
         screen_width = self.add_dialog.winfo_screenwidth()
         screen_height = self.add_dialog.winfo_screenheight()
-        dialog_width = 400  # Adjust width as needed
-        dialog_height = 500  # Adjust height as needed
+        dialog_width = 420  # Increased width slightly
+        dialog_height = 580  # Increased height to accommodate all content
         # position_x = (screen_width // 2) - (dialog_width // 2)
         position_x = 50  # Position the dialog on the left edge of the screen
         position_y = (screen_height // 2) - (dialog_height // 2)
         self.add_dialog.geometry(f"{dialog_width}x{dialog_height}+{position_x}+{position_y}")
         
-        # Prevent resizing
-        self.add_dialog.resizable(False, False)
+        # Allow resizing so user can expand if needed
+        self.add_dialog.resizable(True, True)
+        self.add_dialog.minsize(400, 550)  # Set minimum size
 
         # Ensure the dialog is focused
         self.add_dialog.attributes('-topmost', True)
@@ -325,12 +327,38 @@ class AppLockerGUI:
         browse_button = ttk.Button(manual_frame, text="Browse", command=self.browse_for_file, style="navy.TButton")
         browse_button.pack(pady=5)
 
+        # Buttons frame
+        buttons_frame = ttk.Frame(self.add_dialog)
+        buttons_frame.pack(pady=10)
+        
+        # Scan Apps Button (new feature!)
+        scan_button = ttk.Button(
+            buttons_frame,
+            text="🔍 Scan for Apps",
+            command=self.scan_for_apps,
+            width=15,
+            style="navy.TButton"
+        )
+        scan_button.pack(side=tk.LEFT, padx=5)
+        
         # Save Button
-        save_button = ttk.Button(self.add_dialog, text="Save", command=self.save_application, width=11, style="green.TButton")
-        save_button.pack(pady=10)
+        save_button = ttk.Button(
+            buttons_frame,
+            text="💾 Save",
+            command=self.save_application,
+            width=11,
+            style="green.TButton"
+        )
+        save_button.pack(side=tk.LEFT, padx=5)
 
         # Bind the Enter key to the Save button
         self.add_dialog.bind('<Return>', lambda event: save_button.invoke())
+    
+    def scan_for_apps(self):
+        """Open app scanner dialog"""
+        if hasattr(self, 'add_dialog'):
+            self.add_dialog.destroy()  # Close add dialog
+        self.app_manager.show_app_scanner_dialog()
 
 
     def on_drop(self, event):
@@ -580,48 +608,23 @@ class AppLockerGUI:
         import_button = ttk.Button(buttons_container, text="Import Config", command=self.import_config, style="blue.TButton")
         import_button.pack(side="left")
 
-        # Applications Tab
-        self.apps_frame = ttk.Frame(self.notebook)
-        self.notebook.add(self.apps_frame, text="Applications")
-
-        # Create a frame to hold the listbox and scrollbar
-        list_frame = ttk.Frame(self.apps_frame)
-        list_frame.pack(pady=5, padx=5, fill=tk.BOTH, expand=True)
-
-        # Create the listbox with a scrollbar
-        self.apps_listbox = tk.Listbox(
-            list_frame, 
-            width=50, 
-            font=("Helvetica", 10), 
-            selectmode=tk.SINGLE,
-            bg='#222222',  # Dark background matching darkly theme
-            fg='#ffffff',  # White text
-            selectbackground='#555555',  # Gray selection background
-            selectforeground='#009E60',  # Green text when selected (matching theme)
-            activestyle='none',  # Remove underline on active item
-            highlightcolor='#ED2939',  # Red border when focused (matching theme active color)
-            highlightbackground='#444444',  # Dark border when not focused
-            highlightthickness=1
+        # Applications Tab - Using shared ApplicationManager
+        self.app_manager = ApplicationManager(
+            app_locker=self.app_locker,
+            master=self.master,
+            notebook=self.notebook,
+            resource_path_func=self.resource_path,
+            show_message_func=self.show_message,
+            update_config_display_func=self.update_config_display,
+            is_linux=True
         )
-        self.apps_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.apps_listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.apps_listbox.config(yscrollcommand=scrollbar.set)
-
         
-
-        self.update_apps_listbox()
-
-        # Buttons frame
-        button_frame = ttk.Frame(self.apps_frame)
-        button_frame.pack(pady=10, padx=5, fill=tk.X)
-
-        # Modify the Add button to open the new dialog
-        ttk.Button(button_frame, text="Add", command=self.open_add_application_dialog, style="green.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Remove", command=self.remove_application, style="red.TButton").pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Rename", command=self.rename_application).pack(side=tk.LEFT, padx=5)
+        # Set callback for Add button
+        self.app_manager.add_application_callback = self.open_add_application_dialog
+        
+        # Keep references to ApplicationManager's components
+        self.apps_frame = self.app_manager.apps_frame
+        self.app_count_label = self.app_manager.app_count_label
 
 
 
@@ -1237,16 +1240,8 @@ class AppLockerGUI:
 
 
     def update_apps_listbox(self):
-        self.apps_listbox.delete(0, tk.END)
-        for index, app in enumerate(self.app_locker.config["applications"]):
-            item = f"  {app['name']} - {app['path']}"  # Added two spaces for left padding
-            self.apps_listbox.insert(tk.END, item)
-            # Apply alternating row colors for dark theme
-            if index % 2 == 0:
-                self.apps_listbox.itemconfig(index, {'bg': '#2a2a2a', 'fg': '#ffffff'})
-            else:
-                self.apps_listbox.itemconfig(index, {'bg': '#1f1f1f', 'fg': '#ffffff'})
-        self.update_config_display()
+        """Delegate to ApplicationManager"""
+        self.app_manager.update_apps_listbox()
 
     def update_config_display(self):
         self.config_text.config(state=tk.NORMAL)
@@ -1310,31 +1305,24 @@ class AppLockerGUI:
 
 
     def remove_application(self):
-        selection = self.apps_listbox.curselection()
-        if selection:
-            app_name = self.apps_listbox.get(selection[0]).split(" - ")[0].strip()  # Remove leading spaces
-            self.app_locker.remove_application(app_name)
-            self.update_apps_listbox()
-            self.update_config_display()
-            self.show_message("Success", f"Application {app_name}\nremoved successfully.")
-        else:
-            self.show_message("Error", "Please select an application to remove.")
+        """Delegate to ApplicationManager"""
+        self.app_manager.remove_applications()
+
+    def edit_application(self):
+        """Delegate to ApplicationManager"""
+        self.app_manager.edit_application()
+
+    def select_all_apps(self):
+        """Delegate to ApplicationManager"""
+        return self.app_manager.select_all_apps()
+
+    def deselect_all_apps(self):
+        """Delegate to ApplicationManager"""
+        self.app_manager.deselect_all_apps()
 
     def rename_application(self):
-        selection = self.apps_listbox.curselection()
-        if selection:
-            old_name = self.apps_listbox.get(selection[0]).split(" - ")[0].strip()  # Remove leading spaces
-            new_name = self.ask_password("Rename Application", f"Enter new name for {old_name}:")
-            if new_name:
-                for app in self.app_locker.config["applications"]:
-                    if app["name"] == old_name:
-                        app["name"] = new_name
-                        break
-                self.update_apps_listbox()
-                self.update_config_display()
-                self.show_message("Success", f"Application renamed from {old_name} to {new_name}.")
-        else:
-            self.show_message("Error", "Please select an application to rename.")
+        """Legacy method - redirects to edit_application"""
+        self.edit_application()
 
     def start_monitoring(self, auto_start=False):
         if os.path.exists(self.app_locker.password_file):
@@ -1630,6 +1618,7 @@ Version=1.0
     def custom_dialog(self, title, prompt, fullscreen=False, input_required=True):
         dialog = tk.Toplevel(self.master)
         dialog.attributes('-alpha', 0.0)  # Start fully transparent
+        dialog.attributes('-topmost', True)  # Always on top
         dialog.update_idletasks()  # Update geometry-related information
 
         if fullscreen:
@@ -2614,86 +2603,85 @@ class AppLocker:
         self.save_config()
 
     def block_application(self, app_name, app_path):
+        # Cache process name to avoid repeated path parsing
+        process_name = os.path.basename(app_path) if app_path else app_name
+        if app_path.endswith('.desktop'):
+            process_name = self._get_exec_from_desktop(app_path)
+        
+        process_name_lower = process_name.lower()
+        is_chrome_based = 'chrome' in process_name_lower
+        
         while self.monitoring:
             try:
-                # Get process name from path for better matching
-                process_name = os.path.basename(app_path) if app_path else app_name
-                
-                # Handle .desktop files
-                if app_path.endswith('.desktop'):
-                    process_name = self._get_exec_from_desktop(app_path)
-                
                 app_processes = []
-                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status', 'ppid']):
+                
+                # Optimized process iteration - only get needed attributes
+                for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status']):
                     try:
-                        # Skip zombie processes - they are already dead but not reaped
+                        # Skip zombie processes immediately
                         if proc.info['status'] == psutil.STATUS_ZOMBIE:
-                            continue  # Skip zombie processes silently
+                            continue
                         
-                        # Match by process name or command line
                         proc_name = proc.info['name'].lower()
-                        proc_cmdline = proc.info['cmdline'] if proc.info['cmdline'] else []
                         
-                        # Direct name match
-                        if proc_name == process_name.lower():
+                        # Fast path: direct name match
+                        if proc_name == process_name_lower:
                             app_processes.append(proc)
-                        # Command line match
-                        elif proc_cmdline and any(process_name.lower() in cmd.lower() for cmd in proc_cmdline if cmd):
+                            continue
+                        
+                        # Chrome-based apps: check chrome in name
+                        if is_chrome_based and 'chrome' in proc_name:
                             app_processes.append(proc)
-                        # Special handling for Chrome/Chromium-based apps - catch all child processes
-                        elif 'chrome' in process_name.lower() and ('chrome' in proc_name or 
-                                                                   any('chrome' in str(cmd).lower() for cmd in proc_cmdline if cmd)):
-                            app_processes.append(proc)
+                            continue
+                        
+                        # Slower path: check command line if available
+                        proc_cmdline = proc.info.get('cmdline')
+                        if proc_cmdline:
+                            cmdline_str = ' '.join(proc_cmdline).lower()
+                            if process_name_lower in cmdline_str:
+                                app_processes.append(proc)
+                            elif is_chrome_based and 'chrome' in cmdline_str:
+                                app_processes.append(proc)
+                    
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
 
                 if app_processes:
-                    print(f"Found {len(app_processes)} processes for {app_name}, unlocked_apps: {self.state['unlocked_apps']}, showing_dialog: {app_name in self.apps_showing_dialog}")
                     if app_name not in self.state["unlocked_apps"]:
                         if app_name not in self.apps_showing_dialog:
                             print(f"Blocking {app_name}: terminating {len(app_processes)} processes")
-                            for proc in app_processes:
-                                print(f"Killing process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
-                                # Kill child processes first
-                                for child in proc.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                        print(f"Killed child process {child.pid}")
-                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                        print(f"Failed to kill child {child.pid}: {e}")
-                                try:
-                                    proc.kill()  # Use kill instead of terminate for immediate blocking
-                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
                             
-                            print(f"Showing password dialog for {app_name}")
+                            # Kill processes efficiently
+                            for proc in app_processes:
+                                try:
+                                    # Kill children first (don't recurse too deep to save CPU)
+                                    for child in proc.children(recursive=False):
+                                        try:
+                                            child.kill()
+                                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                            pass
+                                    proc.kill()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                            
                             self.apps_showing_dialog.add(app_name)
                             self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-                            time.sleep(1)
                         else:
-                            # App is showing dialog, but new processes appeared - kill them too
-                            print(f"Blocking additional {app_name} processes while dialog is showing: terminating {len(app_processes)} processes")
+                            # Kill additional processes while dialog is showing
                             for proc in app_processes:
-                                print(f"Killing additional process {proc.info['pid']}: {proc.info['name']} - cmdline: {proc.info['cmdline']}")
-                                # Kill child processes first
-                                for child in proc.children(recursive=True):
-                                    try:
-                                        child.kill()
-                                        print(f"Killed child process {child.pid}")
-                                    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                        print(f"Failed to kill child {child.pid}: {e}")
                                 try:
-                                    proc.kill()  # Use kill instead of terminate for immediate blocking
-                                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
-                                    print(f"Failed to kill process {proc.info['pid']}: {e}")
+                                    proc.kill()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
                     else:
-                        print(f"{app_name} is unlocked, sleeping for 7 seconds")
-                        time.sleep(7)
+                        # Unlocked - reset counter and skip checks for longer
+                        if hasattr(self, f"{app_name}_no_process_count"):
+                            delattr(self, f"{app_name}_no_process_count")
+                        time.sleep(5)  # Longer sleep when unlocked
+                        continue
                 
-                # Only remove from unlocked_apps if no processes found for an extended period
-                # This prevents premature removal right after launching
+                # Auto-lock logic when no processes found
                 if app_name in self.state["unlocked_apps"] and not app_processes:
-                    # Check if we've seen no processes for this app recently
                     if not hasattr(self, f"{app_name}_no_process_count"):
                         setattr(self, f"{app_name}_no_process_count", 0)
                     
@@ -2701,21 +2689,22 @@ class AppLocker:
                     count += 1
                     setattr(self, f"{app_name}_no_process_count", count)
                     
-                    # Only remove after 10 consecutive checks with no processes (about 0.5 seconds)
+                    # Auto-lock after 10 checks with no processes
                     if count >= 10:
                         print(f"Auto-locking {app_name} (no active processes found)")
                         self.state["unlocked_apps"].remove(app_name)
                         self.save_state()
                         delattr(self, f"{app_name}_no_process_count")
-                    # Don't print the counting to avoid terminal clutter
                 elif app_name in self.state["unlocked_apps"] and app_processes:
-                    # Reset counter if processes are found
                     if hasattr(self, f"{app_name}_no_process_count"):
                         delattr(self, f"{app_name}_no_process_count")
-
-                time.sleep(1)  # Check every 1 second - balances responsiveness and CPU usage
+                
+                # CRITICAL: Always sleep to prevent CPU spike
+                time.sleep(0.1)  # 100ms check interval - responsive but efficient
+                
             except Exception as e:
-                print(f"Error in block_application: {e}")
+                print(f"Error in block_application for {app_name}: {e}")
+                time.sleep(1)  # Sleep longer on error
 
     def _get_exec_from_desktop(self, desktop_path):
         """Extract executable name from .desktop file"""
