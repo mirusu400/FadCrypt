@@ -45,6 +45,7 @@ from version import __version__, __version_code__
 # Import shared core modules
 from core.config_manager import ConfigManager
 from core.application_manager import ApplicationManager
+from core.unified_monitor import UnifiedMonitor
 
 
 # Embedded configuration and state data
@@ -2136,6 +2137,17 @@ class AppLocker:
         self.load_state()
         self.icon = None
         
+        # Initialize UnifiedMonitor for single-threaded efficient monitoring
+        self.unified_monitor = UnifiedMonitor(
+            get_state_func=lambda: self.state,
+            set_state_func=self.save_state_from_monitor,
+            show_dialog_func=self._show_password_dialog_wrapper,
+            get_exec_from_desktop_func=None,  # Windows doesn't use .desktop files
+            is_linux=False,
+            sleep_interval=1.0,  # Maximum efficiency as requested
+            enable_profiling=False
+        )
+        
 
 
     def get_fadcrypt_folder(self):
@@ -2442,15 +2454,30 @@ class AppLocker:
                 print(f"Error in verifying password or saving state in _show_password_dialog: {e}")
         except Exception as e:
             print(f"General error in _show_password_dialog: {e}")
+        finally:
+            # Ensure dialog tracking is cleaned up
+            self.unified_monitor.remove_from_showing_dialog(app_name)
 
+    # Helper method for UnifiedMonitor callback (auto-lock state updates)
+    def save_state_from_monitor(self, key: str, value):
+        """
+        Helper method for UnifiedMonitor to save state.
+        Called when auto-locking apps.
+        """
+        self.state[key] = value
+        self.save_state()
+    
+    def _show_password_dialog_wrapper(self, app_name: str, app_path: str):
+        """
+        Wrapper for UnifiedMonitor to show password dialog.
+        Ensures proper dialog removal tracking.
+        """
+        self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
 
     def start_monitoring(self):
         if not self.monitoring:
             self.monitoring = True
-            for app in self.config["applications"]:
-                app_name = app["name"]
-                app_path = app.get("path", "")
-                threading.Thread(target=self.block_application, args=(app_name, app_path), daemon=True).start()
+            self.unified_monitor.start_monitoring(self.config["applications"])
             self._create_system_tray_icon()
         else:
             self.gui.show_message("Info", "Monitoring is already running.")
@@ -2461,6 +2488,7 @@ class AppLocker:
         self.gui.start_button.pack(side=tk.LEFT, padx=10)
         if self.monitoring:
             self.monitoring = False
+            self.unified_monitor.stop_monitoring()
             if self.icon:
                 self.icon.stop()
             self.gui.master.deiconify()  # Show the main window
