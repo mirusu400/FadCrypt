@@ -6,10 +6,10 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QScrollArea, QWidget, QFrame,
     QCheckBox, QProgressDialog, QMessageBox, QGridLayout,
-    QLineEdit, QComboBox
+    QLineEdit, QComboBox, QSizePolicy
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
-from PyQt6.QtGui import QFont, QPixmap, QIcon
+from PyQt6.QtCore import Qt, pyqtSignal, QThread, QTimer
+from PyQt6.QtGui import QFont, QPixmap, QIcon, QFontMetrics
 import os
 import sys
 from typing import List, Dict, Optional
@@ -184,6 +184,8 @@ class AppCard(QFrame):
     
     def init_ui(self):
         """Initialize card UI."""
+        # Prefer fixed size behavior so all cards are uniform
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         layout = QVBoxLayout()
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -250,16 +252,21 @@ class AppCard(QFrame):
         # App name and category
         text_layout = QVBoxLayout()
         text_layout.setSpacing(2)
-        
-        name_label = QLabel(self.app_data['name'])
+
+        # Truncate long names to keep card heights consistent
         name_font = QFont()
         name_font.setBold(True)
         name_font.setPointSize(11)
+        fm = QFontMetrics(name_font)
+        elided_name = fm.elidedText(self.app_data.get('name', ''), Qt.TextElideMode.ElideRight, 200)
+        name_label = QLabel(elided_name)
         name_label.setFont(name_font)
         name_label.setStyleSheet("color: #e5e7eb; background-color: transparent;")
-        name_label.setWordWrap(True)
+        name_label.setWordWrap(False)
+        name_label.setMaximumHeight(fm.height() * 2)
+        name_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         text_layout.addWidget(name_label)
-        
+
         # Category badge
         category = self.app_data.get('category', 'Other')
         category_label = QLabel(f"📂 {category}")
@@ -271,16 +278,20 @@ class AppCard(QFrame):
             border-radius: 8px;
         """)
         text_layout.addWidget(category_label)
-        
-        header_layout.addLayout(text_layout, stretch=1)
+        header_layout.addLayout(text_layout)
         layout.addLayout(header_layout)
-        
-        # Path
-        path_label = QLabel(f"📁 {self.app_data['path']}")
+
+        # Path label - single line elided to avoid changing card height
+        path_text = self.app_data.get('path', '')
+        pm = QFontMetrics(self.font())
+        elided_path = pm.elidedText(path_text, Qt.TextElideMode.ElideRight, 260)
+        path_label = QLabel(elided_path)
         path_label.setStyleSheet("color: #9ca3af; font-size: 10px; background-color: transparent;")
-        path_label.setWordWrap(True)
+        path_label.setWordWrap(False)
+        path_label.setMaximumHeight(pm.height())
+        path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(path_label)
-        
+
         self.setLayout(layout)
     
     def load_app_icon(self) -> Optional[QPixmap]:
@@ -373,11 +384,12 @@ class AppScannerDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        
         self.setWindowTitle("Scan for Applications")
         self.setModal(True)
-        self.columns = 4
-        self.setMinimumSize(1400, 700)  # Wider to fit 4 columns without scrollbar
+        # Use a reasonable default minimum size (restore original)
+        self.setMinimumSize(800, 600)
+        # Default to 3 columns on open (responsive resizing will reflow)
+        self.columns = 3
 
         # Apply dark theme and make input backgrounds transparent for consistency
         self.setStyleSheet("""
@@ -409,6 +421,8 @@ class AppScannerDialog(QDialog):
 
         self.scanned_apps = []
         self.app_cards = []
+        # Current category/tag filter (None = show all)
+        self.category_filter = None
 
         self.init_ui()
         self.center_on_screen()
@@ -419,8 +433,9 @@ class AppScannerDialog(QDialog):
     def init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        # Make overall dialog more compact
+        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 12)
         
         # Title
         title = QLabel("🔍 Scan System for Applications")
@@ -437,7 +452,7 @@ class AppScannerDialog(QDialog):
         
         # Search bar
         search_layout = QHBoxLayout()
-        search_layout.setSpacing(10)
+        search_layout.setSpacing(8)
         
         search_label = QLabel("🔎 Search:")
         search_label.setStyleSheet("font-weight: bold; color: #e5e7eb;")
@@ -494,7 +509,17 @@ class AppScannerDialog(QDialog):
             pass
         
         layout.addLayout(search_layout)
-        
+
+        # Category/tag bar (populated after scan)
+        self.tag_bar_widget = QWidget()
+        self.tag_bar_layout = QHBoxLayout()
+        # Slightly tighter tag spacing for compactness
+        self.tag_bar_layout.setSpacing(6)
+        self.tag_bar_layout.setContentsMargins(0, 4, 0, 4)
+        self.tag_bar_widget.setLayout(self.tag_bar_layout)
+        self.tag_bar_widget.setStyleSheet("background-color: transparent;")
+        layout.addWidget(self.tag_bar_widget)
+
         # Separator
         separator = QFrame()
         separator.setFrameShape(QFrame.Shape.HLine)
@@ -515,16 +540,29 @@ class AppScannerDialog(QDialog):
         self.scroll_widget.setObjectName("scroll_widget")
         self.scroll_widget.setStyleSheet("background-color: transparent;")
         self.scroll_layout = QGridLayout()
-        self.scroll_layout.setSpacing(15)
-        # Make columns stretch equally so cards are evenly sized
-        for i in range(self.columns):
-            self.scroll_layout.setColumnStretch(i, 1)
+    # Slightly tighter grid spacing to make the area more compact
+        self.scroll_layout.setSpacing(12)
         self.scroll_widget.setLayout(self.scroll_layout)
+        # keep a reference to the scroll area so we can use its viewport width for responsive math
+        self.scroll_area = scroll
+        # Initialize column stretch to default columns so layout is balanced on open
+        for i in range(self.columns):
+            try:
+                self.scroll_layout.setColumnStretch(i, 1)
+            except Exception:
+                pass
         
         scroll.setWidget(self.scroll_widget)
         layout.addWidget(scroll, stretch=1)
-        
-        # Selection counter
+        # keep a reference to the scroll area so we can use its viewport width for responsive math
+        self.scroll_area = scroll
+
+        # Debounce timer for resize events to avoid jitter while dragging
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._on_resize_debounced)
+            
+            # Selection counter
         self.selection_label = QLabel("0 apps selected")
         self.selection_label.setStyleSheet("""
             color: #3b82f6;
@@ -554,10 +592,10 @@ class AppScannerDialog(QDialog):
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 10px 20px;
+                padding: 8px 14px;
                 font-size: 13px;
-                min-width: 100px;
-                min-height: 40px;
+                min-width: 90px;
+                min-height: 32px;
             }
             QPushButton:hover {
                 background-color: #2563eb;
@@ -576,10 +614,10 @@ class AppScannerDialog(QDialog):
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 10px 20px;
+                padding: 8px 14px;
                 font-size: 13px;
-                min-width: 120px;
-                min-height: 40px;
+                min-width: 100px;
+                min-height: 32px;
             }
             QPushButton:hover {
                 background-color: #4b5563;
@@ -601,10 +639,10 @@ class AppScannerDialog(QDialog):
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 10px 20px;
+                padding: 8px 14px;
                 font-size: 13px;
-                min-width: 100px;
-                min-height: 40px;
+                min-width: 90px;
+                min-height: 32px;
             }
             QPushButton:hover {
                 background-color: #b91c1c;
@@ -626,11 +664,11 @@ class AppScannerDialog(QDialog):
                 color: white;
                 border: none;
                 border-radius: 6px;
-                padding: 10px 20px;
+                padding: 8px 14px;
                 font-size: 13px;
                 font-weight: bold;
-                min-width: 140px;
-                min-height: 40px;
+                min-width: 120px;
+                min-height: 32px;
             }
             QPushButton:hover {
                 background-color: #00b56f;
@@ -648,6 +686,151 @@ class AppScannerDialog(QDialog):
         layout.addLayout(button_layout)
         
         self.setLayout(layout)
+        # Ensure layout is computed after widgets are shown/laid out
+        try:
+            QTimer.singleShot(50, self._ensure_layout)
+        except Exception:
+            pass
+    
+    def compute_columns(self) -> int:
+        """Compute number of columns that fit in the current scroll area width.
+
+        Returns between 1 and 4.
+        """
+        try:
+            # Prefer scroll area viewport width when available (more accurate during resize)
+            try:
+                available = (self.scroll_area.viewport().width() if getattr(self, 'scroll_area', None) is not None else self.scroll_widget.width()) or self.width()
+            except Exception:
+                available = self.scroll_widget.width() or self.width()
+            # Estimate usable width: subtract margins/padding conservatively
+            usable = max(200, available - 80)
+            card_w = 300  # estimated card width including spacing
+            cols = max(1, min(4, usable // card_w))
+            return int(cols)
+        except Exception:
+            return 3
+
+    def resizeEvent(self, event):
+        """On resize, recompute columns and relayout cards."""
+        super().resizeEvent(event)
+        # Start debounce timer and defer actual re-layout to avoid repeated layout thrash while resizing
+        try:
+            self._resize_timer.start(120)
+        except Exception:
+            # fallback to immediate behavior if timer fails
+            new_cols = self.compute_columns()
+            if getattr(self, 'columns', None) != new_cols:
+                self.columns = new_cols
+                for i in range(4):
+                    self.scroll_layout.setColumnStretch(i, 1 if i < self.columns else 0)
+                self._relayout_cards()
+
+    def _on_resize_debounced(self):
+        """Handle deferred resize: compute columns and relayout once user stops/pauses resizing."""
+        try:
+            new_cols = self.compute_columns()
+            if getattr(self, 'columns', None) != new_cols:
+                self.columns = new_cols
+                for i in range(4):
+                    self.scroll_layout.setColumnStretch(i, 1 if i < self.columns else 0)
+                self._relayout_cards()
+        except Exception:
+            pass
+
+    def _relayout_cards(self):
+        """Reposition existing cards according to current column count."""
+        # Remove all widgets from layout first (detach them)
+        # Note: we don't delete widgets, just remove them from layout so we can re-add
+        while self.scroll_layout.count():
+            item = self.scroll_layout.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget:
+                try:
+                    self.scroll_layout.removeWidget(widget)
+                except Exception:
+                    pass
+        row = 0
+        col = 0
+        for card in self.app_cards:
+            try:
+                self.scroll_layout.addWidget(card, row, col, alignment=(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter))
+            except Exception:
+                self.scroll_layout.addWidget(card, row, col)
+            col += 1
+            if col >= self.columns:
+                col = 0
+                row += 1
+
+    def _ensure_layout(self):
+        """Ensure columns are computed and cards relaid out once the dialog is shown."""
+        try:
+            new_cols = self.compute_columns()
+            if getattr(self, 'columns', None) != new_cols:
+                self.columns = new_cols
+                for i in range(4):
+                    self.scroll_layout.setColumnStretch(i, 1 if i < self.columns else 0)
+            if self.app_cards:
+                self._relayout_cards()
+        except Exception:
+            pass
+
+    def _populate_category_tags(self):
+        """Create tag buttons from scanned app categories."""
+        # Clear previous
+        for i in reversed(range(self.tag_bar_layout.count())):
+            item = self.tag_bar_layout.takeAt(i)
+            if not item:
+                continue
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        # 'All' button
+        all_btn = QPushButton("All")
+        all_btn.setCheckable(True)
+        all_btn.setChecked(self.category_filter is None)
+        all_btn.clicked.connect(self.clear_category_filter)
+        all_btn.setStyleSheet("""
+            QPushButton { background-color: transparent; color: #cbd5e1; border: 1px solid #3b3f46; padding: 6px 10px; border-radius: 6px; }
+            QPushButton:checked { background-color: #3b82f6; color: white; }
+        """)
+        self.tag_bar_layout.addWidget(all_btn)
+        # Build unique categories mapping using lowercase keys -> display label
+        seen = {}
+        for a in self.scanned_apps:
+            disp = (a.get('category', 'Other') or 'Other').strip()
+            key = disp.lower()
+            if key not in seen:
+                seen[key] = disp
+
+        for key, display in seen.items():
+            c_lower = key
+            btn = QPushButton(display)
+            btn.setCheckable(True)
+            btn.setChecked(self.category_filter == c_lower)
+            # pass lowercase category to handler
+            btn.clicked.connect(lambda checked, c=c_lower: self._on_category_clicked(c))
+            btn.setStyleSheet("""
+                QPushButton { background-color: transparent; color: #93c5fd; border: 1px solid #3b3f46; padding: 6px 10px; border-radius: 6px; }
+                QPushButton:checked { background-color: #2563eb; color: white; }
+            """)
+            self.tag_bar_layout.addWidget(btn)
+
+    def _on_category_clicked(self, category: str):
+        # category is expected lowercase from the buttons
+        if self.category_filter == category:
+            self.category_filter = None
+        else:
+            self.category_filter = category
+        # refresh tags and filter
+        self._populate_category_tags()
+        self.filter_apps(self.search_input.text())
+
+    def clear_category_filter(self):
+        self.category_filter = None
+        self._populate_category_tags()
+        self.filter_apps(self.search_input.text())
     
     def start_scan(self):
         """Start scanning for applications in background thread."""
@@ -662,7 +845,10 @@ class AppScannerDialog(QDialog):
     
     def display_results(self, apps: List[Dict[str, str]]):
         """Display scanned applications in grid."""
+        # Store scanned apps and add a normalized lowercase category key for reliable filtering
         self.scanned_apps = apps
+        for a in self.scanned_apps:
+            a['category_lc'] = (a.get('category', 'Other') or 'Other').strip().lower()
         
         if not apps:
             self.status_label.setText("❌ No applications found")
@@ -678,12 +864,18 @@ class AppScannerDialog(QDialog):
         # Create cards in grid (N columns)
         row = 0
         col = 0
+        card_max_w = 320  # keep cards readable and prevent full-row stretching
+        card_fixed_h = 140
         for app in apps:
             card = AppCard(app, self)
+            # enforce fixed size so cards are uniform
+            card.setFixedSize(card_max_w, card_fixed_h)
+
             card.toggled.connect(lambda checked: self.update_selection_count())
-            self.scroll_layout.addWidget(card, row, col)
+            # Align top+center so cards don't expand horizontally and allow multiple columns
+            self.scroll_layout.addWidget(card, row, col, alignment=(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter))
             self.app_cards.append(card)
-            
+
             col += 1
             if col >= self.columns:
                 col = 0
@@ -691,6 +883,16 @@ class AppScannerDialog(QDialog):
         
         # Enable add button
         self.add_btn.setEnabled(True)
+        # Populate category tags for filtering
+        try:
+            self._populate_category_tags()
+        except Exception:
+            pass
+        # Ensure layout recalculation now that cards exist (fix initial single-column issue)
+        try:
+            QTimer.singleShot(0, self._ensure_layout)
+        except Exception:
+            pass
     
     def filter_apps(self, search_text: str):
         """Filter displayed apps based on search text."""
@@ -699,23 +901,36 @@ class AppScannerDialog(QDialog):
         visible_count = 0
         row = 0
         col = 0
-        
+        # Clear existing layout placements so we can re-add visible cards
+        while self.scroll_layout.count():
+            item = self.scroll_layout.takeAt(0)
+            widget = item.widget() if item else None
+            if widget:
+                try:
+                    self.scroll_layout.removeWidget(widget)
+                except Exception:
+                    pass
+
         for card in self.app_cards:
             app_name = card.app_data.get('name', '').lower()
             app_path = card.app_data.get('path', '').lower()
-            app_category = card.app_data.get('category', '').lower()
-            
-            # Check if search matches name, path or category
-            matches = (
-                search_text in app_name or 
-                search_text in app_path or 
-                search_text in app_category
-            )
-            
-            if matches or not search_text:
+            # prefer the normalized lowercase category key when available
+            app_category = card.app_data.get('category_lc', card.app_data.get('category', '')).lower()
+
+            # Text match
+            matches_text = (not search_text) or (search_text in app_name) or (search_text in app_path) or (search_text in app_category)
+            # Category match
+            matches_category = (not self.category_filter) or (app_category == (self.category_filter or '').lower())
+
+            matches = matches_text and matches_category
+
+            if matches:
                 card.setVisible(True)
                 # Reposition visible cards
-                self.scroll_layout.addWidget(card, row, col)
+                try:
+                    self.scroll_layout.addWidget(card, row, col, alignment=(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter))
+                except Exception:
+                    self.scroll_layout.addWidget(card, row, col)
                 visible_count += 1
                 col += 1
                 if col >= self.columns:
@@ -725,18 +940,27 @@ class AppScannerDialog(QDialog):
                 card.setVisible(False)
         
         # Update status
-        if search_text:
-            self.status_label.setText(
-                f"🔍 Showing {visible_count} of {len(self.scanned_apps)} applications"
-            )
+        # Update status
+        if self.category_filter:
+            self.status_label.setText(f"🔖 Filter: {self.category_filter} — Showing {visible_count} of {len(self.scanned_apps)} apps")
+        elif search_text:
+            self.status_label.setText(f"🔍 Showing {visible_count} of {len(self.scanned_apps)} applications")
         else:
-            self.status_label.setText(
-                f"✅ Found {len(self.scanned_apps)} applications - Select apps to add:"
-            )
+            self.status_label.setText(f"✅ Found {len(self.scanned_apps)} applications - Select apps to add:")
     
     def clear_search(self):
         """Clear search input and show all apps."""
         self.search_input.clear()
+        # Clear category filter as well and refresh
+        self.category_filter = None
+        try:
+            self._populate_category_tags()
+        except Exception:
+            pass
+        try:
+            self.filter_apps("")
+        except Exception:
+            pass
     
     def update_selection_count(self):
         """Update the selection counter label."""
