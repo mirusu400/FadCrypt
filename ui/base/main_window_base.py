@@ -491,9 +491,9 @@ class MainWindowBase(QMainWindow):
         """)
         search_filter_layout.addWidget(self.app_search_input, stretch=1)
         
-        # Sort dropdown
+        # Sort dropdown label
         sort_label = QLabel("Sort:")
-        sort_label.setStyleSheet("color: #888888; font-size: 12px;")
+        sort_label.setStyleSheet("color: #e5e7eb; font-size: 13px; padding-right: 8px;")
         search_filter_layout.addWidget(sort_label)
         
         self.app_sort_combo = QComboBox()
@@ -506,7 +506,7 @@ class MainWindowBase(QMainWindow):
                 border: 2px solid #333333;
                 border-radius: 6px;
                 padding: 8px 12px;
-                padding-right: 30px;
+                padding-right: 35px;
                 min-width: 140px;
                 font-size: 12px;
             }
@@ -515,19 +515,16 @@ class MainWindowBase(QMainWindow):
             }
             QComboBox::drop-down {
                 border: none;
-                width: 25px;
+                width: 30px;
+                padding-right: 8px;
             }
             QComboBox::down-arrow {
-                image: none;
-                width: 0;
-                height: 0;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 7px solid #888888;
-                margin-right: 5px;
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgMUw2IDdMMTEgMSIgc3Ryb2tlPSIjODg4ODg4IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);
+                width: 12px;
+                height: 8px;
             }
             QComboBox::down-arrow:hover {
-                border-top-color: #e5e7eb;
+                image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgMUw2IDdMMTEgMSIgc3Ryb2tlPSIjZTVlN2ViIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);
             }
             QComboBox QAbstractItemView {
                 background-color: #1a1a1a;
@@ -1103,7 +1100,8 @@ class MainWindowBase(QMainWindow):
         for app_name, app_data in self.app_list_widget.apps_data.items():
             config_data[app_name] = {
                 'path': app_data['path'],
-                'unlock_count': app_data.get('unlock_count', 0)
+                'unlock_count': app_data.get('unlock_count', 0),
+                'date_added': app_data.get('date_added', None)
             }
         
         try:
@@ -1159,7 +1157,8 @@ class MainWindowBase(QMainWindow):
                 self.app_list_widget.add_app(
                     app_name,
                     app_data['path'],
-                    unlock_count=app_data.get('unlock_count', 0)
+                    unlock_count=app_data.get('unlock_count', 0),
+                    date_added=app_data.get('date_added', None)
                 )
             
             self.update_app_count()

@@ -17,11 +17,12 @@ class AppCard(QFrame):
     double_clicked = pyqtSignal(str)  # app_name
     context_menu_requested = pyqtSignal(str, object)  # app_name, position
     
-    def __init__(self, app_name, app_path, unlock_count=0, parent=None):
+    def __init__(self, app_name, app_path, unlock_count=0, date_added=None, parent=None):
         super().__init__(parent)
         self.app_name = app_name
         self.app_path = app_path
         self.unlock_count = unlock_count
+        self.date_added = date_added
         self.is_selected = False
         
         self.init_ui()
@@ -35,19 +36,19 @@ class AppCard(QFrame):
                 background-color: #2a2a2a;
                 border: 2px solid #444444;
                 border-radius: 10px;
-                padding: 10px;
+                padding: 12px;
             }
             AppCard:hover {
                 border: 2px solid #4ade80;
                 background-color: #333333;
             }
         """)
-        self.setMinimumSize(200, 180)
-        self.setMaximumSize(250, 220)
+        self.setMinimumSize(220, 220)
+        self.setMaximumSize(280, 280)
         
         layout = QVBoxLayout()
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(10)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        layout.setSpacing(8)
         
         # Icon
         icon_label = QLabel()
@@ -62,11 +63,11 @@ class AppCard(QFrame):
         # Try to load app icon
         pixmap = self.load_app_icon()
         if pixmap:
-            icon_label.setPixmap(pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            icon_label.setPixmap(pixmap.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         else:
             # Fallback emoji
             icon_label.setText("📦")
-            icon_label.setStyleSheet("font-size: 48px; background-color: transparent;")
+            icon_label.setStyleSheet("font-size: 42px; background-color: transparent;")
         
         layout.addWidget(icon_label)
         
@@ -74,20 +75,65 @@ class AppCard(QFrame):
         name_label = QLabel(self.app_name)
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setWordWrap(True)
+        name_label.setMaximumHeight(40)
         name_label.setStyleSheet("""
             color: #ffffff;
-            font-size: 12pt;
+            font-size: 11pt;
             font-weight: bold;
             background-color: transparent;
         """)
         layout.addWidget(name_label)
+        
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("background-color: #444444; max-height: 1px;")
+        layout.addWidget(separator)
+        
+        # Path info
+        path_display = os.path.basename(self.app_path)
+        if len(path_display) > 25:
+            path_display = path_display[:22] + "..."
+        path_label = QLabel(f"📁 {path_display}")
+        path_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        path_label.setToolTip(self.app_path)  # Full path on hover
+        path_label.setStyleSheet("""
+            color: #888888;
+            font-size: 8pt;
+            background-color: transparent;
+        """)
+        layout.addWidget(path_label)
+        
+        # Date added
+        if self.date_added:
+            from datetime import datetime
+            try:
+                # If date_added is timestamp
+                if isinstance(self.date_added, (int, float)):
+                    date_obj = datetime.fromtimestamp(self.date_added)
+                else:
+                    date_obj = datetime.fromisoformat(self.date_added)
+                date_str = date_obj.strftime("%b %d, %Y")
+            except:
+                date_str = str(self.date_added)
+        else:
+            date_str = "Recently added"
+        
+        date_label = QLabel(f"📅 {date_str}")
+        date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        date_label.setStyleSheet("""
+            color: #888888;
+            font-size: 8pt;
+            background-color: transparent;
+        """)
+        layout.addWidget(date_label)
         
         # Stats
         stats_label = QLabel(f"🔓 {self.unlock_count}× unlocked")
         stats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         stats_label.setStyleSheet("""
             color: #888888;
-            font-size: 9pt;
+            font-size: 8pt;
             background-color: transparent;
         """)
         layout.addWidget(stats_label)
@@ -317,11 +363,13 @@ class AppGridWidget(QWidget):
             self.empty_state_widget.hide()
             self.grid_layout.removeWidget(self.empty_state_widget)
     
-    def add_app(self, app_name, app_path, unlock_count=0):
+    def add_app(self, app_name, app_path, unlock_count=0, date_added=None):
         """Add an application to the grid"""
+        import time
         self.apps_data[app_name] = {
             'path': app_path,
-            'unlock_count': unlock_count
+            'unlock_count': unlock_count,
+            'date_added': date_added if date_added else time.time()
         }
         self.refresh_grid()
     
@@ -395,7 +443,8 @@ class AppGridWidget(QWidget):
                 card = AppCard(
                     app_name,
                     app_data['path'],
-                    app_data.get('unlock_count', 0)
+                    app_data.get('unlock_count', 0),
+                    app_data.get('date_added', None)
                 )
                 card.clicked.connect(self.on_card_clicked)
                 card.double_clicked.connect(self.on_card_double_clicked)
