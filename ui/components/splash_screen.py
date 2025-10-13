@@ -59,7 +59,7 @@ class FadCryptSplashScreen(QSplashScreen):
         QTimer.singleShot(50, self.center_on_screen)
         
     def center_on_screen(self):
-        """Center splash screen on the primary display.
+        """Center splash screen on the primary display (Wayland-aware).
         
         Industry standard approach for Qt splash centering:
         1. Get primary screen geometry (actual available screen space)
@@ -68,8 +68,21 @@ class FadCryptSplashScreen(QSplashScreen):
         4. Use absolute positioning with move() to place splash at calculated center
         5. Account for screen offset (for multi-monitor setups)
         
-        This is the Qt-recommended way to center windows on screen.
+        Note: On Wayland, move() is ignored - window positioning is controlled by compositor.
         """
+        import os
+        
+        # Check if running under Wayland
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        wayland_display = os.environ.get('WAYLAND_DISPLAY', '')
+        is_wayland = 'wayland' in session_type or wayland_display
+        
+        if is_wayland:
+            print(f"[SplashScreen] Detected Wayland - compositor controls window positioning")
+            # On Wayland, we cannot control window position - compositor decides
+            return
+        
+        # X11 / Windows / macOS - we can control position
         screen = QApplication.primaryScreen()
         if screen:
             # Get the screen's available geometry (excludes taskbars, etc.)

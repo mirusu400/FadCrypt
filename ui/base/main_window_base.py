@@ -445,6 +445,7 @@ class MainWindowBase(QMainWindow):
     def create_applications_tab(self):
         """Create Applications tab for managing locked apps"""
         from ui.components.app_grid_widget import AppGridWidget
+        from PyQt6.QtWidgets import QLineEdit, QComboBox
         
         apps_tab = QWidget()
         apps_layout = QVBoxLayout(apps_tab)
@@ -461,6 +462,97 @@ class MainWindowBase(QMainWindow):
         header_layout.addWidget(self.app_count_label)
         header_layout.addStretch()
         apps_layout.addLayout(header_layout)
+        
+        # Search and filter bar
+        search_filter_layout = QHBoxLayout()
+        search_filter_layout.setSpacing(10)
+        
+        # Search icon label
+        search_icon = QLabel("🔎")
+        search_icon.setStyleSheet("font-size: 16px; color: #888888;")
+        search_filter_layout.addWidget(search_icon)
+        
+        # Search input
+        self.app_search_input = QLineEdit()
+        self.app_search_input.setPlaceholderText("Search applications by name or path...")
+        self.app_search_input.textChanged.connect(self.filter_applications)
+        self.app_search_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a1a;
+                color: #e5e7eb;
+                border: 2px solid #333333;
+                border-radius: 8px;
+                padding: 10px 14px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border: 2px solid #3b82f6;
+            }
+        """)
+        search_filter_layout.addWidget(self.app_search_input, stretch=1)
+        
+        # Sort dropdown
+        sort_label = QLabel("Sort:")
+        sort_label.setStyleSheet("color: #888888; font-size: 12px;")
+        search_filter_layout.addWidget(sort_label)
+        
+        self.app_sort_combo = QComboBox()
+        self.app_sort_combo.addItems(["Name (A-Z)", "Name (Z-A)", "Recently Added", "Most Used"])
+        self.app_sort_combo.currentTextChanged.connect(self.sort_applications)
+        self.app_sort_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #1a1a1a;
+                color: #e5e7eb;
+                border: 2px solid #333333;
+                border-radius: 6px;
+                padding: 8px 12px;
+                min-width: 140px;
+                font-size: 12px;
+            }
+            QComboBox:hover {
+                border: 2px solid #3b82f6;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid #e5e7eb;
+                margin-right: 8px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1a1a1a;
+                color: #e5e7eb;
+                selection-background-color: #3b82f6;
+                border: 1px solid #333333;
+            }
+        """)
+        search_filter_layout.addWidget(self.app_sort_combo)
+        
+        # Clear search button
+        self.clear_search_btn = QPushButton("✕")
+        self.clear_search_btn.setToolTip("Clear search")
+        self.clear_search_btn.clicked.connect(self.clear_search)
+        self.clear_search_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #888888;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 12px;
+                font-size: 14px;
+                min-width: 40px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                color: #e5e7eb;
+            }
+        """)
+        search_filter_layout.addWidget(self.clear_search_btn)
+        
+        apps_layout.addLayout(search_filter_layout)
         
         # App grid widget (replaces simple list)
         self.app_list_widget = AppGridWidget()
@@ -687,8 +779,23 @@ class MainWindowBase(QMainWindow):
             print(f"Error loading settings: {e}")
     
     def center_on_screen(self):
-        """Center the main window on the screen"""
+        """Center the main window on the screen (Wayland-aware)"""
         from PyQt6.QtWidgets import QApplication
+        import os
+        
+        # Check if running under Wayland
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        wayland_display = os.environ.get('WAYLAND_DISPLAY', '')
+        is_wayland = 'wayland' in session_type or wayland_display
+        
+        if is_wayland:
+            print(f"[MainWindow] Detected Wayland session - window manager controls positioning")
+            # On Wayland, window positioning is controlled by the compositor
+            # We can't use move() - the window will be placed by the WM
+            # The window will typically be centered automatically on first show
+            return
+        
+        # X11 / Windows / macOS - we can control position
         screen = QApplication.primaryScreen()
         if screen:
             screen_geometry = screen.geometry()
@@ -785,6 +892,68 @@ class MainWindowBase(QMainWindow):
         
         self.app_list_widget.clearSelection()
         self.show_message("Success", "All applications deselected.", "success")
+    
+    def filter_applications(self, search_text):
+        """Filter applications based on search text"""
+        search_text = search_text.lower().strip()
+        
+        if not search_text:
+            # Show all apps
+            for app_name, card in self.app_list_widget.app_cards.items():
+                card.show()
+            self.update_app_count()
+            return
+        
+        # Filter apps by name or path
+        visible_count = 0
+        for app_name, card in self.app_list_widget.app_cards.items():
+            app_data = self.app_list_widget.apps_data.get(app_name, {})
+            app_path = app_data.get('path', '').lower()
+            
+            if search_text in app_name.lower() or search_text in app_path:
+                card.show()
+                visible_count += 1
+            else:
+                card.hide()
+        
+        # Update count label to show filtered results
+        total = len(self.app_list_widget.apps_data)
+        if visible_count < total:
+            self.app_count_label.setText(f"Applications: {visible_count} of {total}")
+        else:
+            self.app_count_label.setText(f"Applications: {total}")
+    
+    def sort_applications(self, sort_option):
+        """Sort applications based on selected option"""
+        if not self.app_list_widget.apps_data:
+            return
+        
+        apps_list = list(self.app_list_widget.apps_data.items())
+        
+        if sort_option == "Name (A-Z)":
+            apps_list.sort(key=lambda x: x[0].lower())
+        elif sort_option == "Name (Z-A)":
+            apps_list.sort(key=lambda x: x[0].lower(), reverse=True)
+        elif sort_option == "Recently Added":
+            # Keep original order (assuming last added are at the end)
+            apps_list.reverse()
+        elif sort_option == "Most Used":
+            # Sort by unlock_count descending
+            apps_list.sort(key=lambda x: x[1].get('unlock_count', 0), reverse=True)
+        
+        # Rebuild apps_data dict in sorted order
+        self.app_list_widget.apps_data = dict(apps_list)
+        self.app_list_widget.refresh_grid()
+        
+        # Reapply current search filter if any
+        if hasattr(self, 'app_search_input') and self.app_search_input.text():
+            self.filter_applications(self.app_search_input.text())
+    
+    def clear_search(self):
+        """Clear search input and show all applications"""
+        if hasattr(self, 'app_search_input'):
+            self.app_search_input.clear()
+            # filter_applications will be called automatically via textChanged signal
     
     def scan_for_applications(self):
         """Open App Scanner dialog to scan system for installed apps"""

@@ -423,9 +423,11 @@ class AppScannerDialog(QDialog):
         self.app_cards = []
         # Current category/tag filter (None = show all)
         self.category_filter = None
+        # Track if we've centered on first show (for Wayland compatibility)
+        self._first_show = True
 
         self.init_ui()
-        self.center_on_screen()
+        # Don't center here - will center on showEvent after dialog has proper size
 
         # Start scanning automatically
         self.start_scan()
@@ -1019,9 +1021,21 @@ class AppScannerDialog(QDialog):
         self.accept()
     
     def center_on_screen(self):
-        """Center dialog on screen."""
+        """Center dialog on screen (Wayland-aware)."""
         from PyQt6.QtWidgets import QApplication
+        import os
         
+        # Check if running under Wayland
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        wayland_display = os.environ.get('WAYLAND_DISPLAY', '')
+        is_wayland = 'wayland' in session_type or wayland_display
+        
+        if is_wayland:
+            # On Wayland, window positioning is controlled by the compositor
+            # move() calls are ignored - the compositor will place the window
+            return
+        
+        # X11 / Windows / macOS - we can control position
         screen = QApplication.primaryScreen()
         if screen:
             screen_geometry = screen.availableGeometry()
@@ -1037,3 +1051,12 @@ class AppScannerDialog(QDialog):
             center_y = screen_y + (screen_height - dialog_height) // 2
             
             self.move(center_x, center_y)
+    
+    def showEvent(self, event):
+        """Override showEvent to center dialog after it has proper size (Wayland-compatible)."""
+        super().showEvent(event)
+        # Center only on first show, after widget has proper geometry
+        if getattr(self, '_first_show', False):
+            self._first_show = False
+            # Use QTimer to defer centering until after layout is fully computed
+            QTimer.singleShot(0, self.center_on_screen)
