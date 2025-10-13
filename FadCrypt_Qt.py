@@ -17,7 +17,7 @@ sys.path.insert(0, str(project_root))
 
 try:
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import Qt, QTimer
 except ImportError as e:
     print("❌ PyQt6 is not installed!")
     print("📦 Install with: pip install PyQt6")
@@ -25,6 +25,18 @@ except ImportError as e:
     sys.exit(1)
 
 from version import __version__, __version_code__
+
+
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    import sys
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
 
 
 def get_main_window_class():
@@ -62,18 +74,38 @@ def main():
     
     # Note: High DPI scaling is automatic in Qt6, no need to set attributes
     
-    # Get platform-specific window class
-    MainWindowClass = get_main_window_class()
+    # Show splash screen
+    from ui.components.splash_screen import FadCryptSplashScreen
+    splash = FadCryptSplashScreen(resource_path)
+    splash.show_message("Initializing FadCrypt...")
     
-    # Create and show main window
-    window = MainWindowClass(version=__version__)
-    window.show()
-    
-    print(f"✅ FadCrypt v{__version__} started successfully!")
+    print(f"✅ FadCrypt v{__version__} starting...")
     print(f"🔢 Version Code: {__version_code__}")
     print(f"🎨 UI Framework: PyQt6")
     print(f"💻 Platform: {system}")
     print(f"📁 Project Root: {project_root}")
+    
+    # Get platform-specific window class
+    splash.show_message("Loading platform modules...")
+    MainWindowClass = get_main_window_class()
+    
+    # Create main window (but don't show yet)
+    splash.show_message("Creating main window...")
+    window = MainWindowClass(version=__version__)
+    
+    # Close splash and show main window with proper centering
+    # Splash will display for 2.5 seconds - quick but visible
+    splash.show_message("Starting application...")
+    splash.close_splash(window, delay_ms=2500)
+    
+    # Show window after splash closes
+    def show_window():
+        window.show()
+        # Re-center after window is fully rendered
+        QTimer.singleShot(100, window.center_on_screen)
+        print("✅ FadCrypt started successfully!")
+    
+    QTimer.singleShot(2550, show_window)  # Show window 50ms after splash closes
     
     # Start event loop
     sys.exit(app.exec())

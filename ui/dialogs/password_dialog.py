@@ -30,9 +30,9 @@ class PasswordDialog(QDialog):
             # Set wallpaper background
             self.set_wallpaper_background()
         else:
-            # Simple dialog mode - compact design
+            # Simple dialog mode - responsive design
             self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-            self.setFixedSize(440, 240)
+            # Don't set size yet - let it calculate based on content
             self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
         
         # Main layout
@@ -77,9 +77,16 @@ class PasswordDialog(QDialog):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(title_label)
         
-        # Prompt label - compact with proper wrapping
+        # Prompt label - responsive with proper wrapping
         prompt_label = QLabel(prompt)
         prompt_label.setWordWrap(True)
+        from PyQt6.QtWidgets import QSizePolicy
+        prompt_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum
+        )
+        # Set maximum width for text wrapping
+        prompt_label.setMaximumWidth(380)
         prompt_label.setStyleSheet("""
             QLabel { 
                 font-size: 11px; 
@@ -179,7 +186,16 @@ class PasswordDialog(QDialog):
         main_layout.addWidget(content_frame)
         self.setLayout(main_layout)
         
-        # Center dialog on screen (must be done after setLayout)
+        # Adjust dialog size to fit content
+        self.adjustSize()
+        
+        # Set minimum size after calculating content size
+        min_width = max(440, self.width())
+        min_height = max(240, self.height())
+        self.setMinimumSize(min_width, min_height)
+        self.resize(min_width, min_height)
+        
+        # Center dialog on screen (must be done after setLayout and adjustSize)
         if not self.fullscreen:
             self.center_on_screen()
         
@@ -188,12 +204,18 @@ class PasswordDialog(QDialog):
     
     def center_on_screen(self):
         """Center the dialog on the screen"""
-        screen = self.screen()
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
         if screen:
             screen_geometry = screen.geometry()
             x = (screen_geometry.width() - self.width()) // 2
             y = (screen_geometry.height() - self.height()) // 2
+            print(f"[PasswordDialog] Centering dialog at ({x}, {y})")
+            print(f"   Screen size: {screen_geometry.width()}x{screen_geometry.height()}")
+            print(f"   Dialog size: {self.width()}x{self.height()}")
             self.move(x, y)
+        else:
+            print("[PasswordDialog] ⚠️  No screen found, cannot center")
         
     def set_wallpaper_background(self):
         """Set wallpaper background for fullscreen mode"""

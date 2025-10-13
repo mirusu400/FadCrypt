@@ -106,6 +106,10 @@ class MainWindowBase(QMainWindow):
         # Connect settings signal
         self.settings_panel.settings_changed.connect(self.on_settings_changed)
         
+        # Center window after everything is initialized
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, self.center_on_screen)
+        
     def load_custom_font(self):
         """Load Ubuntu Regular font for the entire application"""
         font_path = self.resource_path('core/fonts/ubuntu_regular.ttf')
@@ -143,7 +147,9 @@ class MainWindowBase(QMainWindow):
     def init_ui(self):
         """Initialize the user interface"""
         self.setWindowTitle(f"FadCrypt v{self.version}")
-        self.setGeometry(100, 100, 950, 700)
+        
+        # Set initial size
+        self.resize(950, 700)
         
         # Set window icon
         icon_path = self.resource_path('img/icon.png')
@@ -635,6 +641,21 @@ class MainWindowBase(QMainWindow):
                     print(f"Settings loaded: {settings}")
         except Exception as e:
             print(f"Error loading settings: {e}")
+    
+    def center_on_screen(self):
+        """Center the main window on the screen"""
+        from PyQt6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.geometry()
+            x = (screen_geometry.width() - self.width()) // 2
+            y = (screen_geometry.height() - self.height()) // 2
+            print(f"[MainWindow] Centering window at ({x}, {y})")
+            print(f"   Screen size: {screen_geometry.width()}x{screen_geometry.height()}")
+            print(f"   Window size: {self.width()}x{self.height()}")
+            self.move(x, y)
+        else:
+            print("[MainWindow] ⚠️  No screen found, cannot center")
     
     def show_message(self, title, message, msg_type="info"):
         """Show a message dialog"""
