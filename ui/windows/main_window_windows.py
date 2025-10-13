@@ -32,17 +32,8 @@ class MainWindowWindows(MainWindowBase):
     
     def setup_windows_specifics(self):
         """Initialize Windows-specific features"""
-        if not WINDOWS_AVAILABLE:
-            print("Warning: Running on non-Windows system, Windows features disabled")
-        # Check if autostart is currently enabled and update settings UI
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(100, self.update_autostart_ui)
-    
-    def update_autostart_ui(self):
-        """Update autostart checkbox based on current state"""
-        is_enabled = self.is_autostart_enabled_windows()
-        if hasattr(self, 'settings_panel'):
-            self.settings_panel.autostart_checkbox.setChecked(is_enabled)
+        # Platform-specific initialization complete
+        pass
     
     def handle_autostart_setting(self, enable):
         """

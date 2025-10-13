@@ -47,14 +47,13 @@ class SystemTray(QObject):
         """Create the context menu for system tray"""
         menu = QMenu()
         
-        # Show/Hide Window action
+        # Show Window action
         self.show_action = QAction('Show Window', self)
         self.show_action.triggered.connect(self.show_window_requested.emit)
         menu.addAction(self.show_action)
         
-        self.hide_action = QAction('Hide Window', self)
-        self.hide_action.triggered.connect(self.hide_window_requested.emit)
-        menu.addAction(self.hide_action)
+        # Note: Hide Window removed - window auto-hides when monitoring starts
+        # and user should use system tray to manage, not manually hide
         
         menu.addSeparator()
         

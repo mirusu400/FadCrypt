@@ -174,6 +174,9 @@ class MainWindowBase(QMainWindow):
         # Initialize system tray after UI
         self.init_system_tray()
         
+        # Load settings from file (must be after UI is initialized)
+        self.load_settings()
+        
         # Connect password prompt signal (for thread-safe dialog)
         self.password_prompt_requested.connect(self.show_password_prompt_for_app_sync)
         
@@ -311,10 +314,9 @@ class MainWindowBase(QMainWindow):
         
         # Connect system tray signals
         self.system_tray.show_window_requested.connect(self.show_window_from_tray)
-        self.system_tray.hide_window_requested.connect(self.hide_to_tray)
         self.system_tray.start_monitoring_requested.connect(self.on_start_monitoring)
         self.system_tray.stop_monitoring_requested.connect(self.on_stop_monitoring)
-        self.system_tray.exit_requested.connect(self.close)
+        self.system_tray.exit_requested.connect(self.on_exit_requested)
         
         # Show tray icon
         self.system_tray.show()
@@ -322,10 +324,34 @@ class MainWindowBase(QMainWindow):
         print("✅ System tray initialized")
     
     def show_window_from_tray(self):
-        """Show window from system tray"""
-        self.show()
-        self.activateWindow()
-        self.raise_()
+        """Show window from system tray - requires password if monitoring is active"""
+        if self.monitoring_active:
+            # Ask for password when monitoring is active (same as legacy)
+            from ui.dialogs.password_dialog import ask_password
+            password = ask_password(
+                "Show Window",
+                "Enter your password to show the window:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            if password and self.password_manager.verify_password(password):
+                self.show()
+                self.activateWindow()
+                self.raise_()
+            else:
+                if self.system_tray:
+                    self.system_tray.show_message(
+                        "Access Denied",
+                        "Incorrect password. Window remains hidden.",
+                        QSystemTrayIcon.MessageIcon.Warning
+                    )
+        else:
+            # Not monitoring, show without password
+            self.show()
+            self.activateWindow()
+            self.raise_()
     
     def hide_to_tray(self):
         """Hide window to system tray"""
@@ -336,6 +362,54 @@ class MainWindowBase(QMainWindow):
                 "FadCrypt is running in the background.\nClick the tray icon to show the window.",
                 QSystemTrayIcon.MessageIcon.Information
             )
+    
+    def closeEvent(self, event):
+        """
+        Override close event to minimize to tray instead of closing.
+        Only allow true exit via tray menu "Exit FadCrypt" option.
+        """
+        # When window close button is clicked, minimize to tray instead
+        event.ignore()  # Don't close the window
+        self.hide_to_tray()
+        print("📌 Window close button clicked - minimizing to tray")
+    
+    def on_exit_requested(self):
+        """
+        Handle exit request from system tray.
+        Asks for password if monitoring is active (same as legacy).
+        """
+        if self.monitoring_active:
+            # Ask for password when monitoring is active
+            from ui.dialogs.password_dialog import ask_password
+            password = ask_password(
+                "Exit FadCrypt",
+                "Enter your password to exit FadCrypt:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            if password and self.password_manager.verify_password(password):
+                print("✅ Password verified - exiting FadCrypt")
+                # Stop monitoring first
+                if self.unified_monitor:
+                    self.unified_monitor.stop_monitoring()
+                # Really exit the application
+                from PyQt6.QtWidgets import QApplication
+                QApplication.quit()
+            else:
+                print("❌ Incorrect password - exit cancelled")
+                if self.system_tray:
+                    self.system_tray.show_message(
+                        "Access Denied",
+                        "Incorrect password. FadCrypt remains running.",
+                        QSystemTrayIcon.MessageIcon.Warning
+                    )
+        else:
+            # Not monitoring, exit without password
+            print("✅ Exiting FadCrypt (no monitoring active)")
+            from PyQt6.QtWidgets import QApplication
+            QApplication.quit()
         
     def create_main_tab(self):
         """Create Main/Home tab with modern design"""
@@ -971,15 +1045,20 @@ class MainWindowBase(QMainWindow):
             print(f"Error saving settings: {e}")
     
     def load_settings(self):
-        """Load settings from JSON file"""
+        """Load settings from JSON file and apply to UI"""
         import json
         settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
         try:
             if os.path.exists(settings_file):
                 with open(settings_file, 'r') as f:
                     settings = json.load(f)
-                    self.password_dialog_style = settings.get('password_dialog_style', 'simple')
-                    self.wallpaper_choice = settings.get('wallpaper_choice', 'default')
+                    self.password_dialog_style = settings.get('dialog_style', 'simple')
+                    self.wallpaper_choice = settings.get('wallpaper', 'default')
+                    
+                    # Apply settings to SettingsPanel
+                    if hasattr(self, 'settings_panel'):
+                        self.settings_panel.apply_settings(settings)
+                    
                     print(f"Settings loaded: {settings}")
         except Exception as e:
             print(f"Error loading settings: {e}")
