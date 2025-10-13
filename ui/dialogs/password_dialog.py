@@ -32,8 +32,8 @@ class PasswordDialog(QDialog):
         else:
             # Simple dialog mode
             self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
-            self.setFixedSize(400, 250)
-            self.setStyleSheet("QDialog { background-color: white; }")
+            self.setFixedSize(420, 220)
+            self.setStyleSheet("QDialog { background-color: #2b2b2b; }")
             
             # Center on screen
             screen_geometry = self.screen().geometry()
@@ -48,53 +48,54 @@ class PasswordDialog(QDialog):
             main_layout.setContentsMargins(0, 0, 0, 0)
             main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         else:
-            main_layout.setContentsMargins(20, 20, 20, 20)
-            main_layout.setSpacing(15)
+            main_layout.setContentsMargins(30, 30, 30, 30)
+            main_layout.setSpacing(20)
         
-        # Content frame (white background for text and inputs)
+        # Content frame (dark theme)
         content_frame = QFrame()
         content_frame.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border: 2px solid #ddd;
+                background-color: #1e1e1e;
+                border: 2px solid #4ade80;
                 border-radius: 10px;
-                padding: 20px;
+                padding: 25px;
             }
         """)
         
         if self.fullscreen:
-            content_frame.setFixedSize(400, 250)
+            content_frame.setFixedSize(420, 220)
         
         content_layout = QVBoxLayout(content_frame)
         content_layout.setSpacing(15)
         
         # Title label
         title_label = QLabel(title)
-        title_label.setStyleSheet("QLabel { font-size: 16px; font-weight: bold; color: black; border: none; }")
+        title_label.setStyleSheet("QLabel { font-size: 16px; font-weight: bold; color: #ffffff; border: none; }")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         content_layout.addWidget(title_label)
         
         # Prompt label
         prompt_label = QLabel(prompt)
         prompt_label.setWordWrap(True)
-        prompt_label.setStyleSheet("QLabel { font-size: 12px; color: #333; border: none; }")
+        prompt_label.setStyleSheet("QLabel { font-size: 11px; color: #cccccc; border: none; }")
         prompt_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         content_layout.addWidget(prompt_label)
         
         # Password input
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setPlaceholderText("Enter password...")
+        self.password_input.setPlaceholderText("Enter password")
         self.password_input.setStyleSheet("""
             QLineEdit {
-                padding: 8px;
-                font-size: 14px;
-                border: 1px solid #ccc;
-                border-radius: 5px;
-                background-color: white;
+                padding: 12px;
+                font-size: 13px;
+                border: 2px solid #4a4a4a;
+                border-radius: 6px;
+                background-color: #2b2b2b;
+                color: #ffffff;
             }
             QLineEdit:focus {
-                border: 1px solid #4CAF50;
+                border: 2px solid #4ade80;
             }
         """)
         self.password_input.returnPressed.connect(self.on_ok)
@@ -102,44 +103,44 @@ class PasswordDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
+        button_layout.setSpacing(15)
         
         ok_button = QPushButton("OK")
-        ok_button.setFixedSize(100, 35)
+        ok_button.setFixedSize(110, 40)
         ok_button.setStyleSheet("""
             QPushButton {
-                background-color: #4CAF50;
+                background-color: #10b981;
                 color: white;
                 border: none;
-                border-radius: 5px;
-                font-size: 14px;
+                border-radius: 6px;
+                font-size: 13px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #059669;
             }
             QPushButton:pressed {
-                background-color: #3d8b40;
+                background-color: #047857;
             }
         """)
         ok_button.clicked.connect(self.on_ok)
         
         cancel_button = QPushButton("Cancel")
-        cancel_button.setFixedSize(100, 35)
+        cancel_button.setFixedSize(110, 40)
         cancel_button.setStyleSheet("""
             QPushButton {
-                background-color: #f44336;
+                background-color: #ef4444;
                 color: white;
                 border: none;
-                border-radius: 5px;
-                font-size: 14px;
+                border-radius: 6px;
+                font-size: 13px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #da190b;
+                background-color: #dc2626;
             }
             QPushButton:pressed {
-                background-color: #c41700;
+                background-color: #b91c1c;
             }
         """)
         cancel_button.clicked.connect(self.reject)

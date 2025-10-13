@@ -6,9 +6,10 @@ import json
 import webbrowser
 from PyQt6.QtWidgets import (
     QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit, QFileDialog
+    QLabel, QMessageBox, QPushButton, QFrame, QScrollArea, QTextEdit, 
+    QFileDialog, QSystemTrayIcon
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon, QPixmap, QFont, QFontDatabase
 
 from ui.components.app_list_widget import AppListWidget
@@ -40,6 +41,9 @@ class MainWindowBase(QMainWindow):
     - Resource path handling for images
     """
     
+    # Class-level signal for thread-safe password prompts
+    password_prompt_requested = pyqtSignal(str, str)
+    
     def __init__(self, version=None):
         super().__init__()
         self.version = version or __version__
@@ -61,11 +65,25 @@ class MainWindowBase(QMainWindow):
         self.config_manager = None
         self.app_manager = None
         
+        # Monitoring state
+        self.monitoring_active = False
+        self.unified_monitor = None
+        self.pending_password_result = None
+        
+        # System tray (will be initialized after UI)
+        self.system_tray = None
+        
         # Load custom font
         self.load_custom_font()
         
         # Initialize UI
         self.init_ui()
+        
+        # Initialize system tray after UI
+        self.init_system_tray()
+        
+        # Connect password prompt signal (for thread-safe dialog)
+        self.password_prompt_requested.connect(self.show_password_prompt_for_app_sync)
         
         # Connect settings signal
         self.settings_panel.settings_changed.connect(self.on_settings_changed)
@@ -135,7 +153,7 @@ class MainWindowBase(QMainWindow):
         self.create_about_tab()
         
     def create_menu_bar(self):
-        """Create the menu bar"""
+        """Create menu bar with File and Help menus"""
         menubar = self.menuBar()
         
         # File menu
@@ -149,6 +167,40 @@ class MainWindowBase(QMainWindow):
         
         about_action = help_menu.addAction("About")
         about_action.triggered.connect(self.show_about_dialog)
+    
+    def init_system_tray(self):
+        """Initialize system tray icon"""
+        from ui.components.system_tray import SystemTray
+        
+        self.system_tray = SystemTray(self.resource_path, self)
+        
+        # Connect system tray signals
+        self.system_tray.show_window_requested.connect(self.show_window_from_tray)
+        self.system_tray.hide_window_requested.connect(self.hide_to_tray)
+        self.system_tray.start_monitoring_requested.connect(self.on_start_monitoring)
+        self.system_tray.stop_monitoring_requested.connect(self.on_stop_monitoring)
+        self.system_tray.exit_requested.connect(self.close)
+        
+        # Show tray icon
+        self.system_tray.show()
+        
+        print("✅ System tray initialized")
+    
+    def show_window_from_tray(self):
+        """Show window from system tray"""
+        self.show()
+        self.activateWindow()
+        self.raise_()
+    
+    def hide_to_tray(self):
+        """Hide window to system tray"""
+        self.hide()
+        if self.system_tray:
+            self.system_tray.show_message(
+                "FadCrypt",
+                "FadCrypt is running in the background.\nClick the tray icon to show the window.",
+                QSystemTrayIcon.MessageIcon.Information
+            )
         
     def create_main_tab(self):
         """Create Main/Home tab with modern design"""
@@ -731,28 +783,151 @@ class MainWindowBase(QMainWindow):
             )
             return
         
-        # Start monitoring
-        self.show_message(
-            "Monitoring Started",
-            "Application monitoring has been started.\n\nThe window will minimize to system tray.",
-            "success"
+        # Prepare applications list for monitoring
+        applications = []
+        for app_name, app_data in self.app_list_widget.apps_data.items():
+            applications.append({
+                'name': app_name,
+                'path': app_data['path']
+            })
+        
+        print(f"\n🚀 Starting monitoring for {len(applications)} applications...")
+        for app in applications:
+            print(f"   📦 {app['name']}: {app['path']}")
+        
+        # Initialize UnifiedMonitor
+        from core.unified_monitor import UnifiedMonitor
+        
+        self.unified_monitor = UnifiedMonitor(
+            get_state_func=self.get_monitoring_state,
+            set_state_func=self.set_monitoring_state,
+            show_dialog_func=self.show_password_prompt_for_app,
+            is_linux=True,  # TODO: Platform detection
+            sleep_interval=1.0,
+            enable_profiling=True
         )
         
-        # TODO: Initialize UnifiedMonitor and start monitoring thread
-        # TODO: Add to system tray
-        # TODO: Minimize window
-        self.showMinimized()
+        # Start monitoring
+        self.unified_monitor.start_monitoring(applications)
+        self.monitoring_active = True
+        
+        # Update UI
+        if self.system_tray:
+            self.system_tray.set_monitoring_active(True)
+            self.system_tray.show_message(
+                "Monitoring Started",
+                f"FadCrypt is now monitoring {len(applications)} application(s).",
+                QSystemTrayIcon.MessageIcon.Information
+            )
+        
+        # Hide to tray
+        self.hide_to_tray()
+        
+        print(f"✅ Monitoring started successfully for {len(applications)} apps")
         
     def on_stop_monitoring(self):
         """Handle stop monitoring button click"""
-        # TODO: Implement password verification before stopping
-        # TODO: Stop UnifiedMonitor
-        # TODO: Remove from system tray
-        self.show_message(
-            "Monitoring Stopped",
-            "Application monitoring has been stopped.",
-            "info"
+        if not self.monitoring_active:
+            self.show_message("Info", "Monitoring is not running.", "info")
+            return
+        
+        # Ask for password
+        from ui.dialogs.password_dialog import ask_password
+        password = ask_password(
+            "Stop Monitoring",
+            "Enter your password to stop monitoring:",
+            self.resource_path,
+            style=self.password_dialog_style,
+            wallpaper=self.wallpaper_choice,
+            parent=self
         )
+        
+        if password and self.password_manager.verify_password(password):
+            # Stop monitoring
+            if self.unified_monitor:
+                self.unified_monitor.stop_monitoring()
+                print("🛑 Monitoring stopped successfully")
+            
+            self.monitoring_active = False
+            
+            # Update UI
+            if self.system_tray:
+                self.system_tray.set_monitoring_active(False)
+            
+            # Show window
+            self.show_window_from_tray()
+            
+            self.show_message(
+                "Success",
+                "Monitoring stopped successfully.",
+                "success"
+            )
+        else:
+            self.show_message(
+                "Error",
+                "Incorrect password. Monitoring will continue.",
+                "error"
+            )
+    
+    def get_monitoring_state(self):
+        """Get current monitoring state for UnifiedMonitor"""
+        # Return state dict with unlocked apps
+        return {
+            'unlocked_apps': []  # TODO: Implement state persistence
+        }
+    
+    def set_monitoring_state(self, key, value):
+        """Save monitoring state"""
+        # TODO: Implement state persistence
+        print(f"💾 State saved: {key} = {value}")
+    
+    def show_password_prompt_for_app(self, app_name, app_path):
+        """Show password prompt when blocked app is detected (called from monitoring thread)"""
+        print(f"\n🔒 Blocked app detected: {app_name}")
+        print(f"   Path: {app_path}")
+        
+        # Emit signal to show dialog in main thread (thread-safe)
+        self.pending_password_result = None
+        self.password_prompt_requested.emit(app_name, app_path)
+        
+        # Wait for result (blocking the monitoring thread until password is entered)
+        import time
+        timeout = 60  # 60 second timeout
+        elapsed = 0
+        while self.pending_password_result is None and elapsed < timeout:
+            time.sleep(0.1)
+            elapsed += 0.1
+        
+        result = self.pending_password_result
+        self.pending_password_result = None
+        return result if result is not None else False
+    
+    def show_password_prompt_for_app_sync(self, app_name, app_path):
+        """Show password dialog in main thread (thread-safe)"""
+        from ui.dialogs.password_dialog import ask_password
+        
+        password = ask_password(
+            f"Unlock {app_name}",
+            f"Application '{app_name}' is locked.\n\nEnter your password to unlock it:",
+            self.resource_path,
+            style=self.password_dialog_style,
+            wallpaper=self.wallpaper_choice,
+            parent=self
+        )
+        
+        if password and self.password_manager.verify_password(password):
+            print(f"✅ Password correct - Unlocking {app_name}")
+            
+            # Increment unlock count
+            if app_name in self.app_list_widget.apps_data:
+                self.app_list_widget.apps_data[app_name]['unlock_count'] = \
+                    self.app_list_widget.apps_data[app_name].get('unlock_count', 0) + 1
+                self.save_applications_config()
+            
+            self.pending_password_result = True
+        else:
+            print(f"❌ Password incorrect - Keeping {app_name} locked")
+            self.pending_password_result = False
         
     def on_readme_clicked(self):
         """Handle Read Me button click - show fullscreen dialog"""
