@@ -1773,6 +1773,15 @@ class MainWindowBase(QMainWindow):
             self.unified_monitor.remove_from_showing_dialog(app_name)
         else:
             print(f"❌ Password incorrect - Keeping {app_name} locked")
+            
+            # Show error message for wrong password
+            if password:  # Only show error if password was entered (not cancelled)
+                self.show_message(
+                    "Incorrect Password",
+                    f"The password you entered is incorrect.\n\n{app_name} remains locked.",
+                    "error"
+                )
+            
             # Remove from showing dialog set even if password wrong
             self.unified_monitor.remove_from_showing_dialog(app_name)
         

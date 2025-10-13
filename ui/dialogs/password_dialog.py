@@ -11,7 +11,12 @@ class PasswordDialog(QDialog):
     """Custom password dialog with optional fullscreen wallpaper background"""
     
     def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None):
-        super().__init__(parent)
+        # For fullscreen mode, don't use parent to avoid being hidden when parent is minimized
+        if fullscreen:
+            super().__init__(None)  # Independent top-level window
+        else:
+            super().__init__(parent)
+        
         self.resource_path = resource_path
         self.fullscreen = fullscreen
         self.wallpaper_choice = wallpaper_choice
@@ -23,9 +28,22 @@ class PasswordDialog(QDialog):
     def init_ui(self, title, prompt):
         """Initialize the password dialog UI"""
         if self.fullscreen:
-            # Fullscreen mode with wallpaper
-            self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+            # Fullscreen mode with wallpaper - truly independent top-level window
+            self.setWindowFlags(
+                Qt.WindowType.Window |  # Independent window (not child)
+                Qt.WindowType.FramelessWindowHint |  # No title bar
+                Qt.WindowType.WindowStaysOnTopHint |  # Always on top
+                Qt.WindowType.BypassWindowManagerHint  # Bypass window manager (ensures visibility)
+            )
+            # Make dialog modal to block all other windows
+            self.setModal(True)
+            
+            # Show fullscreen on all screens
             self.showFullScreen()
+            
+            # Force activation and raise to top
+            self.activateWindow()
+            self.raise_()
             
             # Set wallpaper background
             self.set_wallpaper_background()
@@ -219,34 +237,63 @@ class PasswordDialog(QDialog):
     def set_wallpaper_background(self):
         """Set wallpaper background for fullscreen mode"""
         try:
-            # Map wallpaper choices to image files
+            # Map wallpaper choices to actual wallpaper image files (.jpg, not preview .png)
             wallpaper_map = {
-                'default': 'wall1.png',
-                'H4ck3r': 'wall2.png',
-                'Binary': 'wall3.png',
-                'encrypted': 'wall4.png'
+                'default': 'wall1.jpg',
+                'H4ck3r': 'wall2.jpg',
+                'Binary': 'wall3.jpg',
+                'encrypted': 'wall4.jpg'
             }
             
-            wallpaper_file = wallpaper_map.get(self.wallpaper_choice, 'wall1.png')
+            wallpaper_file = wallpaper_map.get(self.wallpaper_choice, 'wall1.jpg')
             wallpaper_path = self.resource_path(f"img/{wallpaper_file}")
             
             pixmap = QPixmap(wallpaper_path)
             if not pixmap.isNull():
-                # Scale to screen size
+                # Get screen size
+                screen = self.screen()
+                if screen:
+                    screen_size = screen.size()
+                    screen_width = screen_size.width()
+                    screen_height = screen_size.height()
+                else:
+                    screen_width = self.width()
+                    screen_height = self.height()
+                
+                # Scale to fit screen while maintaining aspect ratio (centered, not tiled)
                 scaled_pixmap = pixmap.scaled(
-                    self.width(), 
-                    self.height(), 
-                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    screen_width, 
+                    screen_height, 
+                    Qt.AspectRatioMode.KeepAspectRatio,  # Maintain aspect ratio, centered
                     Qt.TransformationMode.SmoothTransformation
                 )
+                
+                # Create a full-screen pixmap with black background
+                full_pixmap = QPixmap(screen_width, screen_height)
+                full_pixmap.fill(Qt.GlobalColor.black)
+                
+                # Draw the scaled image centered on the black background
+                from PyQt6.QtGui import QPainter
+                painter = QPainter(full_pixmap)
+                x = (screen_width - scaled_pixmap.width()) // 2
+                y = (screen_height - scaled_pixmap.height()) // 2
+                painter.drawPixmap(x, y, scaled_pixmap)
+                painter.end()
                 
                 # Set as background using palette
                 from PyQt6.QtGui import QPalette, QBrush
                 palette = self.palette()
-                palette.setBrush(QPalette.ColorRole.Window, QBrush(scaled_pixmap))
+                palette.setBrush(QPalette.ColorRole.Window, QBrush(full_pixmap))
                 self.setPalette(palette)
+                
+                print(f"[Wallpaper] Loaded: {wallpaper_file}")
+                print(f"   Original: {pixmap.width()}x{pixmap.height()}")
+                print(f"   Scaled: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
+                print(f"   Centered at: ({x}, {y})")
         except Exception as e:
             print(f"Error loading wallpaper: {e}")
+            import traceback
+            traceback.print_exc()
             # Fallback to dark background
             self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
     
