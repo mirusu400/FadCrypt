@@ -3,7 +3,12 @@ psutil
 pillow
 pystray
 watchdog
-tkinterdnd2
-ttkbootstrap
 pygame
 requests
+
+# PyQt6 dependencies (modern UI framework)
+PyQt6
+
+# Legacy Tkinter dependencies (will be deprecated after migration)
+tkinterdnd2
+ttkbootstrap
