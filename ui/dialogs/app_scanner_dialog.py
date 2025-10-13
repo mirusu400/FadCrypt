@@ -376,8 +376,9 @@ class AppScannerDialog(QDialog):
         
         self.setWindowTitle("Scan for Applications")
         self.setModal(True)
-        self.setMinimumSize(1100, 700)  # Wider to fit 3 columns without scrollbar
-        
+        self.columns = 4
+        self.setMinimumSize(1400, 700)  # Wider to fit 4 columns without scrollbar
+
         # Apply dark theme and make input backgrounds transparent for consistency
         self.setStyleSheet("""
             QDialog {
@@ -405,13 +406,13 @@ class AppScannerDialog(QDialog):
                 background-color: transparent;
             }
         """)
-        
+
         self.scanned_apps = []
         self.app_cards = []
-        
+
         self.init_ui()
         self.center_on_screen()
-        
+
         # Start scanning automatically
         self.start_scan()
     
@@ -515,6 +516,9 @@ class AppScannerDialog(QDialog):
         self.scroll_widget.setStyleSheet("background-color: transparent;")
         self.scroll_layout = QGridLayout()
         self.scroll_layout.setSpacing(15)
+        # Make columns stretch equally so cards are evenly sized
+        for i in range(self.columns):
+            self.scroll_layout.setColumnStretch(i, 1)
         self.scroll_widget.setLayout(self.scroll_layout)
         
         scroll.setWidget(self.scroll_widget)
@@ -671,7 +675,7 @@ class AppScannerDialog(QDialog):
             card.deleteLater()
         self.app_cards.clear()
         
-        # Create cards in grid (3 columns)
+        # Create cards in grid (N columns)
         row = 0
         col = 0
         for app in apps:
@@ -681,7 +685,7 @@ class AppScannerDialog(QDialog):
             self.app_cards.append(card)
             
             col += 1
-            if col >= 3:
+            if col >= self.columns:
                 col = 0
                 row += 1
         
@@ -714,7 +718,7 @@ class AppScannerDialog(QDialog):
                 self.scroll_layout.addWidget(card, row, col)
                 visible_count += 1
                 col += 1
-                if col >= 3:
+                if col >= self.columns:
                     col = 0
                     row += 1
             else:
