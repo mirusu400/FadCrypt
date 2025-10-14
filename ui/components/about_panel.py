@@ -71,14 +71,15 @@ class AboutPanel(QWidget):
         app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(app_name)
         
-        # Version - more compact (transparent background)
+        # Version - more compact but readable
         version_label = QLabel(f"v{self.version}")
         version_label.setStyleSheet("""
             QLabel {
-                background: transparent;
-                font-size: 10px;
+                font-size: 13px;
                 color: #888888;
+                background-color: #3a3a3a;
                 padding: 3px 10px;
+                border-radius: 8px;
             }
         """)
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -335,6 +336,7 @@ class AboutPanel(QWidget):
         
     def check_for_updates(self):
         """Check for latest version on GitHub"""
+        releases_url = "https://github.com/anonfaded/FadCrypt/releases"
         try:
             response = requests.get("https://api.github.com/repos/anonfaded/FadCrypt/releases/latest", timeout=5)
             response.raise_for_status()
@@ -353,17 +355,39 @@ class AboutPanel(QWidget):
                     current_parts = [int(x) for x in current_ver.split('.')]
                     
                     if latest_parts > current_parts:
-                        QMessageBox.information(
-                            self,
-                            "Update Available",
-                            f"New version {latest_version} is available! Visit GitHub for more details."
-                        )
+                        # Create custom dialog for update available
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Icon.Information)
+                        msg_box.setWindowTitle("Update Available")
+                        msg_box.setText(f"New version {latest_version} is available!")
+                        msg_box.setInformativeText(f"Visit GitHub releases page:\n{releases_url}")
+                        
+                        # Add custom button to open GitHub
+                        open_github_btn = msg_box.addButton("Open GitHub Releases", QMessageBox.ButtonRole.AcceptRole)
+                        close_btn = msg_box.addButton(QMessageBox.StandardButton.Close)
+                        
+                        msg_box.exec()
+                        
+                        # Check which button was clicked
+                        if msg_box.clickedButton() == open_github_btn:
+                            webbrowser.open(releases_url)
                     else:
-                        QMessageBox.information(
-                            self,
-                            "Up to Date",
-                            "Your application is up to date."
-                        )
+                        # Create custom dialog for up to date
+                        msg_box = QMessageBox(self)
+                        msg_box.setIcon(QMessageBox.Icon.Information)
+                        msg_box.setWindowTitle("Up to Date")
+                        msg_box.setText("Your application is up to date.")
+                        msg_box.setInformativeText(f"Check updates at:\n{releases_url}")
+                        
+                        # Add custom button to open GitHub
+                        open_github_btn = msg_box.addButton("Visit GitHub Releases", QMessageBox.ButtonRole.AcceptRole)
+                        close_btn = msg_box.addButton(QMessageBox.StandardButton.Close)
+                        
+                        msg_box.exec()
+                        
+                        # Check which button was clicked
+                        if msg_box.clickedButton() == open_github_btn:
+                            webbrowser.open(releases_url)
                 except ValueError:
                     QMessageBox.warning(
                         self,
