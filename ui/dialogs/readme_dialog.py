@@ -84,17 +84,17 @@ class ReadmeDialog(QDialog):
             font = QFont("Arial", 15)
         self.text_label.setFont(font)
         
-        # Image label
+        # Image label - smaller size, anchored to bottom
         self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom)
         self.image_label.setStyleSheet("background-color: transparent;")
-        self.image_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         
-        # Add to grid: text takes 70%, image takes 30%
-        content_grid.addWidget(self.text_label, 0, 0, 1, 7)  # Text: 7 columns
-        content_grid.addWidget(self.image_label, 0, 7, 1, 3)  # Image: 3 columns
-        content_grid.setColumnStretch(0, 7)  # Text column stretch
-        content_grid.setColumnStretch(7, 3)  # Image column stretch
+        # Add to grid: text takes 75%, image takes 25%
+        content_grid.addWidget(self.text_label, 0, 0, 1, 8)  # Text: 8 columns
+        content_grid.addWidget(self.image_label, 0, 8, 1, 2)  # Image: 2 columns
+        content_grid.setColumnStretch(0, 8)  # Text column stretch
+        content_grid.setColumnStretch(8, 2)  # Image column stretch
         
         main_layout.addLayout(content_grid, 1)
         
@@ -147,9 +147,9 @@ class ReadmeDialog(QDialog):
             
             print(f"[README IMAGE] Original size: {pixmap.width()}x{pixmap.height()}")
             
-            # Scale to reasonable size for side column
+            # Scale to smaller size (250px instead of 400px)
             scaled_pixmap = pixmap.scaled(
-                400, 400,
+                250, 250,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -157,7 +157,7 @@ class ReadmeDialog(QDialog):
             print(f"[README IMAGE] Scaled size: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
             
             self.image_label.setPixmap(scaled_pixmap)
-            self.image_label.setFixedSize(scaled_pixmap.size())
+            # Don't set fixed size - let it expand to fill column height
             
             print(f"[README IMAGE] ✅ Image loaded and displayed")
             
@@ -167,10 +167,12 @@ class ReadmeDialog(QDialog):
             traceback.print_exc()
     
     def start_animation(self):
-        """Start the typewriter animation - instant for faster display"""
-        # Show all text immediately (animation too slow for large text)
-        self.text_label.setText(self.full_text)
-        print("[README] Text displayed instantly (no animation)")
+        """Start the typewriter animation with fast speed"""
+        self.current_index = 0
+        self.animation_timer = QTimer(self)
+        self.animation_timer.timeout.connect(self.animate_text)
+        # Fast speed: 1ms per character for quick display
+        self.animation_timer.start(1)
     
     def animate_text(self):
         """Animate text character by character"""
@@ -178,7 +180,9 @@ class ReadmeDialog(QDialog):
             self.text_label.setText(self.full_text[:self.current_index + 1])
             self.current_index += 1
         else:
-            self.animation_timer.stop()
+            if self.animation_timer:
+                self.animation_timer.stop()
+                print("[README] Animation complete")
     
     def keyPressEvent(self, event):
         """Handle key press events"""

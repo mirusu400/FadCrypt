@@ -2,14 +2,15 @@
 
 from PyQt6.QtWidgets import QSplashScreen, QApplication
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QColor
+from PyQt6.QtGui import QPixmap, QColor, QPainter
 import os
 
 
 class FadCryptSplashScreen(QSplashScreen):
     """
     Splash screen displayed during application startup.
-    Shows the FadCrypt banner while initialization happens.
+    Shows the FadCrypt banner in fullscreen mode with transparent background.
+    This fixes Wayland centering issues by making the splash truly fullscreen.
     """
     
     def __init__(self, resource_path_func):
@@ -47,81 +48,115 @@ class FadCryptSplashScreen(QSplashScreen):
             pixmap = QPixmap(800, 500)
             pixmap.fill(QColor("#1a1b26"))
         
-        super().__init__(pixmap, Qt.WindowType.WindowStaysOnTopHint)
+        # Load transparent background image for fullscreen canvas
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_size = screen.size()
+            screen_width = screen_size.width()
+            screen_height = screen_size.height()
+        else:
+            # Fallback size
+            screen_width = 1920
+            screen_height = 1080
+        
+        # Try to load transparent.png as background
+        transparent_bg_path = self.resource_path('img/transparent.png')
+        if os.path.exists(transparent_bg_path):
+            fullscreen_pixmap = QPixmap(transparent_bg_path)
+            # Scale to fullscreen size
+            fullscreen_pixmap = fullscreen_pixmap.scaled(
+                screen_width, screen_height,
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            print(f"[SplashScreen] Using transparent.png as background: {screen_width}x{screen_height}")
+        else:
+            # Fallback: create transparent pixmap
+            fullscreen_pixmap = QPixmap(screen_width, screen_height)
+            fullscreen_pixmap.fill(Qt.GlobalColor.transparent)
+            print(f"[SplashScreen] transparent.png not found, using transparent fill: {screen_width}x{screen_height}")
+        
+        # Fullscreen mode with transparent background and bypass window manager
+        super().__init__(
+            fullscreen_pixmap,
+            Qt.WindowType.WindowStaysOnTopHint | 
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.BypassWindowManagerHint
+        )
+        
+        # Set transparent background
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        
+        # Store the splash pixmap for drawing
+        self.splash_pixmap = pixmap
+        
+        # Initialize message text
+        self._message_text = ""
+        self.splash_x = 0
+        self.splash_y = 0
         
         # Show splash first
-        self.show()
+        self.showFullScreen()
         
         # Process events to ensure splash is visible
         QApplication.processEvents()
         
-        # Center splash screen after it's fully rendered (Linux/X11 needs this delay)
-        QTimer.singleShot(50, self.center_on_screen)
         
+        print("[SplashScreen] Initialized in fullscreen mode with transparent background")
+    
+    def paintEvent(self, event):
+        """Override paint event to draw centered splash image on transparent background"""
+        painter = QPainter(self)
+        
+        # Note: We don't clear the background here because the base pixmap
+        # (transparent.png) is already set and displayed by QSplashScreen.
+        # We just draw the banner on top of it.
+        
+        # Draw the splash banner image centered
+        if hasattr(self, 'splash_pixmap'):
+            screen_width = self.width()
+            screen_height = self.height()
+            splash_width = self.splash_pixmap.width()
+            splash_height = self.splash_pixmap.height()
+            
+            # Calculate center position
+            self.splash_x = (screen_width - splash_width) // 2
+            self.splash_y = (screen_height - splash_height) // 2
+            
+            # Draw centered banner image
+            painter.drawPixmap(self.splash_x, self.splash_y, self.splash_pixmap)
+            
+            # Draw message text if exists (positioned at image bottom-center)
+            if hasattr(self, '_message_text') and self._message_text:
+                painter.setPen(Qt.GlobalColor.white)
+                font = painter.font()
+                font.setPointSize(12)
+                painter.setFont(font)
+                
+                # Calculate text position: centered horizontally, at bottom of splash image
+                text_rect = painter.fontMetrics().boundingRect(self._message_text)
+                text_x = self.splash_x + (splash_width - text_rect.width()) // 2
+                text_y = self.splash_y + splash_height - 20  # 20px from image bottom
+                
+                painter.drawText(text_x, text_y, self._message_text)
+        
+        # Note: Don't call painter.end() - Qt handles this automatically
+        
+        painter.end()
+    
     def center_on_screen(self):
-        """Center splash screen on the primary display (Wayland-aware).
-        
-        Industry standard approach for Qt splash centering:
-        1. Get primary screen geometry (actual available screen space)
-        2. Get splash screen size (the pixmap dimensions)
-        3. Calculate center: (screen_width - splash_width) / 2, (screen_height - splash_height) / 2
-        4. Use absolute positioning with move() to place splash at calculated center
-        5. Account for screen offset (for multi-monitor setups)
-        
-        Note: On Wayland, move() is ignored - window positioning is controlled by compositor.
-        """
-        import os
-        
-        # Check if running under Wayland
-        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
-        wayland_display = os.environ.get('WAYLAND_DISPLAY', '')
-        is_wayland = 'wayland' in session_type or wayland_display
-        
-        if is_wayland:
-            print(f"[SplashScreen] Detected Wayland - compositor controls window positioning")
-            # On Wayland, we cannot control window position - compositor decides
-            return
-        
-        # X11 / Windows / macOS - we can control position
-        screen = QApplication.primaryScreen()
-        if screen:
-            # Get the screen's available geometry (excludes taskbars, etc.)
-            screen_geometry = screen.availableGeometry()
-            screen_x = screen_geometry.x()
-            screen_y = screen_geometry.y()
-            screen_width = screen_geometry.width()
-            screen_height = screen_geometry.height()
-            
-            # Get splash dimensions
-            splash_width = self.width()
-            splash_height = self.height()
-            
-            # Calculate center position (absolute coordinates)
-            # Formula: screen_offset + (screen_size - widget_size) / 2
-            center_x = screen_x + (screen_width - splash_width) // 2
-            center_y = screen_y + (screen_height - splash_height) // 2
-            
-            print(f"[SplashScreen] Screen geometry: {screen_width}x{screen_height} at ({screen_x}, {screen_y})")
-            print(f"[SplashScreen] Splash size: {splash_width}x{splash_height}")
-            print(f"[SplashScreen] Centering splash at ({center_x}, {center_y})")
-            
-            # Move to center
-            self.move(center_x, center_y)
-        else:
-            print("⚠️ [SplashScreen] Could not get primary screen for centering")
+        """No longer needed - fullscreen mode handles centering via paintEvent"""
+        pass
     
     def show_message(self, message):
         """
-        Show a status message on the splash screen.
+        Show a status message on the splash screen at image bottom-center.
         
         Args:
             message: Status message to display
         """
-        self.showMessage(
-            message,
-            Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignCenter,
-            Qt.GlobalColor.white
-        )
+        self._message_text = message
+        self.update()  # Trigger repaint to show message
         QApplication.processEvents()
     
     def close_splash(self, main_window, delay_ms=2500):
