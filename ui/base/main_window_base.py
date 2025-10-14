@@ -1788,53 +1788,53 @@ class MainWindowBase(QMainWindow):
         Platform-agnostic - works on both Windows and Linux.
         """
         try:
-            print("\n" + "="*60)
-            print("🧹 RUNNING UNINSTALL CLEANUP...")
-            print("="*60)
+            print("\n" + "="*60, flush=True)
+            print("🧹 RUNNING UNINSTALL CLEANUP...", flush=True)
+            print("="*60, flush=True)
             
             # Stop monitoring if active
             if hasattr(self, 'unified_monitor') and self.unified_monitor:
                 try:
-                    print("⏹ Stopping monitoring system...")
+                    print("⏹ Stopping monitoring system...", flush=True)
                     # The unified_monitor.stop_monitoring() method will handle cleanup
                     if hasattr(self.unified_monitor, 'stop_monitoring'):
                         self.unified_monitor.stop_monitoring()
                     # Also update button state
                     self.on_monitoring_stopped()
-                    print("✅ Monitoring stopped")
+                    print("✅ Monitoring stopped", flush=True)
                 except Exception as e:
-                    print(f"❌ Error stopping monitor: {e}")
+                    print(f"❌ Error stopping monitor: {e}", flush=True)
             else:
-                print("ℹ️  No active monitoring to stop")
+                print("ℹ️  No active monitoring to stop", flush=True)
             
             # Re-enable system tools (platform-specific)
             # These methods are implemented in platform-specific subclasses
             if hasattr(self, 'enable_system_tools'):
                 try:
-                    print("🔓 Re-enabling system tools...")
+                    print("🔓 Re-enabling system tools...", flush=True)
                     self.enable_system_tools()
-                    print("✅ System tools re-enabled")
+                    print("✅ System tools re-enabled", flush=True)
                 except Exception as e:
-                    print(f"❌ Error re-enabling tools: {e}")
+                    print(f"❌ Error re-enabling tools: {e}", flush=True)
             else:
-                print("ℹ️  No system tools to re-enable")
+                print("ℹ️  No system tools to re-enable", flush=True)
             
             # Remove autostart entry using autostart manager
             if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'autostart_manager'):
                 try:
-                    print("🗑️  Removing from autostart...")
+                    print("🗑️  Removing from autostart...", flush=True)
                     from core.autostart_manager import AutostartManager
                     autostart_mgr = AutostartManager(self.get_fadcrypt_folder())
                     autostart_mgr.disable_autostart()
-                    print("✅ Removed from autostart")
+                    print("✅ Removed from autostart", flush=True)
                 except Exception as e:
-                    print(f"❌ Error removing from autostart: {e}")
+                    print(f"❌ Error removing from autostart: {e}", flush=True)
             else:
-                print("ℹ️  No autostart entry to remove")
+                print("ℹ️  No autostart entry to remove", flush=True)
             
-            print("="*60)
-            print("✅ CLEANUP COMPLETED SUCCESSFULLY!")
-            print("="*60 + "\n")
+            print("="*60, flush=True)
+            print("✅ CLEANUP COMPLETED SUCCESSFULLY!", flush=True)
+            print("="*60 + "\n", flush=True)
             
             # Show confirmation
             from PyQt6.QtWidgets import QMessageBox
@@ -1848,7 +1848,7 @@ class MainWindowBase(QMainWindow):
             return True
             
         except Exception as e:
-            print(f"\n❌ ERROR DURING UNINSTALL CLEANUP: {e}\n")
+            print(f"\n❌ ERROR DURING UNINSTALL CLEANUP: {e}\n", flush=True)
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self,

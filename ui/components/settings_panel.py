@@ -276,7 +276,7 @@ class SettingsPanel(QWidget):
                 background-color: #b71c1c;
             }
         """)
-        cleanup_button.clicked.connect(self.on_cleanup_clicked)
+        cleanup_button.clicked.connect(lambda: self.on_cleanup_clicked())
         cleanup_button.setMaximumWidth(200)
         bottom_frame.addWidget(cleanup_button)
         
