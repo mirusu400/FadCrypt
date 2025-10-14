@@ -124,6 +124,9 @@ class MainWindowBase(QMainWindow):
         self.version_code = __version_code__
         self.monitoring_active = False
         
+        # Flag to track if we're doing a forced exit (Ctrl+C, etc.)
+        self._force_quit = False
+        
         # Initialize settings (will be loaded from JSON later)
         self.password_dialog_style = "simple"
         self.wallpaper_choice = "default"
@@ -354,8 +357,13 @@ class MainWindowBase(QMainWindow):
     def closeEvent(self, event):
         """
         Override close event to minimize to tray instead of closing.
-        Only allow true exit via tray menu "Exit FadCrypt" option.
+        Only allow true exit via tray menu "Exit FadCrypt" option or forced quit (Ctrl+C).
         """
+        # If force quit flag is set (Ctrl+C), allow immediate exit
+        if self._force_quit:
+            event.accept()
+            return
+        
         # When window close button is clicked, minimize to tray instead
         event.ignore()  # Don't close the window
         self.hide_to_tray()
@@ -572,7 +580,7 @@ class MainWindowBase(QMainWindow):
         
         # Branding text
         branding_label = QLabel(" © 2024-2025 | faded.dev | Licensed under GPL 3.0")
-        branding_label.setStyleSheet("color: gray; font-size: 10px;")
+        branding_label.setStyleSheet("color: gray; font-size: 12px;")
         footer_layout.addWidget(branding_label)
         
         footer_layout.addStretch()
@@ -580,7 +588,7 @@ class MainWindowBase(QMainWindow):
         # GitHub link on right
         github_label = QLabel('<a href="https://github.com/anonfaded/FadCrypt" style="color: #FFD700; text-decoration: none;">⭐ Sponsor on GitHub</a>')
         github_label.setOpenExternalLinks(True)
-        github_label.setStyleSheet("font-size: 10px;")
+        github_label.setStyleSheet("font-size: 12px;")
         footer_layout.addWidget(github_label)
         
         main_layout.addLayout(footer_layout)

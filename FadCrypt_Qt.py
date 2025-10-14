@@ -9,6 +9,7 @@ Detects platform and loads appropriate platform-specific main window.
 import sys
 import os
 import platform
+import signal
 from pathlib import Path
 
 # Add project root to path for imports
@@ -103,6 +104,21 @@ def main():
     # Create main window (but don't show yet)
     splash.show_message("Creating main window...")
     window = MainWindowClass(version=__version__)
+    
+    # Setup Ctrl+C signal handler for graceful shutdown after window is created
+    # This allows us to access window._force_quit flag
+    def signal_handler(sig, frame):
+        print("\n🛑 Ctrl+C detected - Shutting down gracefully...")
+        window._force_quit = True  # Set flag to bypass minimize-to-tray
+        QTimer.singleShot(0, app.quit)  # Schedule quit on next event loop iteration
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Make Python check for signals by installing a very low-overhead timer
+    # This only wakes up the event loop, doesn't execute heavy code
+    signal_check_timer = QTimer()
+    signal_check_timer.start(100)  # 100ms is sufficient and barely noticeable
+    signal_check_timer.timeout.connect(lambda: None)  # Empty slot - just processes signals
     
     # Close splash and show main window with proper centering
     # Splash will display for 2.5 seconds - quick but visible
