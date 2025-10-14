@@ -14,10 +14,11 @@ class AddApplicationDialog(QDialog):
     
     application_added = pyqtSignal(str, str)  # app_name, app_path
     
-    def __init__(self, resource_path, parent=None):
+    def __init__(self, resource_path, parent=None, platform_name="Linux"):
         super().__init__(parent)
         self.resource_path = resource_path
         self.parent_window = parent
+        self.platform_name = platform_name  # "Linux" or "Windows"
         self.setWindowTitle("Add Application to Encrypt")
         self.setMinimumSize(420, 580)
         self.setModal(True)
@@ -98,16 +99,15 @@ class AddApplicationDialog(QDialog):
         manual_group = QGroupBox("Or Manually Add Application")
         manual_layout = QVBoxLayout()
         
-        # Helper text (cross-platform)
-        import sys
-        if sys.platform.startswith('win'):
+        # Helper text (platform-specific)
+        if self.platform_name == "Windows":
             helper_text = (
                 "To find an executable path on Windows:\n"
                 "• Use 'Browse' button below\n"
                 "• Or right-click app shortcut → Properties → Target\n\n"
                 "Example: C:\\Program Files\\Mozilla Firefox\\firefox.exe"
             )
-        else:
+        else:  # Linux
             helper_text = (
                 "To find an executable path, use the 'which' command in terminal:\n"
                 "❯ which firefox\n"
@@ -134,7 +134,11 @@ class AddApplicationDialog(QDialog):
         manual_layout.addWidget(name_label)
         
         self.name_entry = QLineEdit()
-        self.name_entry.setPlaceholderText("e.g., Firefox")
+        # Platform-specific placeholder
+        if self.platform_name == "Windows":
+            self.name_entry.setPlaceholderText("e.g., Firefox or Notepad")
+        else:
+            self.name_entry.setPlaceholderText("e.g., Firefox")
         self.name_entry.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -156,7 +160,11 @@ class AddApplicationDialog(QDialog):
         manual_layout.addWidget(path_label)
         
         self.path_entry = QLineEdit()
-        self.path_entry.setPlaceholderText("e.g., /usr/bin/firefox")
+        # Platform-specific placeholder
+        if self.platform_name == "Windows":
+            self.path_entry.setPlaceholderText("e.g., C:\\Program Files\\App\\app.exe")
+        else:
+            self.path_entry.setPlaceholderText("e.g., /usr/bin/firefox")
         self.path_entry.setStyleSheet("""
             QLineEdit {
                 padding: 8px;
@@ -400,8 +408,7 @@ class AddApplicationDialog(QDialog):
         app_path = self.path_entry.text().strip()
         
         if not app_name or not app_path:
-            QMessageBox.warning(
-                self,
+            self.show_styled_warning(
                 "Missing Information",
                 "Please provide both name and path for the application."
             )
@@ -421,3 +428,35 @@ class AddApplicationDialog(QDialog):
         # Emit signal and close
         self.application_added.emit(app_name, app_path)
         self.accept()
+    
+    def show_styled_warning(self, title, message):
+        """Show a styled warning dialog with transparent background"""
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Apply transparent background styling
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: rgba(43, 45, 58, 240);
+            }
+            QMessageBox QLabel {
+                color: #e5e7eb;
+                background-color: transparent;
+            }
+            QMessageBox QPushButton {
+                background-color: #3b82f6;
+                color: white;
+                padding: 8px 20px;
+                border-radius: 5px;
+                font-weight: bold;
+                min-width: 80px;
+            }
+            QMessageBox QPushButton:hover {
+                background-color: #2563eb;
+            }
+        """)
+        
+        msg_box.exec()

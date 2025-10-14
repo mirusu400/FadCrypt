@@ -1011,7 +1011,7 @@ class MainWindowBase(QMainWindow):
             "About FadCrypt",
             f"<h3>FadCrypt v{self.version}</h3>"
             "<p>An open-source application lock and encryption software.</p>"
-            "<p>© 2024 FadSec Lab. All rights reserved.</p>"
+            "<p>© 2024-2025 FadSec Lab. All rights reserved.</p>"
         )
     
     # Helper methods
@@ -1131,7 +1131,7 @@ class MainWindowBase(QMainWindow):
         """Open the Add Application dialog"""
         from ui.dialogs.add_application_dialog import AddApplicationDialog
         
-        dialog = AddApplicationDialog(self.resource_path, self)
+        dialog = AddApplicationDialog(self.resource_path, self, self.get_platform_name())
         dialog.application_added.connect(self.on_application_added)
         dialog.exec()
     

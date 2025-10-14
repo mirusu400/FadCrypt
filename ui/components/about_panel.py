@@ -315,7 +315,7 @@ class AboutPanel(QWidget):
         layout.addWidget(fadcam_frame)
         
         # === Footer ===
-        footer = QLabel("© 2024 FadSec Lab • Open Source • Privacy First")
+        footer = QLabel("© 2024-2025 FadSec Lab • Open Source • Privacy First")
         footer.setStyleSheet("""
             QLabel {
                 color: #555555;
