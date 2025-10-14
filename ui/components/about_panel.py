@@ -46,20 +46,22 @@ class AboutPanel(QWidget):
         header_layout = QVBoxLayout(header_frame)
         header_layout.setSpacing(8)
         
-        # App icon - smaller for compactness
+        # App icon - smaller for compactness (transparent background)
         icon_path = self.resource_path('img/icon.png')
         if os.path.exists(icon_path):
             icon_label = QLabel()
+            icon_label.setStyleSheet("background: transparent;")
             icon_pixmap = QPixmap(icon_path)
             scaled_icon = icon_pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon_label.setPixmap(scaled_icon)
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             header_layout.addWidget(icon_label)
         
-        # App name - smaller
+        # App name - smaller (transparent background)
         app_name = QLabel("FadCrypt")
         app_name.setStyleSheet("""
             QLabel {
+                background: transparent;
                 font-size: 24px;
                 font-weight: bold;
                 color: #ffffff;
@@ -69,15 +71,14 @@ class AboutPanel(QWidget):
         app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(app_name)
         
-        # Version - more compact
+        # Version - more compact (transparent background)
         version_label = QLabel(f"v{self.version}")
         version_label.setStyleSheet("""
             QLabel {
+                background: transparent;
                 font-size: 10px;
                 color: #888888;
-                background-color: #3a3a3a;
                 padding: 3px 10px;
-                border-radius: 8px;
             }
         """)
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -86,10 +87,11 @@ class AboutPanel(QWidget):
         # Add minimal spacing before bio
         header_layout.addSpacing(5)
         
-        # Bio/description - compact
+        # Bio/description - compact (transparent background)
         bio = QLabel("🔒 Open-source app lock\n🛡️ Privacy-focused\n📦 GitHub exclusive")
         bio.setStyleSheet("""
             QLabel {
+                background: transparent;
                 color: #d32f2f;
                 font-size: 11px;
                 font-weight: bold;

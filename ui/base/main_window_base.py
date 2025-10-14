@@ -231,42 +231,38 @@ class MainWindowBase(QMainWindow):
         # Set initial size
         self.resize(950, 700)
         
-        # Set darker app-wide stylesheet with light red gradient
+        # Set darker app-wide stylesheet with solid dark background
         self.setStyleSheet("""
             QMainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1a0f0f, stop:1 #0f0f0f);
+                background-color: #0f0f0f;
             }
             QWidget {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1e1414, stop:1 #1a1a1a);
+                background-color: #1a1a1a;
                 color: #ffffff;
             }
             QTabWidget::pane {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1e1414, stop:1 #1a1a1a);
+                background-color: #1a1a1a;
                 border: 1px solid #2a2a2a;
             }
             QTabBar::tab {
-                background-color: #222222;
+                background: transparent;
                 color: #ffffff;
                 padding: 10px 20px;
                 border: 1px solid #2a2a2a;
             }
             QTabBar::tab:selected {
-                background-color: #2a2a2a;
+                background-color: rgba(42, 42, 42, 0.7);
                 border-bottom: 3px solid #d32f2f;
             }
             QTabBar::tab:hover {
-                background-color: #282828;
+                background-color: rgba(40, 40, 40, 0.5);
             }
             QScrollArea {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1e1414, stop:1 #1a1a1a);
+                background-color: #1a1a1a;
                 border: none;
             }
             QTextEdit, QPlainTextEdit {
-                background-color: #222222;
+                background-color: rgba(34, 34, 34, 0.8);
                 color: #ffffff;
                 border: 1px solid #333333;
             }
@@ -495,6 +491,10 @@ class MainWindowBase(QMainWindow):
             }
             QPushButton:hover {
                 background-color: #616161;
+            }
+            QPushButton:disabled {
+                background-color: #2a2a2a;
+                color: #666666;
             }
         """
         
@@ -1788,38 +1788,53 @@ class MainWindowBase(QMainWindow):
         Platform-agnostic - works on both Windows and Linux.
         """
         try:
-            print("Running uninstall cleanup...")
+            print("\n" + "="*60)
+            print("🧹 RUNNING UNINSTALL CLEANUP...")
+            print("="*60)
             
             # Stop monitoring if active
             if hasattr(self, 'unified_monitor') and self.unified_monitor:
                 try:
-                    print("Stopping monitoring...")
+                    print("⏹ Stopping monitoring system...")
                     # The unified_monitor.stop_monitoring() method will handle cleanup
                     if hasattr(self.unified_monitor, 'stop_monitoring'):
                         self.unified_monitor.stop_monitoring()
                     # Also update button state
                     self.on_monitoring_stopped()
+                    print("✅ Monitoring stopped")
                 except Exception as e:
-                    print(f"Error stopping monitor: {e}")
+                    print(f"❌ Error stopping monitor: {e}")
+            else:
+                print("ℹ️  No active monitoring to stop")
             
             # Re-enable system tools (platform-specific)
             # These methods are implemented in platform-specific subclasses
             if hasattr(self, 'enable_system_tools'):
                 try:
-                    print("Re-enabling system tools...")
+                    print("🔓 Re-enabling system tools...")
                     self.enable_system_tools()
+                    print("✅ System tools re-enabled")
                 except Exception as e:
-                    print(f"Error re-enabling tools: {e}")
+                    print(f"❌ Error re-enabling tools: {e}")
+            else:
+                print("ℹ️  No system tools to re-enable")
             
             # Remove autostart entry using autostart manager
             if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'autostart_manager'):
                 try:
+                    print("🗑️  Removing from autostart...")
                     from core.autostart_manager import AutostartManager
                     autostart_mgr = AutostartManager(self.get_fadcrypt_folder())
                     autostart_mgr.disable_autostart()
-                    print("Removed from autostart")
+                    print("✅ Removed from autostart")
                 except Exception as e:
-                    print(f"Error removing from autostart: {e}")
+                    print(f"❌ Error removing from autostart: {e}")
+            else:
+                print("ℹ️  No autostart entry to remove")
+            
+            print("="*60)
+            print("✅ CLEANUP COMPLETED SUCCESSFULLY!")
+            print("="*60 + "\n")
             
             # Show confirmation
             from PyQt6.QtWidgets import QMessageBox
@@ -1830,11 +1845,10 @@ class MainWindowBase(QMainWindow):
                 "You can now safely uninstall FadCrypt.",
                 QMessageBox.StandardButton.Ok
             )
-            print("Uninstall cleanup completed successfully.")
             return True
             
         except Exception as e:
-            print(f"Error during uninstall cleanup: {e}")
+            print(f"\n❌ ERROR DURING UNINSTALL CLEANUP: {e}\n")
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self,

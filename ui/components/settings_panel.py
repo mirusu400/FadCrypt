@@ -229,10 +229,6 @@ class SettingsPanel(QWidget):
                 background-color: #d32f2f;
                 image: url(none);
             }
-            QCheckBox::indicator:checked::after {
-                content: "✓";
-                color: white;
-            }
             QCheckBox::indicator:hover {
                 border: 2px solid #888888;
             }
