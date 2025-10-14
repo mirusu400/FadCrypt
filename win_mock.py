@@ -1,6 +1,10 @@
 """
 Windows Mock Module for Testing on Linux
 Usage: python FadCrypt.py --mock-windows
+
+IMPORTANT: This does NOT change sys.platform to avoid breaking psutil.
+Instead, it only mocks Windows-specific APIs (winreg, ctypes.windll).
+The UI detection is handled by the --mock-windows flag directly.
 """
 
 import sys
@@ -8,8 +12,10 @@ import os
 
 
 def setup_windows_mocks():
-    """Set up Windows mocks for Linux testing"""
-    print("🧪 [MOCK] Setting up Windows environment simulation...")
+    """Set up Windows mocks for Linux testing (without changing sys.platform)"""
+    print("🧪 [MOCK] Setting up Windows API simulation...")
+    print("🧪 [MOCK] Note: sys.platform remains 'linux' to keep psutil working")
+    print("🧪 [MOCK] UI will use Windows mode via --mock-windows flag detection")
     
     # Set up Windows environment variables
     home = os.path.expanduser('~')
@@ -97,10 +103,9 @@ def setup_windows_mocks():
     sys.modules['winreg'] = MockWinReg()
     print("🧪 [MOCK] winreg module patched")
     
-    # Override platform detection
-    original_platform = sys.platform
-    sys.platform = 'win32'
-    print(f"🧪 [MOCK] sys.platform: {original_platform} → win32")
+    # DO NOT change sys.platform - keep it as 'linux' so psutil works
+    # The UI will detect Windows mode via the --mock-windows flag
+    print("🧪 [MOCK] sys.platform kept as 'linux' (for psutil compatibility)")
     
     # Create mock Windows directories for app scanning
     mock_program_files = os.path.join(home, '.mock_windows', 'Program Files')
@@ -115,13 +120,10 @@ def setup_windows_mocks():
     print(f"    {mock_program_files_x86}")
     print(f"    {mock_local_programs}")
     
-    print("🧪 [MOCK] Windows environment ready!")
+    print("🧪 [MOCK] Windows API mocking ready!")
     print("=" * 60)
-    
-    return original_platform
 
 
-def restore_platform(original_platform):
-    """Restore original platform after testing"""
-    sys.platform = original_platform
-    print(f"\n🧪 [MOCK] Restored sys.platform to {original_platform}")
+def cleanup_mocks():
+    """Clean up mocks (no-op since we don't change sys.platform anymore)"""
+    print("\n🧪 [MOCK] Cleanup complete")

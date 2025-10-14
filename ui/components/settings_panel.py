@@ -15,9 +15,10 @@ class SettingsPanel(QWidget):
     # Signals for settings changes
     settings_changed = pyqtSignal(dict)
     
-    def __init__(self, resource_path_func=None):
+    def __init__(self, resource_path_func=None, platform_name="Linux"):
         super().__init__()
         self.resource_path = resource_path_func or self._default_resource_path
+        self.platform_name = platform_name  # "Linux" or "Windows"
         self.init_ui()
         
     def _default_resource_path(self, path):
@@ -209,7 +210,7 @@ class SettingsPanel(QWidget):
         bottom_frame.addWidget(loopholes_title)
         
         self.lock_tools_checkbox = QCheckBox(
-            "Disable common terminals and system monitors during monitoring."
+            self._get_lock_tools_checkbox_text()
         )
         self.lock_tools_checkbox.setChecked(True)
         self.lock_tools_checkbox.setStyleSheet("""
@@ -235,12 +236,8 @@ class SettingsPanel(QWidget):
         """)
         bottom_frame.addWidget(self.lock_tools_checkbox)
         
-        # Info text below checkbox in darker color
-        lock_tools_info = QLabel(
-            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security. "
-            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually; "
-            "otherwise, FadCrypt could be terminated via terminal.)"
-        )
+        # Info text below checkbox in darker color - platform-specific
+        lock_tools_info = QLabel(self._get_lock_tools_info_text())
         lock_tools_info.setStyleSheet("color: #666666; font-size: 11px; padding-left: 26px;")
         lock_tools_info.setWordWrap(True)
         bottom_frame.addWidget(lock_tools_info)
@@ -382,4 +379,25 @@ class SettingsPanel(QWidget):
     def apply_settings(self, settings):
         """Alias for set_settings - apply settings from dictionary"""
         self.set_settings(settings)
-
+    
+    def _get_lock_tools_checkbox_text(self):
+        """Get platform-specific checkbox text for lock tools"""
+        if self.platform_name == "Windows":
+            return "Disable Command Prompt, Registry Editor, Control Panel, msconfig, and Task Manager during monitoring."
+        else:  # Linux
+            return "Disable common terminals and system monitors during monitoring."
+    
+    def _get_lock_tools_info_text(self):
+        """Get platform-specific info text for lock tools"""
+        if self.platform_name == "Windows":
+            return (
+                "(Default: All are disabled for best security. Tools are automatically re-enabled when monitoring is stopped. "
+                "For added security, please disable PowerShell as well; search on internet for help. "
+                "Otherwise, FadCrypt could be terminated via PowerShell.)"
+            )
+        else:  # Linux
+            return (
+                "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security. "
+                "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually; "
+                "otherwise, FadCrypt could be terminated via terminal.)"
+            )

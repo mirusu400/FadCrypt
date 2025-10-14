@@ -26,6 +26,10 @@ class MainWindowLinux(MainWindowBase):
         # Platform-specific initialization complete
         pass
     
+    def get_platform_name(self):
+        """Override to always return Linux for this implementation"""
+        return "Linux"
+    
     def handle_autostart_setting(self, enable):
         """
         Handle autostart setting change for Linux.

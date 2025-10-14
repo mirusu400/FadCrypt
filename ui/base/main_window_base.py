@@ -226,6 +226,23 @@ class MainWindowBase(QMainWindow):
             base_path = os.path.abspath(".")
         
         return os.path.join(base_path, relative_path)
+    
+    def get_platform_name(self):
+        """
+        Get platform name for UI display.
+        Override in subclasses to provide proper platform identification.
+        
+        Returns:
+            str: "Windows" or "Linux"
+        """
+        import platform
+        system = platform.system()
+        if system == "Windows":
+            return "Windows"
+        elif system == "Linux":
+            return "Linux"
+        else:
+            return "Linux"  # Default fallback
         
     def init_ui(self):
         """Initialize the user interface"""
@@ -969,8 +986,8 @@ class MainWindowBase(QMainWindow):
         tab_layout = QVBoxLayout(settings_tab)
         tab_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Use the enhanced settings panel with resource_path
-        self.settings_panel = SettingsPanel(self.resource_path)
+        # Use the enhanced settings panel with resource_path and platform name
+        self.settings_panel = SettingsPanel(self.resource_path, self.get_platform_name())
         tab_layout.addWidget(self.settings_panel)
         
         self.tabs.addTab(settings_tab, "Settings")

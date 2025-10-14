@@ -40,14 +40,23 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def get_main_window_class():
+def get_main_window_class(force_windows=False):
     """
     Detect platform and return appropriate main window class.
+    
+    Args:
+        force_windows: If True, force Windows UI (for mock testing on Linux)
     
     Returns:
         MainWindowLinux or MainWindowWindows depending on platform
     """
     system = platform.system()
+    
+    # Force Windows UI if mock mode is enabled
+    if force_windows:
+        print("🧪 [MOCK] Forcing Windows UI (system detected: {})".format(system))
+        from ui.windows.main_window_windows import MainWindowWindows
+        return MainWindowWindows
     
     if system == "Linux":
         from ui.linux.main_window_linux import MainWindowLinux
@@ -102,11 +111,13 @@ def main():
     print(f"🔢 Version Code: {__version_code__}")
     print(f"🎨 UI Framework: PyQt6")
     print(f"💻 Platform: {system}")
+    if mock_windows:
+        print(f"🧪 Mock Mode: Windows UI on Linux")
     print(f"📁 Project Root: {project_root}")
     
     # Get platform-specific window class
     splash.show_message("Loading platform modules...")
-    MainWindowClass = get_main_window_class()
+    MainWindowClass = get_main_window_class(force_windows=mock_windows)
     
     # Create main window (but don't show yet)
     splash.show_message("Creating main window...")

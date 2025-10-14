@@ -5,7 +5,7 @@ import sys
 block_cipher = None
 
 a = Analysis(
-    ['FadCrypt_Qt.py'],
+    ['FadCrypt.py'],
     pathex=[],
     binaries=[],
     datas=[

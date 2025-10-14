@@ -35,6 +35,10 @@ class MainWindowWindows(MainWindowBase):
         # Platform-specific initialization complete
         pass
     
+    def get_platform_name(self):
+        """Override to always return Windows for this implementation"""
+        return "Windows"
+    
     def handle_autostart_setting(self, enable):
         """
         Handle autostart setting change for Windows.
