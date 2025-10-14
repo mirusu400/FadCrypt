@@ -21,16 +21,30 @@ class AboutPanel(QWidget):
         self.init_ui()
         
     def init_ui(self):
-        """Initialize the about panel UI"""
+        """Initialize the about panel UI with modern design"""
         # Make scrollable
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("QScrollArea { border: none; }")
         scroll_content = QWidget()
         
         layout = QVBoxLayout(scroll_content)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        
+        # === Header Section (App Icon + Name + Version + Bio - Compact) ===
+        header_frame = QFrame()
+        header_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #2a2a2a, stop:1 #1a1a1a);
+                border-radius: 15px;
+                padding: 25px;
+            }
+        """)
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setSpacing(12)
         
         # App icon
         icon_path = self.resource_path('img/icon.png')
@@ -40,192 +54,276 @@ class AboutPanel(QWidget):
             scaled_icon = icon_pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon_label.setPixmap(scaled_icon)
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(icon_label)
+            header_layout.addWidget(icon_label)
         
-        # App name
+        # App name with modern font
         app_name = QLabel("FadCrypt")
-        app_name.setStyleSheet("font-size: 18px; font-weight: bold;")
+        app_name.setStyleSheet("""
+            QLabel {
+                font-size: 28px;
+                font-weight: bold;
+                color: #ffffff;
+                letter-spacing: 2px;
+            }
+        """)
         app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(app_name)
+        header_layout.addWidget(app_name)
         
-        # Version
-        version_label = QLabel(f"Version {self.version}")
-        version_label.setStyleSheet("font-size: 10px;")
+        # Version badge style
+        version_label = QLabel(f"v{self.version}")
+        version_label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                color: #888888;
+                background-color: #3a3a3a;
+                padding: 4px 12px;
+                border-radius: 10px;
+            }
+        """)
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(version_label)
+        header_layout.addWidget(version_label, alignment=Qt.AlignmentFlag.AlignCenter)
         
-        # Check for updates button
-        update_button = QPushButton("Check for Updates")
+        # Bio/description with red accent
+        bio = QLabel(
+            "🔒 Open-source app lock & encryption\n"
+            "🛡️ Privacy-focused, no data tracking\n"
+            "📦 GitHub exclusive"
+        )
+        bio.setStyleSheet("""
+            QLabel {
+                color: #d32f2f;
+                font-size: 12px;
+                font-weight: bold;
+                line-height: 1.5;
+            }
+        """)
+        bio.setWordWrap(True)
+        bio.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(bio)
+        
+        layout.addWidget(header_frame)
+        
+        # === Action Buttons Grid ===
+        buttons_frame = QWidget()
+        buttons_layout = QVBoxLayout(buttons_frame)
+        buttons_layout.setSpacing(10)
+        
+        # Row 1: Check Updates (keep green for success-related action)
+        update_button = QPushButton("🔄 Check for Updates")
         update_button.setStyleSheet("""
             QPushButton {
-                background-color: #4caf50;
+                background-color: #d32f2f;
                 color: white;
                 font-weight: bold;
-                padding: 8px 20px;
-                border-radius: 5px;
+                font-size: 13px;
+                padding: 12px 25px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #b71c1c;
+            }
+            QPushButton:pressed {
+                background-color: #9a0007;
             }
         """)
         update_button.clicked.connect(self.check_for_updates)
-        update_button.setMaximumWidth(200)
-        layout.addWidget(update_button, alignment=Qt.AlignmentFlag.AlignCenter)
+        update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        buttons_layout.addWidget(update_button)
         
-        layout.addSpacing(10)
+        # Row 2: Source & Support
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
         
-        # Description
-        description = QLabel(
-            "FadCrypt is an open-source app lock/encryption software that prioritizes privacy by not tracking or collecting any data. "
-            "It is available exclusively on GitHub and through the official links mentioned in the README."
-        )
-        description.setWordWrap(True)
-        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        description.setMaximumWidth(400)
-        layout.addWidget(description, alignment=Qt.AlignmentFlag.AlignCenter)
-        
-        layout.addSpacing(10)
-        
-        # FadSec Lab Suite Information
-        suite_frame = QFrame()
-        suite_frame.setStyleSheet("background-color: black; border-radius: 5px; padding: 10px;")
-        suite_layout = QVBoxLayout(suite_frame)
-        
-        suite_info = QLabel("FadCrypt is part of the FadSec Lab suite. For more information, click on 'View Source Code' below.")
-        suite_info.setStyleSheet("color: green; font-weight: bold;")
-        suite_info.setWordWrap(True)
-        suite_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        suite_layout.addWidget(suite_info)
-        
-        layout.addWidget(suite_frame)
-        layout.addSpacing(10)
-        
-        # Button row
-        button_layout = QHBoxLayout()
-        
-        source_button = QPushButton("View Source Code")
+        source_button = QPushButton("📂 Source Code")
         source_button.setStyleSheet("""
             QPushButton {
-                background-color: #1976d2;
+                background-color: #424242;
                 color: white;
                 font-weight: bold;
-                padding: 8px 15px;
-                border-radius: 5px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
-                background-color: #0d47a1;
+                background-color: #616161;
             }
         """)
         source_button.clicked.connect(lambda: webbrowser.open("https://github.com/anonfaded/FadCrypt"))
-        button_layout.addWidget(source_button)
+        source_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        row2.addWidget(source_button)
         
-        coffee_button = QPushButton("Buy Me A Coffee")
+        coffee_button = QPushButton("☕ Buy Me Coffee")
         coffee_button.setStyleSheet("""
             QPushButton {
                 background-color: #ffeb3b;
-                color: black;
+                color: #000000;
                 font-weight: bold;
-                padding: 8px 15px;
-                border-radius: 5px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
                 background-color: #fdd835;
             }
         """)
         coffee_button.clicked.connect(lambda: webbrowser.open("https://ko-fi.com/fadedx"))
-        button_layout.addWidget(coffee_button)
+        coffee_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        row2.addWidget(coffee_button)
         
-        discord_button = QPushButton("Join Discord")
+        buttons_layout.addLayout(row2)
+        
+        # Row 3: Community
+        row3 = QHBoxLayout()
+        row3.setSpacing(10)
+        
+        discord_button = QPushButton("💬 Join Discord")
         discord_button.setStyleSheet("""
             QPushButton {
                 background-color: #5865f2;
                 color: white;
                 font-weight: bold;
-                padding: 8px 15px;
-                border-radius: 5px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
                 background-color: #4752c4;
             }
         """)
         discord_button.clicked.connect(lambda: webbrowser.open("https://discord.gg/kvAZvdkuuN"))
-        button_layout.addWidget(discord_button)
+        discord_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        row3.addWidget(discord_button)
         
-        review_button = QPushButton("Write a Review")
+        review_button = QPushButton("⭐ Write Review")
         review_button.setStyleSheet("""
             QPushButton {
-                background-color: #4caf50;
+                background-color: #f57c00;
                 color: white;
                 font-weight: bold;
-                padding: 8px 15px;
-                border-radius: 5px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #e65100;
             }
         """)
         review_button.clicked.connect(lambda: webbrowser.open("https://forms.gle/wnthyevjkRD41eTFA"))
-        button_layout.addWidget(review_button)
+        review_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        row3.addWidget(review_button)
         
-        layout.addLayout(button_layout)
+        buttons_layout.addLayout(row3)
         
-        # Separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
+        layout.addWidget(buttons_frame)
         
-        layout.addSpacing(10)
+        # === FadSec Lab Suite Info ===
+        suite_frame = QFrame()
+        suite_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #3a1a1a, stop:1 #1a1a1a);
+                border-radius: 12px;
+                border-left: 4px solid #d32f2f;
+                padding: 15px;
+            }
+        """)
+        suite_layout = QVBoxLayout(suite_frame)
         
-        # FadCam Promotion Section
-        promo_title = QLabel("Check out FadCam, our Android app from the FadSec Lab suite.")
-        promo_title.setStyleSheet("font-size: 12px; font-weight: bold;")
-        promo_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(promo_title)
+        suite_title = QLabel("🛡️ Part of FadSec Lab Suite")
+        suite_title.setStyleSheet("""
+            QLabel {
+                color: #d32f2f;
+                font-weight: bold;
+                font-size: 14px;
+            }
+        """)
+        suite_layout.addWidget(suite_title)
         
-        layout.addSpacing(10)
+        suite_info = QLabel("Comprehensive security tools for privacy-conscious users")
+        suite_info.setStyleSheet("color: #888888; font-size: 11px;")
+        suite_info.setWordWrap(True)
+        suite_layout.addWidget(suite_info)
         
-        # FadCam frame with icon and button
-        fadcam_frame = QHBoxLayout()
-        fadcam_frame.setSpacing(10)
+        layout.addWidget(suite_frame)
         
-        # FadCam icon and text
+        # === FadCam Promotion Card ===
+        fadcam_frame = QFrame()
+        fadcam_frame.setStyleSheet("""
+            QFrame {
+                background-color: #2a2a2a;
+                border-radius: 12px;
+                padding: 20px;
+            }
+        """)
+        fadcam_layout = QHBoxLayout(fadcam_frame)
+        fadcam_layout.setSpacing(15)
+        
+        # FadCam icon
         fadcam_icon_path = self.resource_path('img/fadcam.png')
         if os.path.exists(fadcam_icon_path):
             fadcam_icon_label = QLabel()
             fadcam_pixmap = QPixmap(fadcam_icon_path)
-            # Scale to reasonable size (subsample 12x12 in Tkinter)
-            scaled_fadcam = fadcam_pixmap.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled_fadcam = fadcam_pixmap.scaled(60, 60, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             fadcam_icon_label.setPixmap(scaled_fadcam)
             fadcam_icon_label.setCursor(Qt.CursorShape.PointingHandCursor)
             fadcam_icon_label.mousePressEvent = lambda event: webbrowser.open("https://github.com/anonfaded/FadCam")
-            fadcam_frame.addWidget(fadcam_icon_label)
+            fadcam_layout.addWidget(fadcam_icon_label)
         
-        fadcam_text = QLabel("FadCam - Open Source Ad-Free Offscreen Video Recorder.")
-        fadcam_text.setStyleSheet("font-weight: bold;")
-        fadcam_text.setCursor(Qt.CursorShape.PointingHandCursor)
-        fadcam_text.mousePressEvent = lambda event: webbrowser.open("https://github.com/anonfaded/FadCam")
-        fadcam_frame.addWidget(fadcam_text)
+        # FadCam info
+        fadcam_info_layout = QVBoxLayout()
+        fadcam_info_layout.setSpacing(5)
         
-        fadcam_button = QPushButton("Get FadCam")
+        fadcam_title = QLabel("FadCam")
+        fadcam_title.setStyleSheet("""
+            QLabel {
+                font-weight: bold;
+                font-size: 15px;
+                color: #ffffff;
+            }
+        """)
+        fadcam_info_layout.addWidget(fadcam_title)
+        
+        fadcam_desc = QLabel("Open Source Ad-Free Offscreen Video Recorder")
+        fadcam_desc.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        fadcam_desc.setWordWrap(True)
+        fadcam_info_layout.addWidget(fadcam_desc)
+        
+        fadcam_layout.addLayout(fadcam_info_layout, 1)
+        
+        # Get FadCam button
+        fadcam_button = QPushButton("Get FadCam →")
         fadcam_button.setStyleSheet("""
             QPushButton {
                 background-color: #d32f2f;
                 color: white;
                 font-weight: bold;
-                padding: 8px 20px;
-                border-radius: 5px;
+                padding: 10px 20px;
+                border-radius: 8px;
+                border: none;
             }
             QPushButton:hover {
                 background-color: #b71c1c;
             }
         """)
         fadcam_button.clicked.connect(lambda: webbrowser.open("https://github.com/anonfaded/FadCam"))
-        fadcam_frame.addWidget(fadcam_button)
+        fadcam_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        fadcam_layout.addWidget(fadcam_button)
         
-        fadcam_frame.addStretch()
+        layout.addWidget(fadcam_frame)
         
-        layout.addLayout(fadcam_frame)
+        # === Footer ===
+        footer = QLabel("© 2024 FadSec Lab • Open Source • Privacy First")
+        footer.setStyleSheet("""
+            QLabel {
+                color: #555555;
+                font-size: 10px;
+                padding-top: 20px;
+            }
+        """)
+        footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(footer)
+        
         layout.addStretch()
         
         scroll_area.setWidget(scroll_content)

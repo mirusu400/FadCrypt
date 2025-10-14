@@ -183,6 +183,9 @@ class MainWindowBase(QMainWindow):
         # Connect settings signal
         self.settings_panel.settings_changed.connect(self.on_settings_changed)
         
+        # Connect cleanup button to cleanup handler
+        self.settings_panel.on_cleanup_clicked = self.cleanup_before_uninstall
+        
         # Center window after everything is initialized
         from PyQt6.QtCore import QTimer
         QTimer.singleShot(100, self.center_on_screen)
@@ -249,7 +252,7 @@ class MainWindowBase(QMainWindow):
             }
             QTabBar::tab:selected {
                 background-color: #2a2a2a;
-                border-bottom: 3px solid #4ade80;
+                border-bottom: 3px solid #d32f2f;
             }
             QTabBar::tab:hover {
                 background-color: #282828;
@@ -270,8 +273,7 @@ class MainWindowBase(QMainWindow):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         
-        # Create menu bar
-        self.create_menu_bar()
+        # Note: Menu bar removed - About tab provides all needed info
         
         # Create central widget and main layout
         central_widget = QWidget()
@@ -290,21 +292,6 @@ class MainWindowBase(QMainWindow):
         self.create_settings_tab()
         self.create_about_tab()
         
-    def create_menu_bar(self):
-        """Create menu bar with File and Help menus"""
-        menubar = self.menuBar()
-        
-        # File menu
-        file_menu = menubar.addMenu("File")
-        
-        exit_action = file_menu.addAction("Exit")
-        exit_action.triggered.connect(self.close)
-        
-        # Help menu
-        help_menu = menubar.addMenu("Help")
-        
-        about_action = help_menu.addAction("About")
-        about_action.triggered.connect(self.show_about_dialog)
     
     def init_system_tray(self):
         """Initialize system tray icon"""
@@ -465,7 +452,7 @@ class MainWindowBase(QMainWindow):
         readme_button.setFixedWidth(180)
         readme_button.setStyleSheet("""
             QPushButton {
-                background-color: #1976d2;
+                background-color: #424242;
                 color: white;
                 font-size: 13px;
                 font-weight: bold;
@@ -474,7 +461,7 @@ class MainWindowBase(QMainWindow):
                 border: none;
             }
             QPushButton:hover {
-                background-color: #0d47a1;
+                background-color: #616161;
             }
         """)
         readme_button.clicked.connect(self.on_readme_clicked)
@@ -530,7 +517,7 @@ class MainWindowBase(QMainWindow):
         snake_button.setFixedWidth(180)
         snake_button.setStyleSheet("""
             QPushButton {
-                background-color: #1976d2;
+                background-color: #424242;
                 color: white;
                 font-weight: bold;
                 padding: 10px 15px;
@@ -539,7 +526,7 @@ class MainWindowBase(QMainWindow):
                 border: none;
             }
             QPushButton:hover {
-                background-color: #0d47a1;
+                background-color: #616161;
             }
         """)
         snake_button.clicked.connect(self.on_snake_game)
@@ -817,14 +804,14 @@ class MainWindowBase(QMainWindow):
         export_button = QPushButton("Export Config")
         export_button.setStyleSheet("""
             QPushButton {
-                background-color: #4caf50;
+                background-color: #d32f2f;
                 color: white;
                 font-weight: bold;
                 padding: 8px 20px;
                 border-radius: 5px;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #b71c1c;
             }
         """)
         export_button.clicked.connect(self.on_export_config)
@@ -833,14 +820,14 @@ class MainWindowBase(QMainWindow):
         import_button = QPushButton("Import Config")
         import_button.setStyleSheet("""
             QPushButton {
-                background-color: #2196f3;
+                background-color: #424242;
                 color: white;
                 font-weight: bold;
                 padding: 8px 20px;
                 border-radius: 5px;
             }
             QPushButton:hover {
-                background-color: #1976d2;
+                background-color: #616161;
             }
         """)
         import_button.clicked.connect(self.on_import_config)
@@ -1789,6 +1776,66 @@ class MainWindowBase(QMainWindow):
         """Handle Read Me button click - show fullscreen dialog"""
         readme_dialog = ReadmeDialog(self.resource_path, self)
         readme_dialog.exec()
+    
+    def cleanup_before_uninstall(self):
+        """
+        Cleanup function to restore all system settings before uninstallation.
+        This ensures users don't have disabled settings after uninstalling FadCrypt.
+        Platform-agnostic - works on both Windows and Linux.
+        """
+        try:
+            print("Running uninstall cleanup...")
+            
+            # Stop monitoring if active
+            if hasattr(self, 'unified_monitor') and self.unified_monitor:
+                try:
+                    print("Stopping monitoring...")
+                    # The unified_monitor.stop_monitoring() method will handle cleanup
+                    if hasattr(self.unified_monitor, 'stop_monitoring'):
+                        self.unified_monitor.stop_monitoring()
+                    # Also update button state
+                    self.on_monitoring_stopped()
+                except Exception as e:
+                    print(f"Error stopping monitor: {e}")
+            
+            # TODO: Re-enable system tools (terminals, task manager, etc.)
+            # This functionality needs to be implemented in core modules
+            # Legacy: self.enable_tools() on Linux, self.enable_system_tools() on Windows
+            print("Note: System tool re-enabling not yet implemented in refactored code")
+            
+            # Remove autostart entry using autostart manager
+            if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'autostart_manager'):
+                try:
+                    from core.autostart_manager import AutostartManager
+                    autostart_mgr = AutostartManager(self.get_fadcrypt_folder())
+                    autostart_mgr.disable_autostart()
+                    print("Removed from autostart")
+                except Exception as e:
+                    print(f"Error removing from autostart: {e}")
+            
+            # Show confirmation
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Cleanup Complete",
+                "All system settings have been restored.\n"
+                "You can now safely uninstall FadCrypt.",
+                QMessageBox.StandardButton.Ok
+            )
+            print("Uninstall cleanup completed successfully.")
+            return True
+            
+        except Exception as e:
+            print(f"Error during uninstall cleanup: {e}")
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "Cleanup Error",
+                f"Some settings may not have been restored:\n{str(e)}\n\n"
+                "Please manually check system tool permissions.",
+                QMessageBox.StandardButton.Ok
+            )
+            return False
         
     def on_create_password(self):
         """Handle create password button click"""

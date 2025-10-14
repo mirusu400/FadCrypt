@@ -39,7 +39,7 @@ class AppCard(QFrame):
                 padding: 12px;
             }
             AppCard:hover {
-                border: 2px solid #4ade80;
+                border: 2px solid #d32f2f;
                 background-color: #333333;
             }
         """)
@@ -249,7 +249,7 @@ class AppCard(QFrame):
                     padding: 10px;
                 }
                 AppCard:hover {
-                    border: 2px solid #4ade80;
+                    border: 2px solid #d32f2f;
                     background-color: #333333;
                 }
             """)

@@ -62,10 +62,50 @@ class SettingsPanel(QWidget):
         self.dialog_style_group = QButtonGroup()
         self.simple_dialog_radio = QRadioButton("Simple Dialog")
         self.simple_dialog_radio.setChecked(True)
+        self.simple_dialog_radio.setStyleSheet("""
+            QRadioButton {
+                color: #e0e0e0;
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border: 2px solid #666666;
+                background-color: #2a2a2a;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #d32f2f;
+                background-color: #d32f2f;
+            }
+            QRadioButton::indicator:hover {
+                border: 2px solid #888888;
+            }
+        """)
         self.dialog_style_group.addButton(self.simple_dialog_radio, 0)
         left_frame.addWidget(self.simple_dialog_radio)
         
         self.fullscreen_dialog_radio = QRadioButton("Full Screen")
+        self.fullscreen_dialog_radio.setStyleSheet("""
+            QRadioButton {
+                color: #e0e0e0;
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border: 2px solid #666666;
+                background-color: #2a2a2a;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #d32f2f;
+                background-color: #d32f2f;
+            }
+            QRadioButton::indicator:hover {
+                border: 2px solid #888888;
+            }
+        """)
         self.dialog_style_group.addButton(self.fullscreen_dialog_radio, 1)
         left_frame.addWidget(self.fullscreen_dialog_radio)
         
@@ -78,20 +118,46 @@ class SettingsPanel(QWidget):
         
         self.wallpaper_group = QButtonGroup()
         
+        # Common radio button style for wallpaper options
+        wallpaper_radio_style = """
+            QRadioButton {
+                color: #e0e0e0;
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border: 2px solid #666666;
+                background-color: #2a2a2a;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #d32f2f;
+                background-color: #d32f2f;
+            }
+            QRadioButton::indicator:hover {
+                border: 2px solid #888888;
+            }
+        """
+        
         self.lab_wallpaper_radio = QRadioButton("Lab (Default)")
         self.lab_wallpaper_radio.setChecked(True)
+        self.lab_wallpaper_radio.setStyleSheet(wallpaper_radio_style)
         self.wallpaper_group.addButton(self.lab_wallpaper_radio, 0)
         left_frame.addWidget(self.lab_wallpaper_radio)
         
         self.hacker_wallpaper_radio = QRadioButton("H4ck3r")
+        self.hacker_wallpaper_radio.setStyleSheet(wallpaper_radio_style)
         self.wallpaper_group.addButton(self.hacker_wallpaper_radio, 1)
         left_frame.addWidget(self.hacker_wallpaper_radio)
         
         self.binary_wallpaper_radio = QRadioButton("Binary")
+        self.binary_wallpaper_radio.setStyleSheet(wallpaper_radio_style)
         self.wallpaper_group.addButton(self.binary_wallpaper_radio, 2)
         left_frame.addWidget(self.binary_wallpaper_radio)
         
         self.encrypted_wallpaper_radio = QRadioButton("Encryptedddddd")
+        self.encrypted_wallpaper_radio.setStyleSheet(wallpaper_radio_style)
         self.wallpaper_group.addButton(self.encrypted_wallpaper_radio, 3)
         left_frame.addWidget(self.encrypted_wallpaper_radio)
         
@@ -105,18 +171,18 @@ class SettingsPanel(QWidget):
         preview_label.setStyleSheet("font-weight: bold;")
         right_frame.addWidget(preview_label)
         
-        # Preview frame
+        # Preview frame - no border, just dark background
         self.preview_frame = QFrame()
-        self.preview_frame.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)
+        self.preview_frame.setFrameStyle(QFrame.Shape.NoFrame)
         self.preview_frame.setMinimumSize(400, 250)
         self.preview_frame.setMaximumSize(400, 250)
-        self.preview_frame.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+        self.preview_frame.setStyleSheet("background-color: #1a1a1a; border: none;")
         
         preview_layout = QVBoxLayout(self.preview_frame)
         preview_layout.setContentsMargins(0, 0, 0, 0)
         self.preview_label = QLabel()
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview_label.setScaledContents(True)
+        # Don't use setScaledContents - we'll handle scaling manually with SmoothTransformation
         preview_layout.addWidget(self.preview_label)
         
         right_frame.addWidget(self.preview_frame)
@@ -143,13 +209,45 @@ class SettingsPanel(QWidget):
         bottom_frame.addWidget(loopholes_title)
         
         self.lock_tools_checkbox = QCheckBox(
-            "Disable common terminals and system monitors during monitoring.\n"
-            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security.\n"
-            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually;\n"
-            "otherwise, FadCrypt could be terminated via terminal.)"
+            "Disable common terminals and system monitors during monitoring."
         )
         self.lock_tools_checkbox.setChecked(True)
+        self.lock_tools_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #e0e0e0;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #666666;
+                border-radius: 3px;
+                background-color: #2a2a2a;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #d32f2f;
+                background-color: #d32f2f;
+                image: url(none);
+            }
+            QCheckBox::indicator:checked::after {
+                content: "✓";
+                color: white;
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #888888;
+            }
+        """)
         bottom_frame.addWidget(self.lock_tools_checkbox)
+        
+        # Info text below checkbox in darker color
+        lock_tools_info = QLabel(
+            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security. "
+            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually; "
+            "otherwise, FadCrypt could be terminated via terminal.)"
+        )
+        lock_tools_info.setStyleSheet("color: #666666; font-size: 11px; padding-left: 26px;")
+        lock_tools_info.setWordWrap(True)
+        bottom_frame.addWidget(lock_tools_info)
         
         # Uninstall Cleanup
         separator3 = QFrame()
