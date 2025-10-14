@@ -231,17 +231,20 @@ class MainWindowBase(QMainWindow):
         # Set initial size
         self.resize(950, 700)
         
-        # Set darker app-wide stylesheet
+        # Set darker app-wide stylesheet with light red gradient
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #0f0f0f;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #1a0f0f, stop:1 #0f0f0f);
             }
             QWidget {
-                background-color: #1a1a1a;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #1e1414, stop:1 #1a1a1a);
                 color: #ffffff;
             }
             QTabWidget::pane {
-                background-color: #1a1a1a;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #1e1414, stop:1 #1a1a1a);
                 border: 1px solid #2a2a2a;
             }
             QTabBar::tab {
@@ -258,7 +261,8 @@ class MainWindowBase(QMainWindow):
                 background-color: #282828;
             }
             QScrollArea {
-                background-color: #1a1a1a;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #1e1414, stop:1 #1a1a1a);
                 border: none;
             }
             QTextEdit, QPlainTextEdit {
@@ -1798,10 +1802,14 @@ class MainWindowBase(QMainWindow):
                 except Exception as e:
                     print(f"Error stopping monitor: {e}")
             
-            # TODO: Re-enable system tools (terminals, task manager, etc.)
-            # This functionality needs to be implemented in core modules
-            # Legacy: self.enable_tools() on Linux, self.enable_system_tools() on Windows
-            print("Note: System tool re-enabling not yet implemented in refactored code")
+            # Re-enable system tools (platform-specific)
+            # These methods are implemented in platform-specific subclasses
+            if hasattr(self, 'enable_system_tools'):
+                try:
+                    print("Re-enabling system tools...")
+                    self.enable_system_tools()
+                except Exception as e:
+                    print(f"Error re-enabling tools: {e}")
             
             # Remove autostart entry using autostart manager
             if hasattr(self, 'config_manager') and hasattr(self.config_manager, 'autostart_manager'):

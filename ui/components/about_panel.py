@@ -33,68 +33,67 @@ class AboutPanel(QWidget):
         layout.setSpacing(20)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         
-        # === Header Section (App Icon + Name + Version + Bio - Compact) ===
+        # === Header Section (Everything in ONE compact box) ===
         header_frame = QFrame()
         header_frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #2a2a2a, stop:1 #1a1a1a);
                 border-radius: 15px;
-                padding: 25px;
+                padding: 20px;
             }
         """)
         header_layout = QVBoxLayout(header_frame)
-        header_layout.setSpacing(12)
+        header_layout.setSpacing(8)
         
-        # App icon
+        # App icon - smaller for compactness
         icon_path = self.resource_path('img/icon.png')
         if os.path.exists(icon_path):
             icon_label = QLabel()
             icon_pixmap = QPixmap(icon_path)
-            scaled_icon = icon_pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled_icon = icon_pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon_label.setPixmap(scaled_icon)
             icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             header_layout.addWidget(icon_label)
         
-        # App name with modern font
+        # App name - smaller
         app_name = QLabel("FadCrypt")
         app_name.setStyleSheet("""
             QLabel {
-                font-size: 28px;
+                font-size: 24px;
                 font-weight: bold;
                 color: #ffffff;
-                letter-spacing: 2px;
+                letter-spacing: 1px;
             }
         """)
         app_name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(app_name)
         
-        # Version badge style
+        # Version - more compact
         version_label = QLabel(f"v{self.version}")
         version_label.setStyleSheet("""
             QLabel {
-                font-size: 11px;
+                font-size: 10px;
                 color: #888888;
                 background-color: #3a3a3a;
-                padding: 4px 12px;
-                border-radius: 10px;
+                padding: 3px 10px;
+                border-radius: 8px;
             }
         """)
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(version_label, alignment=Qt.AlignmentFlag.AlignCenter)
         
-        # Bio/description with red accent
-        bio = QLabel(
-            "🔒 Open-source app lock & encryption\n"
-            "🛡️ Privacy-focused, no data tracking\n"
-            "📦 GitHub exclusive"
-        )
+        # Add minimal spacing before bio
+        header_layout.addSpacing(5)
+        
+        # Bio/description - compact
+        bio = QLabel("🔒 Open-source app lock\n🛡️ Privacy-focused\n📦 GitHub exclusive")
         bio.setStyleSheet("""
             QLabel {
                 color: #d32f2f;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: bold;
-                line-height: 1.5;
+                line-height: 1.4;
             }
         """)
         bio.setWordWrap(True)
