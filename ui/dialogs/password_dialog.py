@@ -120,7 +120,7 @@ class PasswordDialog(QDialog):
         # Spacer
         content_layout.addSpacing(8)
         
-        # Password input - compact design
+        # Password input - compact design with red theme
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.password_input.setPlaceholderText("Enter your password")
@@ -129,13 +129,13 @@ class PasswordDialog(QDialog):
             QLineEdit {
                 padding: 0 14px;
                 font-size: 13px;
-                border: 1px solid #3a3a3a;
+                border: 2px solid #3a3a3a;
                 border-radius: 6px;
                 background-color: #2b2b2b;
                 color: #ffffff;
             }
             QLineEdit:focus {
-                border: 1px solid #10b981;
+                border: 2px solid #d32f2f;
                 background-color: #2e2e2e;
             }
             QLineEdit::placeholder {
@@ -177,7 +177,7 @@ class PasswordDialog(QDialog):
         ok_button.setFixedSize(120, 36)
         ok_button.setStyleSheet("""
             QPushButton {
-                background-color: #10b981;
+                background-color: #d32f2f;
                 color: white;
                 border: none;
                 border-radius: 6px;
@@ -185,10 +185,10 @@ class PasswordDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton:hover {
-                background-color: #059669;
+                background-color: #b71c1c;
             }
             QPushButton:pressed {
-                background-color: #047857;
+                background-color: #9a0007;
             }
         """)
         ok_button.clicked.connect(self.on_ok)

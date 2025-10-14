@@ -7,7 +7,8 @@ from PyQt6.QtGui import QPixmap, QFont
 
 class ReadmeDialog(QDialog):
     def __init__(self, resource_path, parent=None):
-        super().__init__(parent)
+        # Make it independent top-level window (no parent) so it stays visible
+        super().__init__(None)
         self.resource_path = resource_path
         self.current_index = 0
         self.animation_timer = None
@@ -39,38 +40,70 @@ class ReadmeDialog(QDialog):
         
     def init_ui(self):
         """Initialize the fullscreen dialog UI"""
-        # Set fullscreen and remove window decorations
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        # Set fullscreen and remove window decorations - truly independent window
+        self.setWindowFlags(
+            Qt.WindowType.Window |  # Independent window (not child)
+            Qt.WindowType.FramelessWindowHint |  # No title bar
+            Qt.WindowType.WindowStaysOnTopHint |  # Always on top
+            Qt.WindowType.BypassWindowManagerHint  # Bypass window manager
+        )
+        # Make dialog modal
+        self.setModal(True)
+        
+        # Show fullscreen
         self.showFullScreen()
         
-        # White background
-        self.setStyleSheet("QDialog { background-color: white; }")
+        # Force activation
+        self.activateWindow()
+        self.raise_()
         
-        # Main layout
-        layout = QVBoxLayout()
-        layout.setContentsMargins(50, 50, 50, 50)
-        layout.setSpacing(20)
+        # Dark background theme
+        self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
         
-        # Animated text label
+        # Main layout - use grid for image + text
+        from PyQt6.QtWidgets import QGridLayout, QSizePolicy
+        
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(60, 40, 60, 40)
+        main_layout.setSpacing(20)
+        
+        # Content grid (text on left, image on right)
+        content_grid = QGridLayout()
+        content_grid.setSpacing(30)
+        
+        # Text label with dark theme (spans full height)
         self.text_label = QLabel("")
         self.text_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.text_label.setWordWrap(True)
-        self.text_label.setStyleSheet("QLabel { color: black; background-color: transparent; }")
+        self.text_label.setStyleSheet("QLabel { color: white; background-color: transparent; }")
+        self.text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
-        # Set font - try Ubuntu first, fallback to system default
-        font = QFont("Ubuntu", 14)
+        # Set font
+        font = QFont("Ubuntu", 15)
         if not font.exactMatch():
-            font = QFont("Arial", 14)
+            font = QFont("Arial", 15)
         self.text_label.setFont(font)
         
-        layout.addWidget(self.text_label, 1)
+        # Image label
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setStyleSheet("background-color: transparent;")
+        self.image_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         
-        # OK Button
+        # Add to grid: text takes 70%, image takes 30%
+        content_grid.addWidget(self.text_label, 0, 0, 1, 7)  # Text: 7 columns
+        content_grid.addWidget(self.image_label, 0, 7, 1, 3)  # Image: 3 columns
+        content_grid.setColumnStretch(0, 7)  # Text column stretch
+        content_grid.setColumnStretch(7, 3)  # Image column stretch
+        
+        main_layout.addLayout(content_grid, 1)
+        
+        # OK Button (red theme)
         self.ok_button = QPushButton("OK")
         self.ok_button.setFixedSize(150, 40)
         self.ok_button.setStyleSheet("""
             QPushButton {
-                background-color: #dc3545;
+                background-color: #d32f2f;
                 color: white;
                 border: none;
                 border-radius: 5px;
@@ -78,46 +111,66 @@ class ReadmeDialog(QDialog):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #c82333;
+                background-color: #b71c1c;
             }
             QPushButton:pressed {
-                background-color: #bd2130;
+                background-color: #9a0007;
             }
         """)
         self.ok_button.clicked.connect(self.accept)
         
         button_layout = QVBoxLayout()
         button_layout.addWidget(self.ok_button, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addLayout(button_layout)
+        main_layout.addLayout(button_layout)
         
-        self.setLayout(layout)
+        self.setLayout(main_layout)
         
         self.load_readme_image()
         self.start_animation()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         
     def load_readme_image(self):
-        """Load and display the readme image in bottom left corner"""
+        """Load and display the readme image using layout"""
+        import os
         try:
             img_path = self.resource_path("img/readme.png")
-            pixmap = QPixmap(img_path)
+            print(f"\n[README IMAGE] Loading from: {img_path}")
             
-            if not pixmap.isNull():
-                image_label = QLabel(self)
-                scaled_pixmap = pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, 
-                                              Qt.TransformationMode.SmoothTransformation)
-                image_label.setPixmap(scaled_pixmap)
-                image_label.move(10, self.height() - 410)
-                image_label.show()
+            if not os.path.exists(img_path):
+                print(f"[README IMAGE] ❌ File not found!")
+                return
+            
+            pixmap = QPixmap(img_path)
+            if pixmap.isNull():
+                print(f"[README IMAGE] ❌ Failed to load pixmap")
+                return
+            
+            print(f"[README IMAGE] Original size: {pixmap.width()}x{pixmap.height()}")
+            
+            # Scale to reasonable size for side column
+            scaled_pixmap = pixmap.scaled(
+                400, 400,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            
+            print(f"[README IMAGE] Scaled size: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
+            
+            self.image_label.setPixmap(scaled_pixmap)
+            self.image_label.setFixedSize(scaled_pixmap.size())
+            
+            print(f"[README IMAGE] ✅ Image loaded and displayed")
+            
         except Exception as e:
-            print(f"Error loading readme image: {e}")
+            print(f"[README IMAGE] ❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
     
     def start_animation(self):
-        """Start the typewriter animation"""
-        self.current_index = 0
-        self.animation_timer = QTimer(self)
-        self.animation_timer.timeout.connect(self.animate_text)
-        self.animation_timer.start(2)
+        """Start the typewriter animation - instant for faster display"""
+        # Show all text immediately (animation too slow for large text)
+        self.text_label.setText(self.full_text)
+        print("[README] Text displayed instantly (no animation)")
     
     def animate_text(self):
         """Animate text character by character"""
