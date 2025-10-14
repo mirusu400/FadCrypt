@@ -1,10 +1,10 @@
 """
 Windows Mock Module for Testing on Linux
-Usage: python FadCrypt.py --mock-windows
+Usage: python FadCrypt.py --windows
 
 IMPORTANT: This does NOT change sys.platform to avoid breaking psutil.
 Instead, it only mocks Windows-specific APIs (winreg, ctypes.windll).
-The UI detection is handled by the --mock-windows flag directly.
+The UI detection is handled by the --windows flag directly.
 """
 
 import sys
@@ -15,7 +15,7 @@ def setup_windows_mocks():
     """Set up Windows mocks for Linux testing (without changing sys.platform)"""
     print("🧪 [MOCK] Setting up Windows API simulation...")
     print("🧪 [MOCK] Note: sys.platform remains 'linux' to keep psutil working")
-    print("🧪 [MOCK] UI will use Windows mode via --mock-windows flag detection")
+    print("🧪 [MOCK] UI will use Windows mode via --windows flag detection")
     
     # Set up Windows environment variables
     home = os.path.expanduser('~')

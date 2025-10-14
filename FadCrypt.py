@@ -74,8 +74,8 @@ def get_main_window_class(force_windows=False):
 def main():
     """Main entry point for FadCrypt PyQt6 application."""
     
-    # Check for --mock-windows flag BEFORE any imports
-    mock_windows = '--mock-windows' in sys.argv
+    # Check for --windows flag BEFORE any imports
+    mock_windows = '--windows' in sys.argv
     if mock_windows:
         print("🧪 Mock Windows mode enabled - simulating Windows environment on Linux")
         from win_mock import setup_windows_mocks

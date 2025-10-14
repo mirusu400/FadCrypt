@@ -212,7 +212,7 @@ class SettingsPanel(QWidget):
         self.lock_tools_checkbox = QCheckBox(
             self._get_lock_tools_checkbox_text()
         )
-        self.lock_tools_checkbox.setChecked(True)
+        self.lock_tools_checkbox.setChecked(False)  # Default: Disabled for safety
         self.lock_tools_checkbox.setStyleSheet("""
             QCheckBox {
                 color: #e0e0e0;
@@ -372,7 +372,7 @@ class SettingsPanel(QWidget):
         else:
             self.lab_wallpaper_radio.setChecked(True)
             
-        self.lock_tools_checkbox.setChecked(settings.get('lock_tools', True))
+        self.lock_tools_checkbox.setChecked(settings.get('lock_tools', False))  # Default: False for safety
         
         self.on_settings_changed()
     
@@ -391,13 +391,13 @@ class SettingsPanel(QWidget):
         """Get platform-specific info text for lock tools"""
         if self.platform_name == "Windows":
             return (
-                "(Default: All are disabled for best security. Tools are automatically re-enabled when monitoring is stopped. "
-                "For added security, please disable PowerShell as well; search on internet for help. "
-                "Otherwise, FadCrypt could be terminated via PowerShell.)"
+                "Enable this to COMPLETELY LOCK OUT these tools (no access at all). "
+                "For password-protected access instead, keep this DISABLED and add tools to the Application tab. "
+                "(Tools: Command Prompt, Registry Editor, Control Panel, msconfig, Task Manager)"
             )
         else:  # Linux
             return (
-                "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security. "
-                "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually; "
-                "otherwise, FadCrypt could be terminated via terminal.)"
+                "Enable this to COMPLETELY LOCK OUT these tools (no access at all). "
+                "For password-protected access instead, keep this DISABLED and add terminals to the Application tab. "
+                "(Tools: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, top)"
             )
