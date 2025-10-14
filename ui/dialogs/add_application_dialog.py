@@ -98,14 +98,25 @@ class AddApplicationDialog(QDialog):
         manual_group = QGroupBox("Or Manually Add Application")
         manual_layout = QVBoxLayout()
         
-        # Helper text
-        helper_label = QLabel(
-            "To find an executable path, use the 'which' command in terminal:\n"
-            "❯ which firefox\n"
-            "/usr/bin/firefox\n\n"
-            "Paste the exact path (with slashes) in the Path field below.\n"
-            "For Name, use any readable name like 'Firefox'."
-        )
+        # Helper text (cross-platform)
+        import sys
+        if sys.platform.startswith('win'):
+            helper_text = (
+                "To find an executable path on Windows:\n"
+                "• Use 'Browse' button below\n"
+                "• Or right-click app shortcut → Properties → Target\n\n"
+                "Example: C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+            )
+        else:
+            helper_text = (
+                "To find an executable path, use the 'which' command in terminal:\n"
+                "❯ which firefox\n"
+                "/usr/bin/firefox\n\n"
+                "Paste the exact path (with slashes) in the Path field below.\n"
+                "For Name, use any readable name like 'Firefox'."
+            )
+        
+        helper_label = QLabel(helper_text)
         helper_label.setStyleSheet("""
             color: #93c5fd;
             font-size: 9pt;
@@ -311,15 +322,22 @@ class AddApplicationDialog(QDialog):
         self.drop_area.setText(f"✓ File added:\n{app_name}\n{file_path}")
     
     def is_executable(self, file_path):
-        """Check if file is executable"""
-        # Linux executable extensions
-        linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin', '.py', '.pl', '.rb')
+        """Check if file is executable (cross-platform)"""
+        import sys
         
-        return (
-            file_path.endswith(linux_executables) or
-            os.access(file_path, os.X_OK) or
-            self.is_elf_binary(file_path)
-        )
+        if sys.platform.startswith('win'):
+            # Windows executables
+            windows_executables = ('.exe', '.bat', '.cmd', '.msi', '.com')
+            return file_path.lower().endswith(windows_executables)
+        else:
+            # Linux executable extensions
+            linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin', '.py', '.pl', '.rb')
+            
+            return (
+                file_path.endswith(linux_executables) or
+                os.access(file_path, os.X_OK) or
+                self.is_elf_binary(file_path)
+            )
     
     def is_elf_binary(self, file_path):
         """Check if the file is an ELF binary (Linux executable format)"""
@@ -331,11 +349,19 @@ class AddApplicationDialog(QDialog):
     
     def browse_for_file(self):
         """Open file browser to select executable"""
+        import sys
+        
+        # Set file filter based on platform
+        if sys.platform.startswith('win'):
+            file_filter = "Executables (*.exe *.bat *.cmd);;All Files (*)"
+        else:
+            file_filter = "All Files (*)"
+        
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Application Executable",
             os.path.expanduser("~"),
-            "All Files (*)"
+            file_filter
         )
         
         if file_path:

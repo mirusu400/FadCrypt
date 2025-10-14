@@ -143,8 +143,67 @@ class AppScannerThread(QThread):
     
     def _scan_windows_applications(self) -> List[Dict[str, str]]:
         """Scan Windows system for applications."""
-        # Placeholder - Windows implementation
-        return []
+        apps = []
+        program_dirs = [
+            r"C:\Program Files",
+            r"C:\Program Files (x86)",
+            os.path.expanduser(r"~\AppData\Local\Programs")
+        ]
+        
+        self.scan_progress.emit(f"Scanning {len(program_dirs)} directories...")
+        
+        for prog_dir in program_dirs:
+            if not os.path.exists(prog_dir):
+                continue
+            
+            self.scan_progress.emit(f"Scanning {prog_dir}...")
+            
+            try:
+                for root, dirs, files in os.walk(prog_dir):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            filepath = os.path.join(root, file)
+                            name = os.path.splitext(file)[0]
+                            
+                            # Skip system files and installers
+                            if any(skip in name.lower() for skip in ['unins', 'uninst', 'setup', 'install']):
+                                continue
+                            
+                            # Avoid duplicates
+                            if not any(app['name'] == name for app in apps):
+                                apps.append({
+                                    'name': name,
+                                    'path': filepath,
+                                    'icon': filepath,  # Windows can extract icon from .exe
+                                    'category': self._categorize_windows_app(filepath),
+                                    'desktop_file': ''
+                                })
+                                self.scan_progress.emit(f"Found: {name}")
+            except (PermissionError, OSError) as e:
+                print(f"[Scanner] Error scanning {prog_dir}: {e}")
+        
+        return sorted(apps, key=lambda x: x['name'].lower())
+    
+    def _categorize_windows_app(self, filepath: str) -> str:
+        """Categorize Windows app based on install location"""
+        filepath_lower = filepath.lower()
+        
+        if 'steam' in filepath_lower or 'games' in filepath_lower:
+            return 'Games'
+        elif 'microsoft office' in filepath_lower or 'libreoffice' in filepath_lower:
+            return 'Office'
+        elif any(x in filepath_lower for x in ['chrome', 'firefox', 'edge', 'browser']):
+            return 'Internet'
+        elif any(x in filepath_lower for x in ['vscode', 'visual studio', 'pycharm', 'intellij', 'eclipse']):
+            return 'Development'
+        elif any(x in filepath_lower for x in ['photoshop', 'gimp', 'paint', 'illustrator']):
+            return 'Graphics'
+        elif any(x in filepath_lower for x in ['vlc', 'media', 'spotify', 'itunes', 'winamp']):
+            return 'Multimedia'
+        elif 'system32' in filepath_lower or 'windows' in filepath_lower:
+            return 'System'
+        else:
+            return 'Other'
     
     def _scan_macos_applications(self) -> List[Dict[str, str]]:
         """Scan macOS system for applications."""
