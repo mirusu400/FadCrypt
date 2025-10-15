@@ -2,3 +2,27 @@
 FadCrypt Core Module
 This module contains shared functionality used by both Windows and Linux versions.
 """
+
+from .config_manager import ConfigManager
+from .application_manager import ApplicationManager
+from .unified_monitor import UnifiedMonitor
+from .crypto_manager import CryptoManager
+from .password_manager import PasswordManager
+from .autostart_manager import (
+    AutostartManagerBase,
+    AutostartManagerLinux,
+    AutostartManagerWindows,
+    get_autostart_manager
+)
+
+__all__ = [
+    'ConfigManager',
+    'ApplicationManager',
+    'UnifiedMonitor',
+    'CryptoManager',
+    'PasswordManager',
+    'AutostartManagerBase',
+    'AutostartManagerLinux',
+    'AutostartManagerWindows',
+    'get_autostart_manager',
+]

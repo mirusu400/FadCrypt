@@ -1,195 +1,61 @@
-#!/usr/bin/env python3
-# Handle --cleanup flag FIRST, before any GUI imports
-import sys
 import os
-
-if '--cleanup' in sys.argv:
-    import subprocess
-    print("[CLEANUP] Starting FadCrypt cleanup...", flush=True)
-    
-    try:
-        # Get user's home directory
-        if 'SUDO_USER' in os.environ:
-            import pwd
-            user_home = pwd.getpwnam(os.environ['SUDO_USER']).pw_dir
-            print(f"[CLEANUP] Running as sudo, user home: {user_home}", flush=True)
-        else:
-            user_home = os.path.expanduser('~')
-            print(f"[CLEANUP] User home: {user_home}", flush=True)
-        
-        fadcrypt_folder = os.path.join(user_home, '.FadCrypt')
-        disabled_tools_file = os.path.join(fadcrypt_folder, 'disabled_tools.txt')
-        
-        # List of common system tools that might have been disabled
-        all_tools = [
-            '/usr/bin/gnome-terminal',
-            '/usr/bin/konsole',
-            '/usr/bin/xterm',
-            '/usr/bin/gnome-system-monitor',
-            '/usr/bin/htop',
-            '/usr/bin/top',
-            '/usr/bin/gnome-control-center'
-        ]
-        
-        print(f"[CLEANUP] Checking {len(all_tools)} common system tools...", flush=True)
-        
-        # Re-enable all tools (regardless of whether they were disabled)
-        success_count = 0
-        tools_to_restore = []
-        
-        # First, check which tools need restoring
-        for tool in all_tools:
-            if os.path.exists(tool):
-                try:
-                    stat_info = os.stat(tool)
-                    current_perms = oct(stat_info.st_mode)[-3:]
-                    print(f"[CLEANUP] Tool: {tool} (current perms: {current_perms})", flush=True)
-                    
-                    # Only restore if execute permission is missing (was disabled)
-                    if not (stat_info.st_mode & 0o111):
-                        tools_to_restore.append(tool)
-                except Exception as e:
-                    print(f"[CLEANUP] ✗ Error checking {tool}: {e}", flush=True)
-            else:
-                print(f"[CLEANUP] - Tool not found: {tool}", flush=True)
-        
-        # Restore permissions for all disabled tools in one sudo command
-        if tools_to_restore:
-            print(f"[CLEANUP] Restoring {len(tools_to_restore)} disabled tools...", flush=True)
-            
-            # Build a single command to restore all tools
-            chmod_commands = [f'chmod 755 "{tool}"' for tool in tools_to_restore]
-            full_command = ' && '.join(chmod_commands)
-            
-            try:
-                # Check if we're running via dpkg (SUDO_USER is set but we need root perms)
-                # In this case, the prerm script should run us with root privileges
-                running_via_dpkg = 'SUDO_USER' in os.environ
-                
-                if running_via_dpkg:
-                    # We're being called from dpkg prerm, permissions should be available
-                    print(f"[CLEANUP] Running via dpkg, using direct chmod", flush=True)
-                    result = subprocess.run(['bash', '-c', full_command], 
-                                          capture_output=True, 
-                                          text=True,
-                                          check=False)
-                elif os.geteuid() != 0:
-                    # Not root and not via dpkg, need to use sudo
-                    print(f"[CLEANUP] Not root, using sudo", flush=True)
-                    result = subprocess.run(['sudo', 'bash', '-c', full_command], 
-                                          capture_output=True, 
-                                          text=True,
-                                          check=False)
-                else:
-                    # Already root
-                    print(f"[CLEANUP] Running as root", flush=True)
-                    result = subprocess.run(['bash', '-c', full_command], 
-                                          capture_output=True, 
-                                          text=True,
-                                          check=False)
-                
-                if result.returncode == 0:
-                    print(f"[CLEANUP] ✓ Successfully restored all tools", flush=True)
-                    success_count = len(tools_to_restore)
-                else:
-                    print(f"[CLEANUP] ✗ Failed to restore some tools: {result.stderr.strip()}", flush=True)
-                    # Try individual restoration
-                    for tool in tools_to_restore:
-                        try:
-                            if running_via_dpkg or os.geteuid() == 0:
-                                result = subprocess.run(['chmod', '755', tool], 
-                                                      capture_output=True, text=True, check=False)
-                            else:
-                                result = subprocess.run(['sudo', 'chmod', '755', tool], 
-                                                      capture_output=True, text=True, check=False)
-                            
-                            if result.returncode == 0:
-                                print(f"[CLEANUP] ✓ Restored: {tool}", flush=True)
-                                success_count += 1
-                        except Exception as e:
-                            print(f"[CLEANUP] ✗ Error with {tool}: {e}", flush=True)
-            except Exception as e:
-                print(f"[CLEANUP] ✗ Error restoring permissions: {e}", flush=True)
-        
-        print(f"[CLEANUP] Successfully restored {success_count}/{len(all_tools)} tools", flush=True)
-        
-        # Remove the disabled_tools.txt tracking file if it exists
-        if os.path.exists(disabled_tools_file):
-            try:
-                os.remove(disabled_tools_file)
-                print(f"[CLEANUP] Removed tracking file: {disabled_tools_file}", flush=True)
-            except Exception as e:
-                print(f"[CLEANUP] Could not remove tracking file: {e}", flush=True)
-        
-        # Remove autostart entries
-        autostart_dir = os.path.join(user_home, '.config', 'autostart')
-        for autostart_name in ['fadcrypt-autostart.desktop', 'FadCrypt.desktop']:
-            autostart_file = os.path.join(autostart_dir, autostart_name)
-            if os.path.exists(autostart_file):
-                try:
-                    os.remove(autostart_file)
-                    print(f"[CLEANUP] Removed autostart: {autostart_file}", flush=True)
-                except Exception as e:
-                    print(f"[CLEANUP] Could not remove autostart: {e}", flush=True)
-        
-        # Remove lock file
-        lock_file = '/tmp/fadcrypt.lock'
-        if os.path.exists(lock_file):
-            try:
-                os.remove(lock_file)
-                print(f"[CLEANUP] Removed lock file: {lock_file}", flush=True)
-            except Exception as e:
-                print(f"[CLEANUP] Could not remove lock file: {e}", flush=True)
-        
-        print("[CLEANUP] Cleanup completed successfully!", flush=True)
-        sys.exit(0)
-        
-    except Exception as e:
-        print(f"[CLEANUP] Fatal error during cleanup: {e}", flush=True)
-        sys.exit(1)
-
-# Now import GUI libraries (only if not running cleanup)
-
 import json
 import threading
 import subprocess
 import time
+import getpass
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
+from cryptography.exceptions import InvalidTag
 import psutil
 import tkinter as tk
-from tkinter import ttk, filedialog, PhotoImage, messagebox
+from tkinter import ttk, simpledialog, messagebox, filedialog, PhotoImage
+
+# Import Windows compatibility layer for Linux testing
+import sys
+if sys.platform.startswith('linux'):
+    import win_compat  # noqa: F401 - This provides mock winreg/ctypes.windll
+
+import winreg
 import signal
-from PIL import Image
+from PIL import Image, ImageDraw
 from pystray import Icon, Menu, MenuItem
+import sys
 import base64
 from cryptography.fernet import Fernet
 import shutil
+import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from tkinterdnd2 import TkinterDnD, DND_FILES
+from tkinterdnd2 import TkinterDnD, DND_FILES  # Import the tkinterdnd2 module
+import ctypes
 from ttkbootstrap import Style
 from PIL import Image, ImageTk
 import webbrowser
 import random
 import requests
 import pygame
-import shlex          
-import fcntl
+from ctypes import wintypes
+
+# App Version Information - imported from central version file
+from version import __version__, __version_code__
 
 # Import shared core modules
 from core.config_manager import ConfigManager
 from core.application_manager import ApplicationManager
 from core.unified_monitor import UnifiedMonitor
-import atexit
-
-# App Version Information - imported from central version file
-from version import __version__, __version_code__
 
 
+# Embedded configuration and state data
+embedded_config = {
+    "applications": []
+}
 
+embedded_state = {
+    "unlocked_apps": []
+}
 
 
 class AppLockerGUI:
@@ -201,8 +67,8 @@ class AppLockerGUI:
         # Center the dialog on the screen
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
-        dialog_width = 700  # Increased width
-        dialog_height = 650  # Increased height to prevent truncation
+        dialog_width = 700  # Adjust width as needed
+        dialog_height = 650  # Adjust height as needed
         position_x = (screen_width // 2) - (dialog_width // 2)
         position_y = (screen_height // 2) - (dialog_height // 2)
         self.master.geometry(f"{dialog_width}x{dialog_height}+{position_x}+{position_y}")
@@ -225,6 +91,9 @@ class AppLockerGUI:
             app_locker=None,  # Will be set after app_locker is created
             get_fadcrypt_folder_func=lambda: self.app_locker.get_fadcrypt_folder()
         )
+        
+        # Initialize shared ApplicationManager
+        self.app_manager = None  # Will be initialized in create_widgets after tabs are created
 
         self.set_app_icon()  # Set the custom app icon
         self.create_widgets()
@@ -277,7 +146,7 @@ class AppLockerGUI:
 
         
         # Drag and Drop Area
-        drop_frame = tk.LabelFrame(self.add_dialog, text="Drag and Drop Executable Here")
+        drop_frame = tk.LabelFrame(self.add_dialog, text="Drag and Drop .exe Here")
         drop_frame.pack(padx=10, pady=10, fill="both", expand=True)
 
         # Use TkinterDnD for drag-and-drop functionality
@@ -306,16 +175,6 @@ class AppLockerGUI:
         # Manual Input Area
         manual_frame = tk.LabelFrame(self.add_dialog, text="Or Manually Add Application")
         manual_frame.pack(padx=10, pady=10, fill="both", expand=True)
-
-        # Helper text for finding executables
-        helper_text = tk.Label(manual_frame, text=(
-            "To find an executable path, use the 'which' command in terminal:\n"
-            "❯ which firefox\n"
-            "/usr/bin/firefox\n\n"
-            "Paste the exact path (with slashes) in the Path field below.\n"
-            "For Name, use any readable name like 'Firefox'."
-        ), justify="left", fg="blue", font=("Arial", 9))
-        helper_text.pack(pady=5, padx=10, anchor="w")
 
         tk.Label(manual_frame, text="Name:").pack(pady=5)
         self.name_entry = tk.Entry(manual_frame)
@@ -363,24 +222,8 @@ class AppLockerGUI:
 
 
     def on_drop(self, event):
-        file_path = event.data.strip('{}')
-
-        # Check if the file exists first
-        if not os.path.exists(file_path):
-            self.show_message("Invalid File", "File does not exist.")
-            return
-
-        # Linux executable extensions and patterns
-        linux_executables = ('.desktop', '.sh', '.AppImage', '.run', '.bin', '.py', '.pl', '.rb')
-
-        # Check if it's a valid executable
-        is_executable = (
-            file_path.endswith(linux_executables) or
-            os.access(file_path, os.X_OK) or  # Check if file has execute permissions
-            self.is_elf_binary(file_path)  # Check if it's an ELF binary
-        )
-
-        if is_executable:
+        file_path = event.data.strip('{}')  # Strip curly braces if present
+        if file_path.endswith('.exe'):
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, file_path)
 
@@ -388,29 +231,17 @@ class AppLockerGUI:
             self.name_entry.delete(0, tk.END)
             self.name_entry.insert(0, app_name)
         else:
-            self.show_message("Invalid File", "Please drop a valid executable file.")
-
-    def is_elf_binary(self, file_path):
-        """Check if the file is an ELF binary (Linux executable format)"""
-        try:
-            with open(file_path, 'rb') as f:
-                # ELF files start with the magic bytes: 0x7f, 'E', 'L', 'F'
-                magic = f.read(4)
-                return magic == b'\x7fELF'
-        except (IOError, OSError):
-            return False
+            self.show_message("Invalid File", "Please drop a valid .exe file.")
 
     def browse_for_file(self):
-        # Update filetypes for Linux (allow selection of any executable file)
-        file_path = filedialog.askopenfilename(filetypes=[("Executable Files", "*.*")])
+        file_path = filedialog.askopenfilename(filetypes=[("Executable Files", "*.exe")])
         if file_path:
             self.path_entry.delete(0, tk.END)
             self.path_entry.insert(0, file_path)
-
+            
             app_name = os.path.basename(file_path)
             self.name_entry.delete(0, tk.END)
             self.name_entry.insert(0, app_name)
-
 
     def save_application(self):
         app_name = self.name_entry.get().strip()
@@ -439,16 +270,26 @@ class AppLockerGUI:
 
     def set_app_icon(self):
         try:
-            # Only use .png icon for Linux
-            png_path = self.resource_path('img/icon.png')
+            # Load the .ico icon image for the taskbar (Windows)
+
+            # Image for the main tab's logo above the start monitoring button
+            ico_path = self.resource_path('img/1.ico')  # Update this path to your .ico file
+            if os.path.exists(ico_path):
+                self.master.iconbitmap(ico_path)
+            else:
+                print(f"Icon file {ico_path} not found, skipping .ico icon.")
+
+            # Load the .png icon image for the window icon
+            # taskbar and topbar image
+            png_path = self.resource_path('img/icon.png')  # Update this path to your .png file to set the app icon which appears in startbar and in the topbar
             if os.path.exists(png_path):
                 icon_img = PhotoImage(file=png_path)
                 self.master.iconphoto(False, icon_img)
             else:
-                print(f"Icon file {png_path} not found, skipping icon setting.")
+                print(f"Icon file {png_path} not found, skipping .png icon.")
+
         except Exception as e:
             print(f"Failed to set application icon: {e}")
-
 
 
 
@@ -507,7 +348,6 @@ class AppLockerGUI:
 
 
 
-
         # Create a frame for the footer
         footer_frame = ttk.Frame(self.main_frame)
         footer_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -546,6 +386,7 @@ class AppLockerGUI:
 
 
 
+        # Config Tab (moved before Applications tab to match Linux version)
         # Config Tab with scrollable content
         self.config_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.config_frame, text="Config")
@@ -576,6 +417,24 @@ class AppLockerGUI:
         self.config_text = tk.Text(scrollable_config_frame, width=70, height=17, wrap=tk.WORD)
         self.config_text.pack(pady=5, padx=15, fill=tk.X, expand=False)
         self.update_config_display()
+
+
+        # Applications Tab - Using shared ApplicationManager
+        self.app_manager = ApplicationManager(
+            app_locker=self.app_locker,
+            master=self.master,
+            notebook=self.notebook,
+            resource_path_func=self.resource_path,
+            show_message_func=self.show_message,
+            update_config_display_func=self.update_config_display,
+            is_linux=False
+        )
+        
+        # Set callback for Add button
+        self.app_manager.add_application_callback = self.open_add_application_dialog
+        
+        # Keep references to ApplicationManager's components
+        self.apps_frame = self.app_manager.apps_frame
 
         # Description below the config text box
         config_description = ttk.Label(scrollable_config_frame, text=(
@@ -608,25 +467,6 @@ class AppLockerGUI:
 
         import_button = ttk.Button(buttons_container, text="Import Config", command=self.import_config, style="blue.TButton")
         import_button.pack(side="left")
-
-        # Applications Tab - Using shared ApplicationManager
-        self.app_manager = ApplicationManager(
-            app_locker=self.app_locker,
-            master=self.master,
-            notebook=self.notebook,
-            resource_path_func=self.resource_path,
-            show_message_func=self.show_message,
-            update_config_display_func=self.update_config_display,
-            is_linux=True
-        )
-        
-        # Set callback for Add button
-        self.app_manager.add_application_callback = self.open_add_application_dialog
-        
-        # Keep references to ApplicationManager's components
-        self.apps_frame = self.app_manager.apps_frame
-        self.app_count_label = self.app_manager.app_count_label
-
 
 
 
@@ -725,6 +565,7 @@ class AppLockerGUI:
 
 
 
+
         # Radio buttons
         ttk.Label(left_frame, text="Password Dialog Style:", font=("TkDefaultFont", 10, "bold")).pack(anchor="w", pady=10)
         ttk.Radiobutton(left_frame, text="Simple Dialog", variable=self.password_dialog_style, value="simple", command=self.save_and_update_preview).pack(anchor="w", padx=20, pady=0)
@@ -735,6 +576,7 @@ class AppLockerGUI:
         ttk.Radiobutton(left_frame, text="Binary", variable=self.wallpaper_choice, value="Binary", command=self.save_and_update_wallpaper).pack(anchor="w", padx=20, pady=0)
         ttk.Radiobutton(left_frame, text="Encryptedddddd", variable=self.wallpaper_choice, value="encrypted", command=self.save_and_update_wallpaper).pack(anchor="w", padx=20, pady=20)
         # ttk.Radiobutton(left_frame, text="Lab", variable=self.wallpaper_choice, value="Lab", command=self.save_and_update_wallpaper).pack(anchor="w", padx=20, pady=0)
+
 
 
 
@@ -756,6 +598,9 @@ class AppLockerGUI:
 
 
 
+
+
+
         # Checkbox (full width)
         self.lock_tools_var = tk.BooleanVar(value=True)
         
@@ -763,10 +608,9 @@ class AppLockerGUI:
         lock_tools_checkbox_title.pack(anchor="w", pady=5, padx=27)
         lock_tools_checkbox = ttk.Checkbutton(
             bottom_frame,
-            text="Disable common terminals and system monitors during monitoring.\n"
-            "(Default: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, and top are disabled for best security.\n"
-            "Tools are automatically re-enabled when monitoring is stopped. For added security, please disable other terminals manually;\n"
-            "otherwise, FadCrypt could be terminated via terminal.)",
+            text="Disable Command Prompt, Registry Editor, Control Panel, msconfig, and Task Manager during monitoring.\n"
+            "(Default: All are disabled for best security. For added security, please disable PowerShell as well; search\n"
+            "on internet for help. Otherwise, FadCrypt could be terminated via PowerShell.)",
             variable=self.lock_tools_var,
             command=self.save_settings
         )
@@ -781,10 +625,10 @@ class AppLockerGUI:
         locations_info = ttk.Label(
             bottom_frame,
             text="Main Configuration Folder:\n"
-                 "  ~/.FadCrypt/\n"
+                 "  C:\\Users\\<YourUsername>\\AppData\\Roaming\\FadCrypt\\\n"
                  "  (Stores: config.json, encrypted_password.bin, state.json, settings.json)\n\n"
                  "Backup Folder:\n"
-                 "  ~/.local/share/FadCrypt/Backup/\n"
+                 "  C:\\ProgramData\\FadCrypt\\Backup\\\n"
                  "  (Stores: backup copies of critical files for recovery)",
             justify="left",
             foreground="#888888"
@@ -800,7 +644,8 @@ class AppLockerGUI:
         cleanup_info = ttk.Label(
             bottom_frame,
             text="Before uninstalling FadCrypt, run this cleanup to restore all system settings.\n"
-                 "This will re-enable disabled terminals, system monitors, and remove autostart entries.",
+                 "This will re-enable Task Manager, Command Prompt, Registry Editor, and remove autostart entries.\n"
+                 "Requires administrator privileges.",
             justify="left",
             foreground="#888888"
         )
@@ -972,33 +817,47 @@ class AppLockerGUI:
 
     def check_for_updates(self):
         try:
-            response = requests.get("https://api.github.com/repos/anonfaded/FadCrypt/releases/latest")
+            # Get the latest release info from GitHub
+            response = requests.get("https://api.github.com/repos/anonfaded/FadCrypt/releases")
             response.raise_for_status()  # Ensure we got a valid response
+            releases = response.json()
 
-            latest_version = response.json().get("tag_name", None)
-            current_version = __version__
-
+            # Find the latest version that starts with 'v'
+            latest_version = None
+            for release in releases:
+                tag = release.get("tag_name", "")
+                if tag.startswith('v'):
+                    latest_version = tag
+                    latest_release = release
+                    break
+            
             if latest_version:
                 # Compare versions properly (strip 'v' prefix for comparison)
                 latest_ver = latest_version.lstrip('v')
-                current_ver = current_version.lstrip('v')
+                current_ver = __version__.lstrip('v')
                 
                 # Split version into parts and compare
                 latest_parts = [int(x) for x in latest_ver.split('.')]
                 current_parts = [int(x) for x in current_ver.split('.')]
                 
                 if latest_parts > current_parts:
-                    self.show_message("Update Available", f"New version {latest_version} is available! Visit GitHub for more details.")
+                    update_message = f"New version {latest_version} is available!\nYou are currently on version {__version__}.\n\nWould you like to download the update?"
+                    if messagebox.askyesno("Update Available", update_message):
+                        webbrowser.open(latest_release["html_url"])
                 else:
-                    self.show_message("Up to Date", "Your application is up to date.")
+                    self.show_message("Up to Date", f"You are running the latest version ({__version__})")
             else:
                 self.show_message("Error", "Could not retrieve version information.")
+
         except requests.ConnectionError:
             self.show_message("Connection Error", "Unable to check for updates. Please check your internet connection.")
         except requests.HTTPError as http_err:
             self.show_message("HTTP Error", f"HTTP error occurred:\n{http_err}")
         except Exception as e:
             self.show_message("Error", f"An error occurred while checking for updates: {str(e)}")
+
+
+
 
 
 
@@ -1042,10 +901,10 @@ class AppLockerGUI:
             "- Auto-Startup: After starting monitoring, the app will be automatically enabled for every session.\n"
             "- Aesthetic UI: Choose custom wallpapers or a minimal style with smooth animations.\n\n"
             "Security:\n"
-            "- System Tools Disabled: Disables common terminals (gnome-terminal, konsole, xterm) and system monitors\n  (gnome-system-monitor, htop, top); a real nightmare for attackers trying to bypass it.\n  Manual disabling of other terminals is recommended as it's a significant loophole!\n"
+            "- System Tools Disabled: Disables Command Prompt, Task Manager, msconfig, Control Panel, and Registry Editor;\n  a real nightmare for attackers trying to bypass it.\n  Manual PowerShell disabling is recommended as it's a significant loophole!\n"
             "- Encrypted Storage: Passwords and config file data (list of locked apps) are encrypted and backed up.\n\n"
             "Testing:\n"
-            "- Test blocked tools by trying to run disabled terminals and system monitors to confirm effectiveness.\n\n"
+            "- Test blocked tools (Command Prompt, Task Manager) via Windows search to confirm effectiveness.\nSearch for Control Panel or Task Manager in Windows+S search and see the disabled message box.\n\n"
             "Upcoming Features:\n"
             "- Password Recovery: In case of a forgotten password, users will be able to recover their passwords.\n"
             "- Logging and Alerts: Includes screenshots, email alerts on wrong password attempts, and detailed logs.\n"
@@ -1136,6 +995,10 @@ class AppLockerGUI:
 
 
 
+
+
+
+
     def configure_canvas(self, event):
         # Update the width of the canvas window to fit the frame
         self.canvas.itemconfig(self.canvas_frame, width=event.width)
@@ -1162,6 +1025,7 @@ class AppLockerGUI:
     def save_and_update_wallpaper(self):
         self.save_wallpaper_choice()
         self.update_preview()
+
 
 
 
@@ -1208,15 +1072,21 @@ class AppLockerGUI:
 
 
 
+
+
+
+
+
     # image for the main page above the buttons
     def load_image(self):
         # Open and prepare the image
         try:
-            image = Image.open(self.resource_path('img/banner.png'))  # Update this path
+            image = Image.open(self.resource_path('img/banner-rounded.png'))  # Update this path
             image = image.resize((700, 200), Image.LANCZOS)  # Resize using LANCZOS filter
             self.img = ImageTk.PhotoImage(image)
         except:
             print("load_image: unable to load 1.ico")
+
 
 
 
@@ -1240,16 +1110,18 @@ class AppLockerGUI:
 
 
 
+
     def update_apps_listbox(self):
         """Delegate to ApplicationManager"""
-        self.app_manager.update_apps_listbox()
+        if self.app_manager:
+            self.app_manager.update_apps_listbox()
+        self.update_config_display()
 
     def update_config_display(self):
         self.config_text.config(state=tk.NORMAL)
         self.config_text.delete(1.0, tk.END)
         self.config_text.insert(tk.END, json.dumps(self.app_locker.config, indent=4))
         self.config_text.config(state=tk.DISABLED)
-
 
 
 
@@ -1270,7 +1142,9 @@ class AppLockerGUI:
     def export_state(self):
         self.app_locker.export_state()
         self.show_message("Info", "State exported to state.json")
-  
+
+
+        
 
     def create_password(self):
         if os.path.exists(self.app_locker.password_file):
@@ -1292,119 +1166,66 @@ class AppLockerGUI:
             else:
                 self.show_message("Error", "Incorrect old password.")
         else:
-            self.show_message("Oops!", "How do I change a password that doesn’t exist? :(")
+            self.show_message("Oops!", "How do I change a password that doesn't exist? :(")
 
     def add_application(self):
-        app_name = self.ask_password("Add Application", "Enter the name of the application:")
-        if app_name:
-            app_path = filedialog.askopenfilename(title="Select application executable")
-            if app_path:
-                self.app_locker.add_application(app_name, app_path)
-                self.update_apps_listbox()
-                self.update_config_display()  # Update config tab
-                self.show_message("Success", f"Application {app_name}\nadded successfully.")
+        """Keep old dialog - ApplicationManager doesn't have Windows .exe dialog"""
+        # The open_add_application_dialog method handles this
+        pass
 
 
     def remove_application(self):
         """Delegate to ApplicationManager"""
-        self.app_manager.remove_applications()
-
-    def edit_application(self):
-        """Delegate to ApplicationManager"""
-        self.app_manager.edit_application()
-
-    def select_all_apps(self):
-        """Delegate to ApplicationManager"""
-        return self.app_manager.select_all_apps()
-
-    def deselect_all_apps(self):
-        """Delegate to ApplicationManager"""
-        self.app_manager.deselect_all_apps()
+        if self.app_manager:
+            self.app_manager.remove_applications()
 
     def rename_application(self):
-        """Legacy method - redirects to edit_application"""
-        self.edit_application()
+        """Delegate to ApplicationManager's edit function"""
+        if self.app_manager:
+            self.app_manager.edit_application()
 
     def start_monitoring(self, auto_start=False):
         if os.path.exists(self.app_locker.password_file):
             # Lock tools if required
             if self.lock_tools_var.get():
-                print("Disabling Terminal and System Monitor...")
+                print("Disabling the cmd, PowerShell, and Task Manager...")
                 self.disable_tools()
 
             # Start monitoring in a separate thread
             threading.Thread(target=self.app_locker.start_monitoring, daemon=True).start()
 
             if not auto_start:
+                # Only show this message if not auto-starting
                 self.show_message("Info", "Monitoring started. Use the system tray icon to stop.")
-                # Add to startup on manual start
-                print("Adding to startup manually...")
-                self.add_to_startup()
 
+                # Add to startup on manual start
+                print("start_monitring: Adding to startup manually...")
+                self.add_to_startup()
+            
             self.master.withdraw()  # Hide the main window
         else:
             self.show_message("Hey!", "Please set your password, and I'll enjoy some biryani 🍚.\nBy the way, do you like biryani as well?")
             return False
 
-
     def add_to_startup(self):
-        try:
-           # Determine the correct Exec command for startup
-            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                # Packaged with PyInstaller - check if installed system-wide
-                if sys.executable.startswith('/usr/'):
-                    # Installed via .deb package - use command name
-                    exec_command = 'fadcrypt --auto-monitor'
-                else:
-                    # Standalone PyInstaller build
-                    exec_command = f'"{sys.executable}" --auto-monitor'
-            else:
-                # Running as a script
-                exec_command = f'{sys.executable} "{os.path.abspath(sys.argv[0])}" --auto-monitor'
-            desktop_entry = f"""[Desktop Entry]
-Type=Application
-Exec={exec_command}
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=FadCrypt
-Comment=Start FadCrypt automatically
-Version=1.0
-"""
-            autostart_dir = os.path.join(os.path.expanduser("~"), ".config", "autostart")
-            os.makedirs(autostart_dir, exist_ok=True)
-            autostart_path = os.path.join(autostart_dir, "FadCrypt.desktop")
-
-            with open(autostart_path, "w") as f:
-                f.write(desktop_entry)
-            os.chmod(autostart_path, 0o755)
-            print(f"FadCrypt added to startup: {autostart_path}")
-        except Exception as e:
-            print(f"Error adding to startup: {e}")
-
-    def remove_from_startup(self):
-        try:
-            autostart_path = os.path.join(os.path.expanduser("~"), ".config", "autostart", "FadCrypt.desktop")
-            if os.path.exists(autostart_path):
-                os.remove(autostart_path)
-                print("FadCrypt removed from startup.")
-            else:
-                print("FadCrypt was not in startup.")
-        except Exception as e:
-            print(f"Error removing from startup: {e}")
+        app_name = "FadCrypt"
+        app_path = f'"{sys.executable}" --auto-monitor'  # Add the auto-monitor flag
+        key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        registry_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key, 0, winreg.KEY_SET_VALUE)
+        winreg.SetValueEx(registry_key, app_name, 0, winreg.REG_SZ, app_path)
+        winreg.CloseKey(registry_key)
+        print(f"{app_name} added to startup.")
 
     def stop_monitoring(self):
-        # Enable the tools if they were disabled
+        # Check if the user has enabled the tool lock
         if self.lock_tools_var.get():
-            print("Enabling Terminal and System Monitor...")
+            print("Enabling the cmd, Registry Editor and task managaer...")
             self.enable_tools()
 
         if self.app_locker.monitoring:
             password = self.ask_password("Stop Monitoring", "Enter your password to stop monitoring:")
             if password and self.app_locker.verify_password(password):
                 self.app_locker.stop_monitoring()
-                # Remove from startup when monitoring is stopped
-                self.remove_from_startup()
                 self.show_message("Success", "Monitoring stopped.")
                 self.master.deiconify()  # Show the main window
             else:
@@ -1414,119 +1235,100 @@ Version=1.0
 
 
 
-
     
-    # def block_registry_editor():
-    #     try:
-    #         # Disable Registry Editor
-    #         reg_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System')
-    #         winreg.SetValueEx(reg_key, 'DisableRegistryTools', 0, winreg.REG_DWORD, 1)
-    #         winreg.CloseKey(reg_key)
-    #         print("Registry Editor blocked.")
-    #     except Exception as e:
-    #         print(f"Error blocking Registry Editor: {e}")
+    def block_registry_editor():
+        try:
+            # Disable Registry Editor
+            reg_key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System')
+            winreg.SetValueEx(reg_key, 'DisableRegistryTools', 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(reg_key)
+            print("Registry Editor blocked.")
+        except Exception as e:
+            print(f"Error blocking Registry Editor: {e}")
 
-    # def unblock_registry_editor():
-    #     try:
-    #         # Open the registry key
-    #         reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_SET_VALUE)
-    #         try:
-    #             # Attempt to delete the DisableRegistryTools value
-    #             winreg.DeleteValue(reg_key, 'DisableRegistryTools')
-    #             print("Registry Editor unblocked.")
-    #         except FileNotFoundError:
-    #             print("Registry Editor was not blocked.")
-    #         finally:
-    #             winreg.CloseKey(reg_key)
-    #     except Exception as e:
-    #         print(f"Error unblocking Registry Editor: {e}")
+    def unblock_registry_editor():
+        try:
+            # Open the registry key
+            reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 0, winreg.KEY_SET_VALUE)
+            try:
+                # Attempt to delete the DisableRegistryTools value
+                winreg.DeleteValue(reg_key, 'DisableRegistryTools')
+                print("Registry Editor unblocked.")
+            except FileNotFoundError:
+                print("Registry Editor was not blocked.")
+            finally:
+                winreg.CloseKey(reg_key)
+        except Exception as e:
+            print(f"Error unblocking Registry Editor: {e}")
 
 
     def disable_tools(self):
-        """Disable system tools on Linux (use with extreme caution)"""
+        """Disable Command Prompt, PowerShell, and Task Manager using winreg."""
         try:
-            #list of common terminal and system monitor executables.
-            tools_to_disable = [
-                '/usr/bin/gnome-terminal',
-                '/usr/bin/konsole',
-                '/usr/bin/xterm',
-                '/usr/bin/gnome-system-monitor',
-                '/usr/bin/htop',
-                '/usr/bin/top'
+            # Check for admin privileges
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to disable tools.")
+                return
+
+            # Create/modify registry keys with proper error handling
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
             ]
-            
-            disabled_tools = []
-            chmod_commands = []
-            for tool in tools_to_disable:
-                if os.path.exists(tool) and os.access(tool, os.X_OK):
-                    chmod_commands.append(f'chmod 644 "{tool}"')
-                    disabled_tools.append(tool)
-            
-            if chmod_commands:
-                # Run all chmod commands in one pkexec call
-                command = '; '.join(chmod_commands)
-                try:
-                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
-                    print(f"Disabled tools: {disabled_tools}")
-                    
-                    # Save the list of modified tools for re-enabling later.
-                    disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
-                    with open(disabled_tools_file, 'w') as f:
-                        f.write('\n'.join(disabled_tools))
-                except subprocess.CalledProcessError as e:
-                    print(f"Failed to disable tools: {e}")
-            else:
-                print("No tools were disabled (tools not found or already disabled).")
-                
-        except Exception as e:
-            print(f"An error occurred in disable_tools: {e}")
 
-    def enable_tools(self):
-        """Re-enable previously disabled tools"""
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    # Ensure the key path exists
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+                    # Set the value
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key)
+                    print(f"{value_name} set successfully.")
+                except Exception as e:
+                    print(f"Error setting {value_name}: {e}")
+
+            print("Tools disabled successfully.")
+
+        except Exception as e:
+            print(f"Failed to disable tools: {e}")
+
+
+
+    def enable_system_tools(self):
+        """Enable Command Prompt, PowerShell, and Task Manager using winreg."""
         try:
-            # First try to read from the tracking file
-            disabled_tools_file = os.path.join(self.app_locker.get_fadcrypt_folder(), 'disabled_tools.txt')
-            tools_to_enable = []
-            
-            if os.path.exists(disabled_tools_file):
-                with open(disabled_tools_file, 'r') as f:
-                    tools_to_enable = [tool.strip() for tool in f.read().strip().split('\n') if tool.strip()]
-            
-            # If no tracking file, try to re-enable all common tools
-            if not tools_to_enable:
-                tools_to_enable = [
-                    '/usr/bin/gnome-terminal',
-                    '/usr/bin/konsole',
-                    '/usr/bin/xterm',
-                    '/usr/bin/gnome-system-monitor',
-                    '/usr/bin/htop',
-                    '/usr/bin/top'
-                ]
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to enable tools.")
+                return
 
-            chmod_commands = []
-            valid_tools = []
-            for tool in tools_to_enable:
-                if tool and os.path.exists(tool):
-                    chmod_commands.append(f'chmod 755 "{tool}"')
-                    valid_tools.append(tool)
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
 
-            if chmod_commands:
-                # Run all chmod commands in one pkexec call
-                command = '; '.join(chmod_commands)
+            for reg_path, value_name in keys_to_modify:
                 try:
-                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
-                    for tool in valid_tools:
-                        print(f"Re-enabled: {tool}")
-                    
-                    # Clean up the record file after restoring permissions.
-                    if os.path.exists(disabled_tools_file):
-                        os.remove(disabled_tools_file)
-                except subprocess.CalledProcessError as e:
-                    print(f"Failed to restore permissions: {e}")
-            else:
-                print("No valid tools found to re-enable.")
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                    try:
+                        winreg.DeleteValue(key, value_name)
+                        print(f"{value_name} removed successfully.")
+                    except FileNotFoundError:
+                        print(f"{value_name} was not found, already enabled.")
+                    finally:
+                        winreg.CloseKey(key)
+                except Exception as e:
+                    print(f"Error handling {value_name}: {e}")
+
+            print("Tools enabled successfully.")
         except Exception as e:
-            print(f"An error occurred in enable_tools: {e}")
+            print(f"Failed to enable tools: {e}")
+    
+    # Alias the new method
+    enable_tools = enable_system_tools
 
     def cleanup_on_uninstall(self):
         """
@@ -1537,7 +1339,7 @@ Version=1.0
             print("Running uninstall cleanup...")
             
             # Re-enable all system tools
-            self.enable_tools()
+            self.enable_system_tools()
             
             # Stop monitoring if active
             if hasattr(self, 'app_locker') and self.app_locker.monitoring:
@@ -1546,12 +1348,10 @@ Version=1.0
             
             # Remove autostart entry
             try:
-                autostart_path = os.path.expanduser('~/.config/autostart/FadCrypt.desktop')
-                if os.path.exists(autostart_path):
-                    os.remove(autostart_path)
-                    print("Removed from autostart")
+                self.remove_from_startup()
+                print("Removed from startup")
             except Exception as e:
-                print(f"Error removing from autostart: {e}")
+                print(f"Error removing from startup: {e}")
             
             # Show confirmation
             self.show_message(
@@ -1567,9 +1367,39 @@ Version=1.0
             self.show_message(
                 "Cleanup Error",
                 f"Some settings may not have been restored:\n{str(e)}\n\n"
-                "Please manually check terminal and system monitor permissions."
+                "Please manually re-enable Task Manager, Command Prompt, and other tools."
             )
             return False
+
+    def disable_system_tools(self):
+        """Disable Command Prompt, PowerShell, and Task Manager using winreg."""
+        try:
+            if not ctypes.windll.shell32.IsUserAnAdmin():
+                print("Warning: Administrative privileges required to disable tools.")
+                return
+
+            keys_to_modify = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+
+            for reg_path, value_name in keys_to_modify:
+                try:
+                    key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 1)
+                    winreg.CloseKey(key)
+                    print(f"{value_name} set successfully.")
+                except Exception as e:
+                    print(f"Error setting {value_name}: {e}")
+
+            print("Tools disabled successfully.")
+        except Exception as e:
+            print(f"Failed to disable tools: {e}")
+
+    # Alias the new method
+    disable_tools = disable_system_tools
 
     def save_settings(self, *args):
         settings = {
@@ -1615,12 +1445,19 @@ Version=1.0
 
 
 
-
     def custom_dialog(self, title, prompt, fullscreen=False, input_required=True):
         dialog = tk.Toplevel(self.master)
         dialog.attributes('-alpha', 0.0)  # Start fully transparent
         dialog.attributes('-topmost', True)  # Always on top
         dialog.update_idletasks()  # Update geometry-related information
+
+        # Set the FadCrypt icon for the dialog
+        try:
+            ico_path = self.resource_path('img/1.ico')
+            if os.path.exists(ico_path):
+                dialog.iconbitmap(ico_path)
+        except Exception as e:
+            print(f"Could not set dialog icon: {e}")
 
         if fullscreen:
             dialog.attributes('-fullscreen', True)
@@ -1735,6 +1572,14 @@ Version=1.0
         dialog.attributes('-fullscreen', True)
         dialog.grab_set()
 
+        # Set the FadCrypt icon for the dialog
+        try:
+            ico_path = self.resource_path('img/1.ico')
+            if os.path.exists(ico_path):
+                dialog.iconbitmap(ico_path)
+        except Exception as e:
+            print(f"Could not set dialog icon: {e}")
+
         # Load and display wallpaper
         wallpaper_path = self.get_wallpaper_path()
         wallpaper = Image.open(wallpaper_path)
@@ -1787,521 +1632,449 @@ Version=1.0
 
 
     def start_snake_game(self):
-        def run_snake_game(gui_instance):
-            try:
-                # Initialize Pygame
-                pygame.init()
+        def run_snake_game():
+            # Initialize Pygame
+            pygame.init()
 
-                # Direction constants (must be defined before Snake class)
-                UP = (0, -1)
-                DOWN = (0, 1)
-                LEFT = (-1, 0)
-                RIGHT = (1, 0)
+            # Colors
+            BLACK = (0, 0, 0)
+            WHITE = (255, 255, 255)
+            RED = (255, 0, 0)
+            GREEN = (0, 255, 0)
+            YELLOW = (255, 255, 0)
+            TRANSPARENT = (0, 0, 0)
 
-                # Colors
-                BLACK = (0, 0, 0)
-                WHITE = (255, 255, 255)
-                RED = (255, 0, 0)
-                GREEN = (0, 255, 0)
-                YELLOW = (255, 255, 0)
-                TRANSPARENT = (0, 0, 0)
-
-                # New dark mode colors
-                DARK_GRAY = (30, 30, 30)
-                DARKER_GRAY = (20, 20, 20)
-                OBSTACLE_COLOR = (100, 100, 100)  # Single color for obstacles
-
-                # Game settings
-                FPS = 14
-
-                # Pygame setup
-                info = pygame.display.Info()
-                WINDOW_WIDTH = info.current_w
-                WINDOW_HEIGHT = info.current_h
-                
-                window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
-                pygame.display.set_caption('Minimal Snake Game - FadSec-Lab')
-                clock = pygame.time.Clock()
-
-                # Fonts
-                font_small = pygame.font.SysFont('arial', 25)
-                font_medium = pygame.font.SysFont('arial', 50)
-                font_large = pygame.font.SysFont('arial', 80)
-                print("Fonts loaded successfully")
-
-                # Calculate game area to maintain aspect ratio
-                game_area_height = int(WINDOW_HEIGHT * 0.9)
-                game_area_width = int(game_area_height * 4 / 3)
-                if game_area_width > int(WINDOW_WIDTH * 0.9):
-                    game_area_width = int(WINDOW_WIDTH * 0.9)
-                    game_area_height = int(game_area_width * 3 / 4)
+            # New dark mode colors
+            DARK_GRAY = (30, 30, 30)
+            DARKER_GRAY = (20, 20, 20)
+            OBSTACLE_COLOR = (100, 100, 100)  # Single color for obstacles
 
 
-                game_area_top = (WINDOW_HEIGHT - game_area_height) // 2
-                game_area_left = (WINDOW_WIDTH - game_area_width) // 2
 
-                BLOCK_SIZE = min(game_area_width // 60, game_area_height // 45)
-                BORDER_WIDTH = 8  # Increase border width for visibility
+            # Game settings
+            FPS = 14
 
-                class Snake:
-                    def __init__(self):
-                        self.length = 1
-                        self.positions = [((game_area_width // 2), (game_area_height // 2))]
-                        self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
-                        self.color1 = (0, 200, 0)
-                        self.color2 = (0, 255, 0)
-                        self.score = 0
+            # Pygame setup
+            info = pygame.display.Info()
+            WINDOW_WIDTH = info.current_w
+            WINDOW_HEIGHT = info.current_h
+            window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
+            pygame.display.set_caption('Minimal Snake Game - FadSec-Lab')
+            clock = pygame.time.Clock()
 
-                    def get_head_position(self):
-                        return self.positions[0]
+            # Fonts
+            font_small = pygame.font.SysFont('arial', 25)
+            font_medium = pygame.font.SysFont('arial', 50)
+            font_large = pygame.font.SysFont('arial', 80)
 
-                    def move(self):
-                        cur = self.get_head_position()
-                        x, y = self.direction
-                        new = (((cur[0] + (x * BLOCK_SIZE)) % (game_area_width - 2*BORDER_WIDTH)), 
-                            ((cur[1] + (y * BLOCK_SIZE)) % (game_area_height - 2*BORDER_WIDTH)))
-                        
-                        if len(self.positions) > 2 and new in self.positions[2:]:
-                            return False
-                        
-                        self.positions.insert(0, new)
-                        if len(self.positions) > self.length:
-                            self.positions.pop()
-                        return True
+            # Calculate game area to maintain aspect ratio
+            game_area_height = int(WINDOW_HEIGHT * 0.9)
+            game_area_width = int(game_area_height * 4 / 3)
+            if game_area_width > int(WINDOW_WIDTH * 0.9):
+                game_area_width = int(WINDOW_WIDTH * 0.9)
+                game_area_height = int(game_area_width * 3 / 4)
 
-                    def reset(self):
-                        self.length = 1
-                        self.positions = [((game_area_width // 2), (game_area_height // 2))]
-                        self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
-                        self.score = 0
 
-                    def draw(self, surface):
-                        for i, p in enumerate(self.positions):
-                            color = self.color1 if i % 2 == 0 else self.color2
-                            pygame.draw.rect(surface, color, 
-                                            (p[0] + game_area_left + BORDER_WIDTH, 
-                                            p[1] + game_area_top + BORDER_WIDTH, 
-                                            BLOCK_SIZE, BLOCK_SIZE))
+            game_area_top = (WINDOW_HEIGHT - game_area_height) // 2
+            game_area_left = (WINDOW_WIDTH - game_area_width) // 2
 
-                    def handle_keys(self):
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                print("handle_keys: Quitting game...")
-                                pygame.quit()
-                                sys.exit()
-                            elif event.type == pygame.KEYDOWN:
-                                if event.key == pygame.K_UP:
-                                    self.turn(UP)
-                                elif event.key == pygame.K_DOWN:
-                                    self.turn(DOWN)
-                                elif event.key == pygame.K_LEFT:
-                                    self.turn(LEFT)
-                                elif event.key == pygame.K_RIGHT:
-                                    self.turn(RIGHT)
-                                elif event.key == pygame.K_ESCAPE:
-                                    return "PAUSE"
-                        
-                        keys = pygame.key.get_pressed()
-                        if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
-                            return "FAST"
-                        return "NORMAL"
 
-                    def turn(self, direction):
-                        if (direction[0] * -1, direction[1] * -1) == self.direction:
-                            return
-                        else:
-                            self.direction = direction
+            BLOCK_SIZE = min(game_area_width // 60, game_area_height // 45)
+            BORDER_WIDTH = 8  # Increase border width for visibility
 
-                class Food:
-                    def __init__(self):
-                        self.position = (0, 0)
-                        self.color = RED
-                        self.randomize_position()
+            class Snake:
+                def __init__(self):
+                    self.length = 1
+                    self.positions = [((game_area_width // 2), (game_area_height // 2))]
+                    self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+                    self.color1 = (0, 200, 0)
+                    self.color2 = (0, 255, 0)
+                    self.score = 0
 
-                    def randomize_position(self):
-                        self.position = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
-                                        random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
+                def get_head_position(self):
+                    return self.positions[0]
 
-                    def draw(self, surface):
+                def move(self):
+                    cur = self.get_head_position()
+                    x, y = self.direction
+                    new = (((cur[0] + (x * BLOCK_SIZE)) % (game_area_width - 2*BORDER_WIDTH)), 
+                        ((cur[1] + (y * BLOCK_SIZE)) % (game_area_height - 2*BORDER_WIDTH)))
+                    
+                    if len(self.positions) > 2 and new in self.positions[2:]:
+                        return False
+                    
+                    self.positions.insert(0, new)
+                    if len(self.positions) > self.length:
+                        self.positions.pop()
+                    return True
+
+                def reset(self):
+                    self.length = 1
+                    self.positions = [((game_area_width // 2), (game_area_height // 2))]
+                    self.direction = random.choice([UP, DOWN, LEFT, RIGHT])
+                    self.score = 0
+
+                def draw(self, surface):
+                    for i, p in enumerate(self.positions):
+                        color = self.color1 if i % 2 == 0 else self.color2
+                        pygame.draw.rect(surface, color, 
+                                        (p[0] + game_area_left + BORDER_WIDTH, 
+                                        p[1] + game_area_top + BORDER_WIDTH, 
+                                        BLOCK_SIZE, BLOCK_SIZE))
+
+                def handle_keys(self):
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            print("handle_keys: Quitting game...")
+                            pygame.quit()
+                            sys.exit()
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_UP:
+                                self.turn(UP)
+                            elif event.key == pygame.K_DOWN:
+                                self.turn(DOWN)
+                            elif event.key == pygame.K_LEFT:
+                                self.turn(LEFT)
+                            elif event.key == pygame.K_RIGHT:
+                                self.turn(RIGHT)
+                            elif event.key == pygame.K_ESCAPE:
+                                return "PAUSE"
+                    
+                    keys = pygame.key.get_pressed()
+                    if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+                        return "FAST"
+                    return "NORMAL"
+
+                def turn(self, direction):
+                    if (direction[0] * -1, direction[1] * -1) == self.direction:
+                        return
+                    else:
+                        self.direction = direction
+
+            class Food:
+                def __init__(self):
+                    self.position = (0, 0)
+                    self.color = RED
+                    self.randomize_position()
+
+                def randomize_position(self):
+                    self.position = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
+                                    random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
+
+                def draw(self, surface):
+                    pygame.draw.rect(surface, self.color, 
+                                    (self.position[0] + game_area_left + BORDER_WIDTH, 
+                                    self.position[1] + game_area_top + BORDER_WIDTH, 
+                                    BLOCK_SIZE, BLOCK_SIZE))
+
+            class Obstacle:
+                def __init__(self):
+                    self.positions = []
+
+                def add_obstacle(self):
+                    new_pos = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
+                            random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
+                    if new_pos not in self.positions:
+                        self.positions.append(new_pos)
+
+                def draw(self, surface):
+                    for pos in self.positions:
+                        pygame.draw.rect(surface, OBSTACLE_COLOR, 
+                                        (pos[0] + game_area_left + BORDER_WIDTH, 
+                                        pos[1] + game_area_top + BORDER_WIDTH, 
+                                        BLOCK_SIZE, BLOCK_SIZE))
+            class PowerUp:
+                def __init__(self):
+                    self.position = (0, 0)
+                    self.color = YELLOW
+                    self.active = False
+                    self.type = None
+
+                def spawn(self):
+                    self.position = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
+                                    random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
+                    self.type = random.choice(['speed', 'slow', 'shrink'])
+                    self.active = True
+
+                def draw(self, surface):
+                    if self.active:
                         pygame.draw.rect(surface, self.color, 
                                         (self.position[0] + game_area_left + BORDER_WIDTH, 
                                         self.position[1] + game_area_top + BORDER_WIDTH, 
                                         BLOCK_SIZE, BLOCK_SIZE))
 
-                class Obstacle:
-                    def __init__(self):
-                        self.positions = []
+            def draw_patterned_background(surface, rect, color1, color2, block_size):
+                for y in range(rect.top, rect.bottom, block_size):
+                    for x in range(rect.left, rect.right, block_size):
+                        color = color1 if (x // block_size + y // block_size) % 2 == 0 else color2
+                        pygame.draw.rect(surface, color, (x, y, block_size, block_size))
 
-                    def add_obstacle(self):
-                        new_pos = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
-                                random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
-                        if new_pos not in self.positions:
-                            self.positions.append(new_pos)
+            def draw_text(surface, text, size, x, y, color=WHITE):
+                font = pygame.font.SysFont('arial', size)
+                text_surface = font.render(text, True, color)
+                text_rect = text_surface.get_rect()
+                text_rect.midtop = (x, y)
+                surface.blit(text_surface, text_rect)
 
-                    def draw(self, surface):
-                        for pos in self.positions:
-                            pygame.draw.rect(surface, OBSTACLE_COLOR, 
-                                            (pos[0] + game_area_left + BORDER_WIDTH, 
-                                            pos[1] + game_area_top + BORDER_WIDTH, 
-                                            BLOCK_SIZE, BLOCK_SIZE))
+            def show_menu(surface):
+                surface.fill(BLACK)
+                draw_text(surface, "SNAKE GAME", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 4)
+                draw_text(surface, "Press SPACE to start", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+                draw_text(surface, "Press Q to quit", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 3 // 4)
+                pygame.display.flip()
+                waiting = True
+                while waiting:
+                    clock.tick(FPS)
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            print("show_menu: Quitting game...")
+                            pygame.quit()
+                            sys.exit()
+                        if event.type == pygame.KEYUP:
+                            if event.key == pygame.K_SPACE:
+                                waiting = False
+                            elif event.key == pygame.K_q:
+                                print("show_menu2: Quitting game...")
+                                pygame.quit()
+                                sys.exit()
+
+            def pause_menu(surface):
+                overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+                overlay.set_alpha(128)
+                overlay.fill(BLACK)
+                surface.blit(overlay, (0, 0))
+                draw_text(surface, "PAUSED", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 4)
+                draw_text(surface, "Press SPACE to continue", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+                draw_text(surface, "Press Q to quit", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 3 // 4)
+                pygame.display.flip()
+                waiting = True
+                while waiting:
+                    clock.tick(FPS)
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            print("pause_menu: Quitting game...")
+                            pygame.quit()
+                            sys.exit()
+                        if event.type == pygame.KEYUP:
+                            if event.key == pygame.K_SPACE:
+                                return "CONTINUE"
+                            elif event.key == pygame.K_q:
+                                print("pause_menu returning quit: Quitting game...")
+                                return "QUIT"
+
+            def game_over(surface, score, high_score):
+                surface.fill(BLACK)
+                draw_text(surface, "GAME OVER", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 4)
+                draw_text(surface, f"Score: {score}", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50)
+                draw_text(surface, f"High Score: {high_score}", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 50)
+                draw_text(surface, "Press SPACE to play again", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 3 // 4)
+                draw_text(surface, "Press Q to quit", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 7 // 8)
+                pygame.display.flip()
+                waiting = True
+                while waiting:
+                    clock.tick(FPS)
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            print("game_over: Quitting game...")
+                            pygame.quit()
+                            sys.exit()
+                        if event.type == pygame.KEYUP:
+                            if event.key == pygame.K_SPACE:
+                                return "PLAY_AGAIN"
+                            elif event.key == pygame.K_q:
+                                print("game_over returning quit: Quitting game...")
+                                return "QUIT"
+
+            def load_high_score():
+                try:
+                    # Get the FadCrypt folder path
+                    folder_path = AppLocker.get_fadcrypt_folder(self)
+                    # Define the full path to the snake_high_score.json file
+                    file_path = os.path.join(folder_path, "snake_high_score.json")
+                    # Load the high score from the file
+                    with open(file_path, "r") as f:
+                        return json.load(f)["high_score"]
+                except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                    return 0
+
+
+            # def save_high_score(high_score):
+            #     with open("snake_high_score.json", "w") as f:
+            #         json.dump({"high_score": high_score}, f)
+            # def get_fadcrypt_folder(self):
+            #     path = os.path.join(os.getenv('APPDATA'), 'FadCrypt')
+            #     os.makedirs(path, exist_ok=True)
+            #     return path
+
+            def save_high_score(self, high_score):
+                # Get the FadCrypt folder path
+                folder_path = AppLocker.get_fadcrypt_folder(self)
+                # Define the full path to the snake_high_score.json file
+                file_path = os.path.join(folder_path, "snake_high_score.json")
+                # Save the high score to the file
+                with open(file_path, "w") as f:
+                    json.dump({"high_score": high_score}, f)
+                    
+
+            def main():
+                snake = Snake()
+                food = Food()
+                obstacles = Obstacle()
+                power_up = PowerUp()
+                high_score = load_high_score()
                 
-                class PowerUp:
-                    def __init__(self):
-                        self.position = (0, 0)
-                        self.color = YELLOW
-                        self.active = False
-                        self.type = None
+                level = 1
+                obstacles_per_level = 5
+                
+                for _ in range(obstacles_per_level):
+                    obstacles.add_obstacle()
 
-                    def spawn(self):
-                        self.position = (random.randint(0, (game_area_width - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE,
-                                        random.randint(0, (game_area_height - BLOCK_SIZE) // BLOCK_SIZE) * BLOCK_SIZE)
-                        self.type = random.choice(['speed', 'slow', 'shrink'])
-                        self.active = True
-
-                    def draw(self, surface):
-                        if self.active:
-                            pygame.draw.rect(surface, self.color, 
-                                            (self.position[0] + game_area_left + BORDER_WIDTH, 
-                                            self.position[1] + game_area_top + BORDER_WIDTH, 
-                                            BLOCK_SIZE, BLOCK_SIZE))
-
-                def draw_patterned_background(surface, rect, color1, color2, block_size):
-                    for y in range(rect.top, rect.bottom, block_size):
-                        for x in range(rect.left, rect.right, block_size):
-                            color = color1 if (x // block_size + y // block_size) % 2 == 0 else color2
-                            pygame.draw.rect(surface, color, (x, y, block_size, block_size))
-
-                def draw_text(surface, text, size, x, y, color=WHITE):
-                    try:
-                        print(f"draw_text: '{text}' size={size} at ({x},{y}) color={color}")
-                        font = pygame.font.SysFont('arial', size)
-                        print(f"  Font created: {font}")
-                        text_surface = font.render(text, True, color)
-                        print(f"  Text surface created: {text_surface.get_size()}")
-                        text_rect = text_surface.get_rect()
-                        text_rect.midtop = (x, y)
-                        print(f"  Text rect: {text_rect}")
-                        surface.blit(text_surface, text_rect)
-                        print(f"  Text blitted successfully")
-                    except Exception as e:
-                        print(f"ERROR in draw_text: {e}")
-                        import traceback
-                        traceback.print_exc()
-
-                def show_menu(surface, snake=None, food=None, obstacles=None):
-                    print("=== SHOW_MENU CALLED ===")
-                    print(f"Surface: {surface}, Size: {surface.get_size()}")
-                    surface.fill(BLACK)
-                    print("Filled screen with BLACK")
+                while True:
+                    show_menu(window)
                     
-                    # TEST: Draw a big white rectangle in the center
-                    test_rect = pygame.Rect(WINDOW_WIDTH // 4, WINDOW_HEIGHT // 4, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
-                    pygame.draw.rect(surface, (255, 255, 255), test_rect)
-                    print(f"Drew white test rectangle: {test_rect}")
-                    pygame.display.flip()
-                    print("Flipped display after white rectangle")
+                    game_over_flag = False
+                    power_up_timer = 0
+                    speed_modifier = 0
                     
-                    import time
-                    time.sleep(2)  # Wait 2 seconds so you can see the white rectangle
-                    
-                    surface.fill(BLACK)
-                    print("Re-filled screen with BLACK")
-                    
-                    # If game objects exist, draw them in the background
-                    if snake and food and obstacles:
-                        print("Drawing game objects in background")
-                        # Draw patterned background
-                        draw_patterned_background(surface, 
+                    while not game_over_flag:
+                        move_speed = FPS + speed_modifier
+                        action = snake.handle_keys()
+                        if action == "PAUSE":
+                            pause_action = pause_menu(window)
+                            if pause_action == "QUIT":
+                                print("main: Quitting game...")
+                                pygame.quit()
+                                sys.exit()
+                            continue
+                        elif action == "FAST":
+                            move_speed = FPS + 10
+                        
+                        clock.tick(move_speed)
+                        
+                        if not snake.move():
+                            game_over_flag = True
+                            break
+                        
+                        head_pos = snake.get_head_position()
+                        if (abs(head_pos[0] - food.position[0]) < BLOCK_SIZE and 
+                            abs(head_pos[1] - food.position[1]) < BLOCK_SIZE):
+                            snake.length += 1
+                            snake.score += 10
+                            food.randomize_position()
+                            while any(abs(food.position[0] - obs[0]) < BLOCK_SIZE and 
+                                    abs(food.position[1] - obs[1]) < BLOCK_SIZE 
+                                    for obs in obstacles.positions + snake.positions):
+                                food.randomize_position()
+                            if snake.score % 50 == 0:
+                                level += 1
+                                for _ in range(obstacles_per_level):
+                                    obstacles.add_obstacle()
+                        
+                        if not power_up.active and random.randint(1, 100) == 1:
+                            power_up.spawn()
+                            while any(abs(power_up.position[0] - obs[0]) < BLOCK_SIZE and 
+                                    abs(power_up.position[1] - obs[1]) < BLOCK_SIZE 
+                                    for obs in obstacles.positions + snake.positions + [food.position]):
+                                power_up.spawn()
+                        
+                        if power_up.active and (abs(head_pos[0] - power_up.position[0]) < BLOCK_SIZE and 
+                                                abs(head_pos[1] - power_up.position[1]) < BLOCK_SIZE):
+                            if power_up.type == 'speed':
+                                speed_modifier = 5
+                            elif power_up.type == 'slow':
+                                speed_modifier = -5
+                            elif power_up.type == 'shrink':
+                                snake.length = max(1, snake.length - 2)
+                            power_up.active = False
+                            power_up_timer = pygame.time.get_ticks()
+                        
+                        if pygame.time.get_ticks() - power_up_timer > 5000:
+                            speed_modifier = 0
+                        
+                        if any(abs(head_pos[0] - obs[0]) < BLOCK_SIZE and 
+                            abs(head_pos[1] - obs[1]) < BLOCK_SIZE 
+                            for obs in obstacles.positions):
+                            game_over_flag = True
+                            break
+
+                        # Clear the entire window
+                        window.fill(BLACK)
+                        
+                        # Draw patterned background with new dark mode colors
+                        draw_patterned_background(window, 
                                                 pygame.Rect(game_area_left + BORDER_WIDTH, 
                                                             game_area_top + BORDER_WIDTH, 
                                                             game_area_width - 1.5*BORDER_WIDTH, 
                                                             game_area_height - 2*BORDER_WIDTH),
                                                 DARK_GRAY, DARKER_GRAY, BLOCK_SIZE)
                         
-                        # Draw game objects
-                        snake.draw(surface)
-                        food.draw(surface)
-                        obstacles.draw(surface)
+                        # Draw game area border
+                        # pygame.draw.rect(window, BLACK, 
+                        #                 (game_area_left, game_area_top, game_area_width, game_area_height), 
+                        #                 BORDER_WIDTH)
                         
-                        # Draw semi-transparent overlay
-                        overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-                        overlay.set_alpha(180)
-                        overlay.fill(BLACK)
-                        surface.blit(overlay, (0, 0))
-                    else:
-                        print("No game objects - showing clean welcome screen")
-                    
-                    # Draw menu text
-                    print("Drawing menu text...")
-                    draw_text(surface, "SNAKE GAME", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 6, GREEN)
-                    print("Drew title")
-                    
-                    # Draw controls/instructions
-                    y_offset = WINDOW_HEIGHT // 3
-                    draw_text(surface, "CONTROLS:", 40, WINDOW_WIDTH // 2, y_offset, YELLOW)
-                    y_offset += 60
-                    draw_text(surface, "Arrow Keys - Move the snake", 30, WINDOW_WIDTH // 2, y_offset)
-                    y_offset += 45
-                    draw_text(surface, "SHIFT (hold) - Move faster", 30, WINDOW_WIDTH // 2, y_offset)
-                    y_offset += 45
-                    draw_text(surface, "ESC - Pause game", 30, WINDOW_WIDTH // 2, y_offset)
-                    y_offset += 70
-                    
-                    # Draw start/quit instructions
-                    draw_text(surface, "Press SPACE to start", 50, WINDOW_WIDTH // 2, y_offset, GREEN)
-                    y_offset += 60
-                    draw_text(surface, "Press Q to quit", 40, WINDOW_WIDTH // 2, y_offset, RED)
-                    print("All text drawn, calling pygame.display.flip()")
-                    
-                    pygame.display.flip()
-                    print("Display flipped, waiting for input...")
-                    waiting = True
-                    while waiting:
-                        clock.tick(FPS)
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                pygame.quit()
-                                sys.exit()
-                            if event.type == pygame.KEYUP:
-                                if event.key == pygame.K_SPACE:
-                                    waiting = False
-                                elif event.key == pygame.K_q:
-                                    pygame.quit()
-                                    sys.exit()
+                        snake.draw(window)
+                        food.draw(window)
+                        obstacles.draw(window)
+                        if power_up.active:
+                            power_up.draw(window)
+                        
+                        # Load the logo
+                        logo = pygame.image.load(self.resource_path("img/fadsec.png"))  # Ensure 'fadsec.png' is in the same directory
+                        # Determine the new size for the logo
+                        scale_factor = 0.5  # Scale to 50% of the original size
+                        logo_width, logo_height = logo.get_size()
+                        new_logo_width = int(logo_width * scale_factor)
+                        new_logo_height = int(logo_height * scale_factor)
 
-                def pause_menu(surface):
-                    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-                    overlay.set_alpha(128)
-                    overlay.fill(BLACK)
-                    surface.blit(overlay, (0, 0))
-                    draw_text(surface, "PAUSED", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 4)
-                    draw_text(surface, "Press SPACE to continue", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
-                    draw_text(surface, "Press Q to quit", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 3 // 4)
-                    pygame.display.flip()
-                    waiting = True
-                    while waiting:
-                        clock.tick(FPS)
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                pygame.quit()
-                                sys.exit()
-                            if event.type == pygame.KEYUP:
-                                if event.key == pygame.K_SPACE:
-                                    return "CONTINUE"
-                                elif event.key == pygame.K_q:
-                                    return "QUIT"
+                        # Scale the logo
+                        scaled_logo = pygame.transform.scale(logo, (new_logo_width, new_logo_height))
 
-                def game_over(surface, score, high_score):
-                    surface.fill(BLACK)
-                    draw_text(surface, "GAME OVER", 80, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 4)
-                    draw_text(surface, f"Score: {score}", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 50)
-                    draw_text(surface, f"High Score: {high_score}", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 50)
-                    draw_text(surface, "Press SPACE to play again", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 3 // 4)
-                    draw_text(surface, "Press Q to quit", 50, WINDOW_WIDTH // 2, WINDOW_HEIGHT * 7 // 8)
-                    pygame.display.flip()
-                    waiting = True
-                    while waiting:
-                        clock.tick(FPS)
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                pygame.quit()
-                                sys.exit()
-                            if event.type == pygame.KEYUP:
-                                if event.key == pygame.K_SPACE:
-                                    return "PLAY_AGAIN"
-                                elif event.key == pygame.K_q:
-                                    return "QUIT"
-
-                def load_high_score():
-                    try:
-                        # Get the FadCrypt folder path using the gui_instance
-                        folder_path = gui_instance.app_locker.get_fadcrypt_folder()
-                        # Define the full path to the snake_high_score.json file
-                        file_path = os.path.join(folder_path, "snake_high_score.json")
-                        # Load the high score from the file
-                        with open(file_path, "r") as f:
-                            return json.load(f)["high_score"]
-                    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-                        return 0
-
-                def save_high_score(high_score):
-                    try:
-                        # Get the FadCrypt folder path using the gui_instance
-                        folder_path = gui_instance.app_locker.get_fadcrypt_folder()
-                        # Define the full path to the snake_high_score.json file
-                        file_path = os.path.join(folder_path, "snake_high_score.json")
-                        # Save the high score to the file
-                        with open(file_path, "w") as f:
-                            json.dump({"high_score": high_score}, f)
-                    except Exception as e:
-                        print(f"Error saving high score: {e}")
+                        # Position for the bottom center
+                        logo_x = (WINDOW_WIDTH - new_logo_width) // 2  # Center horizontally
+                        logo_y = WINDOW_HEIGHT - new_logo_height - -50  # 10 pixels from the bottom
                         
 
-                def main():
-                    # Show initial welcome menu (before creating game objects)
-                    show_menu(window)
+                        draw_text(window, f"Score: {snake.score}", 25, WINDOW_WIDTH - 70, 10)
+                        draw_text(window, f"High Score: {high_score}", 25, WINDOW_WIDTH - 100, 40)
+                        draw_text(window, f"Level: {level}", 25, 70, 10)
+                        draw_text(window, "Press ESC to pause, and hold SHIFT to move faster.", 25, WINDOW_WIDTH // 2, 10)
+
+                        # Draw the scaled logo
+                        window.blit(scaled_logo, (logo_x, logo_y))
+                        
+                        # # logo in gray at the bottom left
+                        # logo_text = "FadSec-Lab © 2024-2025"
+                        # logo_color = (169, 169, 169)  # Gray color (RGB)
+                        # # the value after logo text is for font
+                        # draw_text(window, logo_text, 15, WINDOW_WIDTH // 2, WINDOW_HEIGHT - 40, color=logo_color)
+                        
+                        pygame.display.update()
                     
-                    snake = Snake()
-                    food = Food()
-                    obstacles = Obstacle()
-                    power_up = PowerUp()
+                    if snake.score > high_score:
+                        high_score = snake.score
+                        save_high_score(self, high_score)
                     
-                    high_score = load_high_score()
-                    
+                    action = game_over(window, snake.score, high_score)
+                    if action == "QUIT":
+                        print("main, game: Quitting game...")
+                        pygame.quit()
+                        sys.exit()
+                    snake.reset()
                     level = 1
-                    obstacles_per_level = 5
-                    
+                    obstacles = Obstacle()
                     for _ in range(obstacles_per_level):
                         obstacles.add_obstacle()
 
-                    while True:
-                        # After first game, show menu with game preview
-                        if snake.score > 0 or len(snake.positions) > 1:
-                            show_menu(window, snake, food, obstacles)
-                        
-                        game_over_flag = False
-                        power_up_timer = 0
-                        speed_modifier = 0
-                        
-                        while not game_over_flag:
-                            move_speed = FPS + speed_modifier
-                            action = snake.handle_keys()
-                            if action == "PAUSE":
-                                pause_action = pause_menu(window)
-                                if pause_action == "QUIT":
-                                    pygame.quit()
-                                    sys.exit()
-                                continue
-                            elif action == "FAST":
-                                move_speed = FPS + 10
-                            
-                            clock.tick(move_speed)
-                            
-                            if not snake.move():
-                                game_over_flag = True
-                                break
-                            
-                            head_pos = snake.get_head_position()
-                            if (abs(head_pos[0] - food.position[0]) < BLOCK_SIZE and 
-                                abs(head_pos[1] - food.position[1]) < BLOCK_SIZE):
-                                snake.length += 1
-                                snake.score += 10
-                                food.randomize_position()
-                                while any(abs(food.position[0] - obs[0]) < BLOCK_SIZE and 
-                                        abs(food.position[1] - obs[1]) < BLOCK_SIZE 
-                                        for obs in obstacles.positions + snake.positions):
-                                    food.randomize_position()
-                                if snake.score % 50 == 0:
-                                    level += 1
-                                    for _ in range(obstacles_per_level):
-                                        obstacles.add_obstacle()
-                            
-                            if not power_up.active and random.randint(1, 100) == 1:
-                                power_up.spawn()
-                                while any(abs(power_up.position[0] - obs[0]) < BLOCK_SIZE and 
-                                        abs(power_up.position[1] - obs[1]) < BLOCK_SIZE 
-                                        for obs in obstacles.positions + snake.positions + [food.position]):
-                                    power_up.spawn()
-                            
-                            if power_up.active and (abs(head_pos[0] - power_up.position[0]) < BLOCK_SIZE and 
-                                                    abs(head_pos[1] - power_up.position[1]) < BLOCK_SIZE):
-                                if power_up.type == 'speed':
-                                    speed_modifier = 5
-                                elif power_up.type == 'slow':
-                                    speed_modifier = -5
-                                elif power_up.type == 'shrink':
-                                    snake.length = max(1, snake.length - 2)
-                                power_up.active = False
-                                power_up_timer = pygame.time.get_ticks()
-                            
-                            if pygame.time.get_ticks() - power_up_timer > 5000:
-                                speed_modifier = 0
-                            
-                            if any(abs(head_pos[0] - obs[0]) < BLOCK_SIZE and 
-                                abs(head_pos[1] - obs[1]) < BLOCK_SIZE 
-                                for obs in obstacles.positions):
-                                game_over_flag = True
-                                break
-
-                            # Clear the entire window
-                            window.fill(BLACK)
-                            
-                            # Draw patterned background with new dark mode colors
-                            draw_patterned_background(window, 
-                                                    pygame.Rect(game_area_left + BORDER_WIDTH, 
-                                                                game_area_top + BORDER_WIDTH, 
-                                                                game_area_width - 1.5*BORDER_WIDTH, 
-                                                                game_area_height - 2*BORDER_WIDTH),
-                                                    DARK_GRAY, DARKER_GRAY, BLOCK_SIZE)
-                            
-                            # Draw game area border
-                            # pygame.draw.rect(window, BLACK, 
-                            #                 (game_area_left, game_area_top, game_area_width, game_area_height), 
-                            #                 BORDER_WIDTH)
-                            
-                            snake.draw(window)
-                            food.draw(window)
-                            obstacles.draw(window)
-                            if power_up.active:
-                                power_up.draw(window)
-                            
-                            # Load the logo
-                            logo = pygame.image.load(self.resource_path("img/fadsec.png"))  # Ensure 'fadsec.png' is in the same directory
-                            # Determine the new size for the logo
-                            scale_factor = 0.5  # Scale to 50% of the original size
-                            logo_width, logo_height = logo.get_size()
-                            new_logo_width = int(logo_width * scale_factor)
-                            new_logo_height = int(logo_height * scale_factor)
-
-                            # Scale the logo
-                            scaled_logo = pygame.transform.scale(logo, (new_logo_width, new_logo_height))
-
-                            # Position for the bottom center
-                            logo_x = (WINDOW_WIDTH - new_logo_width) // 2  # Center horizontally
-                            logo_y = WINDOW_HEIGHT - new_logo_height - -50  # 10 pixels from the bottom
-                            
-
-                            draw_text(window, f"Score: {snake.score}", 25, WINDOW_WIDTH - 70, 10)
-                            draw_text(window, f"High Score: {high_score}", 25, WINDOW_WIDTH - 100, 40)
-                            draw_text(window, f"Level: {level}", 25, 70, 10)
-                            draw_text(window, "Press ESC to pause, and hold SHIFT to move faster.", 25, WINDOW_WIDTH // 2, 10)
-
-                            # Draw the scaled logo
-                            window.blit(scaled_logo, (logo_x, logo_y))
-                            
-                            # # logo in gray at the bottom left
-                            # logo_text = "FadSec-Lab © 2024-2025"
-                            # logo_color = (169, 169, 169)  # Gray color (RGB)
-                            # # the value after logo text is for font
-                            # draw_text(window, logo_text, 15, WINDOW_WIDTH // 2, WINDOW_HEIGHT - 40, color=logo_color)
-                            
-                            pygame.display.update()
-                        
-                        if snake.score > high_score:
-                            high_score = snake.score
-                            save_high_score(high_score)
-                        
-                        action = game_over(window, snake.score, high_score)
-                        if action == "QUIT":
-                            pygame.quit()
-                            sys.exit()
-                        snake.reset()
-                        level = 1
-                        obstacles = Obstacle()
-                        for _ in range(obstacles_per_level):
-                            obstacles.add_obstacle()
-
-                # Start the main game loop
+            if __name__ == "__main__":
+                UP = (0, -1)
+                DOWN = (0, 1)
+                LEFT = (-1, 0)
+                RIGHT = (1, 0)
                 main()
-            
-            except Exception as e:
-                print(f"!!! SNAKE GAME ERROR: {e}")
-                import traceback
-                traceback.print_exc()
-                pygame.quit()
 
-        # Run the game in a new thread, passing the GUI instance
-        snake_game_thread = threading.Thread(target=run_snake_game, args=(self,))
+        # Run the game in a new thread
+        snake_game_thread = threading.Thread(target=run_snake_game)
         snake_game_thread.start()
 
 
@@ -2312,6 +2085,7 @@ Version=1.0
 
 
     
+
 
 
 
@@ -2355,52 +2129,46 @@ class AppLocker:
         self.config = {"applications": []}  # In-memory configuration
         self.state = {"unlocked_apps": []}  # In-memory state
 
-        self.load_config()  # Load config from disk
+        self.load_config()
         self.load_state()
         self.monitoring = False
         self.monitoring_thread = None
         # self.state_file = {"unlocked_apps": []}  # In-memory state
         self.load_state()
         self.icon = None
-        self.apps_showing_dialog = set()
-        self.observers = []
-        self.pending_launch = None
         
-        # Initialize UnifiedMonitor for efficient monitoring
+        # Initialize UnifiedMonitor for single-threaded efficient monitoring
         self.unified_monitor = UnifiedMonitor(
             get_state_func=lambda: self.state,
             set_state_func=self.save_state_from_monitor,
             show_dialog_func=self._show_password_dialog_wrapper,
-            get_exec_from_desktop_func=self._get_exec_from_desktop,
-            is_linux=True,
-            sleep_interval=1.0,  # 1 second for maximum efficiency
-            enable_profiling=False  # Set to True to see performance stats
+            get_exec_from_desktop_func=None,  # Windows doesn't use .desktop files
+            is_linux=False,
+            sleep_interval=1.0,  # Maximum efficiency as requested
+            enable_profiling=False
         )
         
 
 
     def get_fadcrypt_folder(self):
-        path = os.path.join(os.getenv('HOME'), '.FadCrypt')  # Changed APPDATA to HOME and updated folder name
+        path = os.path.join(os.getenv('APPDATA'), 'FadCrypt')
         os.makedirs(path, exist_ok=True)
         return path
     
         
 
     def load_config(self):
-        print("=== LOAD_CONFIG START ===")
         print(f"Loading config from {self.config_file}")  # Debug print
         
         # Check if the config file exists
         if os.path.exists(self.config_file):
             if os.path.exists(self.password_file):
                 password = self.load_password()
-                print(f"Password file exists, password loaded (length: {len(password)})")
-                decrypted_data = self.decrypt_data(password, self.config_file)
-                if decrypted_data is not None:
-                    self.config = decrypted_data
+                try:
+                    self.config = self.decrypt_data(password, self.config_file)
                     print(f"Config loaded: {self.config}")  # Debug print
-                else:
-                    print("Decryption failed. Creating new config.")  # Debug print
+                except Exception as e:
+                    print(f"Error decrypting config: {e}")
                     self.config = {"applications": []}
                     self.save_config()  # Save a new encrypted config if decryption fails
             else:
@@ -2413,7 +2181,6 @@ class AppLocker:
             self.config = {"applications": []}
             # Create the config file with default content and encrypt it
             self.save_config()
-        print("=== LOAD_CONFIG END ===")
 
     def save_config(self):
         if os.path.exists(self.password_file):
@@ -2442,7 +2209,7 @@ class AppLocker:
     
         
     def generate_key(self):
-        key_path = os.path.join(os.getenv('HOME'), '.FadCrypt', 'config.key')  # Changed APPDATA to HOME and updated folder name
+        key_path = os.path.join(os.getenv('APPDATA'), 'FadCrypt', 'config.key')
         print(f"Key file path: {key_path}")  # Debug print
         if os.path.exists(key_path):
             with open(key_path, 'rb') as key_file:
@@ -2498,33 +2265,12 @@ class AppLocker:
             return None
     
     def load_state(self):
-        print("Loading state from disk...")
-        state_file = os.path.join(self.get_fadcrypt_folder(), 'state.json')
-        if os.path.exists(state_file) and os.path.exists(self.password_file):
-            password = self.load_password()
-            if password:
-                decrypted_data = self.decrypt_data(password, state_file)
-                if decrypted_data is not None:
-                    self.state = decrypted_data
-                    print(f"State loaded: {self.state}")
-                else:
-                    print("Failed to decrypt state file, using default state")
-                    self.state = {"unlocked_apps": []}
-            else:
-                print("Password file not found, using default state")
-                self.state = {"unlocked_apps": []}
-        else:
-            print("State file not found, using default state")
-            self.state = {"unlocked_apps": []}
+        # No file operation, use in-memory state
+        pass
 
     def save_state(self):
-        if os.path.exists(self.password_file):
-            password = self.load_password()
-            state_file = os.path.join(self.get_fadcrypt_folder(), 'state.json')
-            self.encrypt_data(password, self.state, state_file)
-            print(f"State saved to {state_file}: {self.state}")
-        else:
-            print("Password file not found, cannot save state")
+        # self._update_script("embedded_state", self.state)
+        pass
     
     def export_config(self):
         export_path = "FadCrypt_config.json"
@@ -2541,7 +2287,29 @@ class AppLocker:
         print("State exported.")  # Debug print
 
 
-    
+    def _update_script(self, variable_name, data):
+        # Update the script with new data
+        script_path = sys.argv[0]  # Get the path of the running script
+
+        print(f"Updating script: {script_path}")  # Debug print
+        with open(script_path, 'r') as file:
+            script = file.read()
+
+        # Convert the current embedded data to a JSON string
+        old_data_str = f"{variable_name} = " + json.dumps(eval(variable_name), indent=4)
+
+        # Convert the new data to a JSON string
+        new_data_str = f"{variable_name} = " + json.dumps(data, indent=4)
+
+        # Replace the old data with the new data in the script
+        script = script.replace(old_data_str, new_data_str)
+
+        # Save the modified script
+        with open(script_path, 'w') as file:
+            file.write(script)
+        print("Script updated.")  # Debug print
+
+
 
     def create_password(self, password):
         try:
@@ -2558,14 +2326,11 @@ class AppLocker:
             encryptor = cipher.encryptor()
             encrypted_hash = encryptor.update(password.encode()) + encryptor.finalize()
             
-            # FIXED: Re-added the missing lines to write the password file.
             with open(self.password_file, "wb") as f:
                 f.write(salt + encryptor.tag + encrypted_hash)
-            
         except Exception as e:
-            # Note: Changed to self.gui.show_message for correctness
-            self.gui.show_message("Error", f"Error creating password: {e}")
-            
+            self.show_message("Error", f"Error creating password: {e}")
+
     def change_password(self, old_password, new_password):
         if self.verify_password(old_password):
             self.create_password(new_password)
@@ -2615,168 +2380,51 @@ class AppLocker:
         self.save_config()
 
     def block_application(self, app_name, app_path):
-        # Cache process name to avoid repeated path parsing
-        process_name = os.path.basename(app_path) if app_path else app_name
-        if app_path.endswith('.desktop'):
-            process_name = self._get_exec_from_desktop(app_path)
-        
-        process_name_lower = process_name.lower()
-        is_chrome_based = 'chrome' in process_name_lower
-        
-        # CPU usage profiling (optional - enable for debugging)
-        enable_profiling = False  # Set to True to see CPU usage stats
-        iteration_count = 0
-        
         while self.monitoring:
             try:
-                iteration_count += 1
-                if enable_profiling and iteration_count % 50 == 0:  # Log every 5 seconds
-                    import time as time_module
-                    start_time = time_module.perf_counter()
-                
-                app_processes = []
-                
-                # MAJOR OPTIMIZATION: Use pgrep-like approach instead of iterating ALL processes
-                # This reduces CPU usage from iterating 500+ processes to only checking relevant ones
                 try:
-                    # Try to find processes by name directly (much faster than iterating all)
-                    matching_procs = []
-                    for proc in psutil.process_iter(['name', 'pid']):
-                        proc_name = proc.info['name'].lower()
-                        # Quick name check only (no cmdline parsing unless needed)
-                        if (proc_name == process_name_lower or 
-                            (is_chrome_based and 'chrome' in proc_name)):
-                            matching_procs.append(proc)
-                    
-                    # Now fetch full details only for matching processes
-                    for proc in matching_procs:
-                        try:
-                            proc_info = proc.as_dict(attrs=['name', 'pid', 'cmdline', 'status'])
-                            
-                            # Skip zombies
-                            if proc_info['status'] == psutil.STATUS_ZOMBIE:
-                                continue
-                            
-                            proc_name = proc_info['name'].lower()
-                            
-                            # Direct match
-                            if proc_name == process_name_lower:
-                                app_processes.append(proc)
-                                continue
-                            
-                            # Chrome-based
-                            if is_chrome_based and 'chrome' in proc_name:
-                                app_processes.append(proc)
-                                continue
-                            
-                            # Check cmdline only if name didn't match
-                            proc_cmdline = proc_info.get('cmdline')
-                            if proc_cmdline:
-                                cmdline_str = ' '.join(proc_cmdline).lower()
-                                if process_name_lower in cmdline_str or (is_chrome_based and 'chrome' in cmdline_str):
-                                    app_processes.append(proc)
-                        
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
-                
-                except Exception as scan_error:
-                    # Fallback to old method if optimization fails
-                    print(f"[PERF] Fallback to full scan for {app_name}: {scan_error}")
-                    for proc in psutil.process_iter(['name', 'pid', 'cmdline', 'status']):
-                        try:
-                            if proc.info['status'] == psutil.STATUS_ZOMBIE:
-                                continue
-                            proc_name = proc.info['name'].lower()
-                            if proc_name == process_name_lower:
-                                app_processes.append(proc)
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
+                    app_processes = [proc for proc in psutil.process_iter(['name', 'pid']) if proc.info['name'].lower() == app_name.lower()]
+                except Exception as e:
+                    print(f"Error in retrieving processes in block_application: {e}")
+                    continue
 
                 if app_processes:
                     if app_name not in self.state["unlocked_apps"]:
-                        if app_name not in self.apps_showing_dialog:
-                            print(f"Blocking {app_name}: terminating {len(app_processes)} processes")
-                            
-                            # Kill processes efficiently
+                        try:
                             for proc in app_processes:
-                                try:
-                                    # Kill children first (don't recurse too deep to save CPU)
-                                    for child in proc.children(recursive=False):
-                                        try:
-                                            child.kill()
-                                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                            pass
-                                    proc.kill()
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    pass
-                            
-                            self.apps_showing_dialog.add(app_name)
+                                proc.terminate()
+                        except Exception as e:
+                            print(f"Error in terminating process in block_application: {e}")
+
+                        try:
                             self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-                        else:
-                            # Kill additional processes while dialog is showing
-                            for proc in app_processes:
-                                try:
-                                    proc.kill()
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    pass
+                        except Exception as e:
+                            print(f"Error in scheduling password dialog in block_application: {e}")
+                        
+                        try:
+                            time.sleep(1)  # Wait for user input
+                        except Exception as e:
+                            print(f"Error in sleeping in block_application: {e}")
                     else:
-                        # Unlocked - reset counter and skip checks for longer
-                        if hasattr(self, f"{app_name}_no_process_count"):
-                            delattr(self, f"{app_name}_no_process_count")
-                        time.sleep(5)  # Longer sleep when unlocked
-                        continue
+                        try:
+                            time.sleep(7)
+                        except Exception as e:
+                            print(f"Error in extended sleep in block_application: {e}")
                 
-                # Auto-lock logic when no processes found
                 if app_name in self.state["unlocked_apps"] and not app_processes:
-                    if not hasattr(self, f"{app_name}_no_process_count"):
-                        setattr(self, f"{app_name}_no_process_count", 0)
-                    
-                    count = getattr(self, f"{app_name}_no_process_count")
-                    count += 1
-                    setattr(self, f"{app_name}_no_process_count", count)
-                    
-                    # Auto-lock after 10 checks with no processes
-                    if count >= 10:
-                        print(f"Auto-locking {app_name} (no active processes found)")
+                    try:
                         self.state["unlocked_apps"].remove(app_name)
                         self.save_state()
-                        delattr(self, f"{app_name}_no_process_count")
-                elif app_name in self.state["unlocked_apps"] and app_processes:
-                    if hasattr(self, f"{app_name}_no_process_count"):
-                        delattr(self, f"{app_name}_no_process_count")
+                    except Exception as e:
+                        print(f"Error in saving state in block_application: {e}")
                 
-                # CRITICAL: Always sleep to prevent CPU spike
-                # Increased from 0.1s to 0.5s - app blocking is still instant but CPU usage drops dramatically
-                time.sleep(0.5)  # 500ms check interval - still very responsive, much more efficient
-                
-                # Optional profiling output
-                if enable_profiling and iteration_count % 50 == 0:
-                    elapsed = time_module.perf_counter() - start_time
-                    print(f"[PERF] {app_name}: iteration took {elapsed*1000:.2f}ms, found {len(app_processes)} processes")
-                
+                try:
+                    time.sleep(1)
+                except Exception as e:
+                    print(f"Error in final sleep in block_application: {e}")
             except Exception as e:
-                print(f"[ERROR] Error in block_application for {app_name}: {e}")
-                import traceback
-                traceback.print_exc()  # Print full traceback for debugging
-                time.sleep(1)  # Sleep longer on error
+                print(f"General error in block_application: {e}")
 
-    def _get_exec_from_desktop(self, desktop_path):
-        """Extract executable name from .desktop file"""
-        try:
-            with open(desktop_path, 'r') as f:
-                for line in f:
-                    if line.startswith('Exec='):
-                        exec_line = line.split('=', 1)[1].strip()
-                        parts = shlex.split(exec_line)
-                        executable = ""
-                        for part in parts:
-                            if '=' not in part:
-                                executable = part
-                                break
-                        return executable.split('/')[-1] if executable else ""
-        except Exception as e:
-            print(f"Error parsing desktop file: {e}")
-        return os.path.basename(desktop_path)
 
     def _show_password_dialog(self, app_name, app_path):
         try:
@@ -2787,75 +2435,30 @@ class AppLocker:
                 return
 
             if password is None:
-                print(f"Password dialog cancelled for {app_name}")
                 return
 
             try:
                 if self.verify_password(password):
-                    print(f"Password verified successfully for {app_name}, adding to unlocked_apps")
                     self.state["unlocked_apps"].append(app_name)
                     self.save_state()
-                    print(f"State saved, unlocked_apps now: {self.state['unlocked_apps']}")
 
-                    # Launch the app
-                    try:
-                        # Determine if it's a known GUI app (browser, etc)
-                        gui_apps = ['chrome', 'chromium', 'firefox', 'brave', 'opera', 'edge', 
-                                   'vivaldi', 'code', 'slack', 'discord', 'telegram',
-                                   'vlc', 'gimp', 'libreoffice', 'thunderbird', 'zoom', 'teams', 'obs', 'steam', 'nautilus', 'dolphin', 'kate', 'gedit', 'kdenlive', 'krita', 'inkscape', 'blender', 'audacity', 'shotcut', 'code', 'pycharm', 'eclipse', 'intellij', 'sublime', 'virtualbox', 'postman', 'docker', 'filezilla', 'wireshark', 'gparted', 'transmission', 'remmina']
-                        
-                        is_gui_app = any(gui_app in app_path.lower() or gui_app in app_name.lower() 
-                                        for gui_app in gui_apps)
-                        
-                        if app_path.lower().endswith('.desktop'):
-                            # Launch .desktop files with xdg-open in detached mode
-                            subprocess.Popen(['xdg-open', app_path], 
-                                           stdout=subprocess.DEVNULL, 
-                                           stderr=subprocess.DEVNULL,
-                                           start_new_session=True)
-                        elif app_path.lower().endswith('.py'):
-                            # Launch Python scripts in a new terminal
-                            subprocess.Popen(['gnome-terminal', '--', 'python3', app_path],
-                                           stdout=subprocess.DEVNULL, 
-                                           stderr=subprocess.DEVNULL,
-                                           start_new_session=True)
-                        elif is_gui_app:
-                            # Launch known GUI apps directly without terminal
-                            subprocess.Popen([app_path],
-                                           stdout=subprocess.DEVNULL, 
-                                           stderr=subprocess.DEVNULL,
-                                           start_new_session=True)
-                        elif any(bin_dir in app_path for bin_dir in ['/usr/bin', '/bin', '/usr/local/bin']):
-                            # Launch CLI tools in a new terminal
-                            subprocess.Popen(['gnome-terminal', '--', app_path],
-                                           stdout=subprocess.DEVNULL, 
-                                           stderr=subprocess.DEVNULL,
-                                           start_new_session=True)
-                        else:
-                            # Launch other apps directly (assume GUI)
-                            subprocess.Popen([app_path],
-                                           stdout=subprocess.DEVNULL, 
-                                           stderr=subprocess.DEVNULL,
-                                           start_new_session=True)
-                        print(f"Successfully launched {app_name}")
-                    except Exception as e:
-                        print(f"Error launching {app_name}: {e}")
-                        self.gui.show_message("Error", f"Failed to start {app_name}: {e}")
-
+                    if app_path:
+                        try:
+                            subprocess.Popen(app_path)
+                        except Exception as e:
+                            print(f"Error in launching application in _show_password_dialog: {e}")
+                            self.show_message("Error", f"Failed to start {app_name}: {e}")
                 else:
-                    print(f"Incorrect password entered for {app_name}")
                     self.gui.show_message("Error", f"Incorrect password. {app_name} remains locked.")
             except Exception as e:
                 print(f"Error in verifying password or saving state in _show_password_dialog: {e}")
         except Exception as e:
             print(f"General error in _show_password_dialog: {e}")
         finally:
-            print(f"Removing {app_name} from apps_showing_dialog")
-            self.apps_showing_dialog.discard(app_name)
-            # Also remove from UnifiedMonitor's tracking
+            # Ensure dialog tracking is cleaned up
             self.unified_monitor.remove_from_showing_dialog(app_name)
 
-
+    # Helper method for UnifiedMonitor callback (auto-lock state updates)
     def save_state_from_monitor(self, key: str, value):
         """
         Helper method for UnifiedMonitor to save state.
@@ -2870,71 +2473,24 @@ class AppLocker:
         Ensures proper dialog removal tracking.
         """
         self.gui.master.after(0, self._show_password_dialog, app_name, app_path)
-    
+
     def start_monitoring(self):
         if not self.monitoring:
             self.monitoring = True
-            
-            # Use the efficient UnifiedMonitor (single-threaded, ~3% CPU)
             self.unified_monitor.start_monitoring(self.config["applications"])
-            
             self._create_system_tray_icon()
         else:
             self.gui.show_message("Info", "Monitoring is already running.")
             return False
-    
+
     def stop_monitoring(self):
         # if window opened from tray icon, and monitoring is stopped, then show the start button again.
         self.gui.start_button.pack(side=tk.LEFT, padx=10)
         if self.monitoring:
             self.monitoring = False
-            
-            # Stop the UnifiedMonitor
             self.unified_monitor.stop_monitoring()
-            
             if self.icon:
                 self.icon.stop()
-            
-            print("Re-enabling disabled tools...")
-            # Re-enable execution for disabled tools
-            disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
-            tools_to_enable = []
-            
-            if os.path.exists(disabled_tools_file):
-                with open(disabled_tools_file, 'r') as f:
-                    tools_to_enable = [tool.strip() for tool in f.read().strip().split('\n') if tool.strip()]
-            
-            # If no tracking file, try to re-enable all common tools
-            if not tools_to_enable:
-                tools_to_enable = [
-                    '/usr/bin/gnome-terminal',
-                    '/usr/bin/konsole',
-                    '/usr/bin/xterm',
-                    '/usr/bin/gnome-system-monitor',
-                    '/usr/bin/htop',
-                    '/usr/bin/top'
-                ]
-
-            # Filter out non-existent tools
-            valid_tools = [tool for tool in tools_to_enable if tool and os.path.exists(tool)]
-            
-            if valid_tools:
-                print(f"Re-enabling {len(valid_tools)} tools...")
-                # Create a single command to chmod all tools at once
-                chmod_commands = " && ".join([f"chmod 755 '{tool}'" for tool in valid_tools])
-                try:
-                    subprocess.run(['pkexec', 'bash', '-c', chmod_commands], check=True)
-                    print(f"Successfully re-enabled all {len(valid_tools)} tools")
-                except subprocess.CalledProcessError as e:
-                    print(f"Failed to re-enable tools: {e}")
-            
-            # Clean up the record file if it exists
-            if os.path.exists(disabled_tools_file):
-                os.remove(disabled_tools_file)
-                print("Disabled tools re-enabled and file removed.")
-            else:
-                print("No disabled tools file found, re-enabled common tools.")
-            
             self.gui.master.deiconify()  # Show the main window
         else:
             self.gui.show_message("Info", "Monitoring is not running.")
@@ -2946,11 +2502,18 @@ class AppLocker:
                 print("on_show_window: correct password, opening window.")
                 self.gui.master.deiconify()
                 self.gui.master.focus()
+                # Disable or hide the Start Monitoring button
                 self.gui.start_button.pack_forget()  # Disable the button
+                # or use self.start_button.pack_forget() to hide the button
+
+                # Set protocol to call the withdraw method instead of destroying the window, and send the app back to tray
                 self.gui.master.protocol("WM_DELETE_WINDOW", self._on_close)
             else:
                 print("on_show_window: incorrect password, not opening window.")
                 self.gui.show_message("Error", "I won't open without a pass!")
+
+            
+        
 
         def on_stop(icon, item):
             self.gui.master.after(0, self._password_prompt_and_stop)
@@ -2961,9 +2524,10 @@ class AppLocker:
         def on_snake(item):
             self.gui.master.after(0, self.gui.start_snake_game)
 
+        # Load the custom icon image
         try:
-            image = Image.open(self.gui.resource_path('img/icon.png'))  # Path to icon.png
-            image = image.resize((64, 64), Image.LANCZOS)  # Resize image
+            image = Image.open(self.gui.resource_path('img/icon.png'))  # Replace with the path to your icon.png
+            image = image.resize((64, 64), Image.LANCZOS)  # Resize the image to 64x64 pixels
         except Exception as e:
             print(f"Failed to load tray icon: {e}")
             image = Image.new('RGB', (64, 64), color=(73, 109, 137))  # Fallback to a rectangle
@@ -2984,16 +2548,15 @@ class AppLocker:
             self.gui.master.withdraw()
         else:
             print("_on_close: not monitoring, can't withdraw window. Quitting...")
-            sys.exit()  # Quit the app instead of sending to system tray
+            sys.exit() # quit the app instead of sending to system tray
 
     def _password_prompt_and_stop(self):
         password = self.gui.ask_password("Password", "Enter your password to stop monitoring:")
         if password is not None and self.verify_password(password):
             self.stop_monitoring()
-            # tools disabling feature is disabled
-            # if self.gui.lock_tools_var.get():
-            #     print("Enabling the cmd, powershell and task managaer...")
-            #     self.gui.enable_tools()
+            if self.gui.lock_tools_var.get():
+                print("Enabling the cmd, powershell and task managaer...")
+                self.gui.enable_tools()
             self.gui.show_message("Info", "Monitoring has been stopped.")
         else:
             self.gui.show_message("Error", "Incorrect password or action cancelled. Monitoring will continue.")
@@ -3021,15 +2584,14 @@ class FileMonitor:
         self.files_to_monitor = []
 
     def get_fadcrypt_folder(self):
-        # Main config folder in user's home
-        path = os.path.join(os.getenv('HOME'), '.FadCrypt')
+        path = os.path.join(os.getenv('APPDATA'), 'FadCrypt')
         os.makedirs(path, exist_ok=True)
         return path
 
     def get_backup_folder(self):
-        # Backup folder in a separate location (similar to Windows C:\ProgramData)
-        # Using ~/.local/share for system-wide backup storage (XDG Base Directory spec)
-        path = os.path.join(os.getenv('HOME'), '.local', 'share', 'FadCrypt', 'Backup')
+        # Using ProgramData for more secure backup location
+        print("Using ProgramData for more secure backup location")
+        path = os.path.join('C:\\ProgramData', 'FadCrypt', 'Backup')
         os.makedirs(path, exist_ok=True)
         return path
     
@@ -3041,6 +2603,8 @@ class FileMonitor:
             os.path.join(fadcrypt_folder, 'encrypted_password.bin')
         ]
         self.backup_folder = self.get_backup_folder()
+
+
 
 
 
@@ -3128,6 +2692,8 @@ class FileMonitor:
 
 
 
+
+
 def start_monitoring_thread(monitor):
     monitor.start_monitoring()
     try:
@@ -3150,71 +2716,104 @@ def start_monitoring_thread(monitor):
 
 class SingleInstance:
     def __init__(self):
-        self.lock_file = "/tmp/fadcrypt.lock"
-        self.lock_fd = None
+        self.mutex_name = "Global\\FadCrypt"
 
     def create_mutex(self):
-        """Create a file-based lock to ensure only one instance is running."""
-        try:
-            self.lock_fd = open(self.lock_file, 'w')
-            fcntl.lockf(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.lock_fd.write(str(os.getpid()))
-            self.lock_fd.flush()
-        except (IOError, OSError):
+        """Create a mutex to ensure only one instance is running."""
+        self.mutex = ctypes.windll.kernel32.CreateMutexW(None, True, self.mutex_name)
+        self.error = ctypes.windll.kernel32.GetLastError()
+
+        if self.error == 183:  # ERROR_ALREADY_EXISTS
             print("Another instance is already running. Exiting...")
-            sys.exit(1)
+            sys.exit(1)  # Exit immediately if another instance is running
 
-    def release_mutex(self):
-        """Release the lock by closing and removing the lock file."""
+
+
+
+
+
+
+def run_as_admin():
+    try:
+        if not ctypes.windll.shell32.IsUserAnAdmin():
+            # Re-run the program with admin rights
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            sys.exit()
+    except Exception as e:
+        print(f"Error requesting admin rights: {e}")
+        return False
+    return True
+
+if __name__ == "__main__":
+    # Handle --cleanup flag for uninstaller
+    if '--cleanup' in sys.argv:
         try:
-            if self.lock_fd:
-                self.lock_fd.close()
-            if os.path.exists(self.lock_file):
-                os.remove(self.lock_file)
-        except OSError as e:
-            print(f"Error removing lock file: {e}")
-
-
-
-def main():
-    # Step 1: Create a SingleInstance object and check for existing instance
-    single_instance = SingleInstance()
-    single_instance.create_mutex()
-
-    # Setup cleanup on exit
-    def cleanup_on_exit():
-        single_instance.release_mutex()
-
-    atexit.register(cleanup_on_exit)
-
-    # Setup signal handlers for proper cleanup
-    def signal_handler(signum, frame):
-        print("Received signal, cleaning up...")
-        cleanup_on_exit()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    root = TkinterDnD.Tk()
-    style = Style(theme='darkly')  # Apply dark theme, pulse, cyborg, darkly, simplex(red)
-
-    # Customize window borders (not directly supported in ttkbootstrap, but can be done with custom themes)
-    style.configure('TNotebook.Tab',
+            # Create a minimal instance just to run cleanup
+            class MinimalAppLocker:
+                def enable_system_tools(self):
+                    import winreg
+                    # List of all registry settings that FadCrypt disables
+                    keys_to_restore = [
+                        (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                        (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+                    ]
+                    
+                    for reg_path, value_name in keys_to_restore:
+                        try:
+                            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                            winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 0)
+                            winreg.CloseKey(key)
+                        except FileNotFoundError:
+                            pass  # Key doesn't exist, nothing to restore
+                        except Exception:
+                            pass
+                
+                def cleanup_on_uninstall(self):
+                    """Cleanup function to restore system settings before uninstall"""
+                    import winreg
+                    # Re-enable all system tools
+                    self.enable_system_tools()
+                    
+                    # Remove from Windows startup
+                    try:
+                        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                           r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                           0, winreg.KEY_SET_VALUE)
+                        winreg.DeleteValue(key, "FadCrypt")
+                        winreg.CloseKey(key)
+                    except FileNotFoundError:
+                        pass  # Key doesn't exist, nothing to remove
+                    except Exception:
+                        pass
+            
+            cleanup_app = MinimalAppLocker()
+            cleanup_app.cleanup_on_uninstall()
+            sys.exit(0)
+        except Exception:
+            sys.exit(1)
+    
+    if run_as_admin():
+        root = TkinterDnD.Tk()  # Use TkinterDnD.Tk instead of tk.Tk
+        style = Style(theme='darkly')  # Apply dark theme
+        
+        # Customize window borders and styles
+        style.configure('TNotebook.Tab',
                     background='#333333',  # Dark gray for tabs
                     foreground='#FFFFFF')  # White text for tabs
-    
-    style.configure('TButton', bordercolor="black", background="black")
-    style.configure('red.TButton', bordercolor="#ED2939", background="#ED2939")
-    style.configure('white.TButton', bordercolor="#ffffff", background="#ffffff")
-    style.configure('green.TButton', bordercolor="#009E60", background="#009E60")
-    style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
-    style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
-    style.configure('danger.TButton', bordercolor="#DC3545", background="#DC3545", foreground="#FFFFFF")
-    style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
+        
+        style.configure('TButton', bordercolor="black", background="black")
+        style.configure('red.TButton', bordercolor="#ED2939", background="#ED2939")
+        style.configure('white.TButton', bordercolor="#ffffff", background="#ffffff")
+        style.configure('green.TButton', bordercolor="#009E60", background="#009E60")
+        style.configure('yellow.TButton', bordercolor="#DAA520", background="#DAA520")
+        style.configure('blue.TButton', bordercolor="#004F98", background="#004F98")
+        style.configure('navy.TButton', bordercolor="#4C516D", background="#4C516D")
+        style.configure('danger.TButton', bordercolor="#DC3545", background="#DC3545", foreground="#FFFFFF")
 
-    # Customize button color
-    style.configure('TButton',
+        # Customize button color
+        style.configure('TButton',
                     background='#333333',  # Dark gray color
                     foreground='#FFFFFF',  # White text
                     borderwidth=3,  # Border width
@@ -3222,22 +2821,12 @@ def main():
                     highlightbackground='#222222',  # Darker border color
                     highlightthickness=0)  # Thickness of the border
 
-    style.map('TButton',
-            foreground=[('hover', '#D3D3D3')],  # gray text color on hover
-            background=[('active', '#000000')])  # Black color on hover
-    
-    # Style the Checkbutton
-    style.configure('TCheckbutton', foreground='#ffffff', padding=10)
+        style.map('TButton',
+                foreground=[('hover', '#D3D3D3')],  # gray text color on hover
+                background=[('active', '#000000')])  # Black color on hover
 
-    app = AppLockerGUI(root)
-    # root.protocol("WM_DELETE_WINDOW", root.iconify)  # Minimize instead of close
-    root.mainloop()
-
-if __name__ == "__main__":
-    # Cleanup is already handled at the top of the file before GUI imports
-    # If we get here, just start the normal app
-    monitor = FileMonitor()
-    monitoring_thread = threading.Thread(target=start_monitoring_thread, args=(monitor,))
-    monitoring_thread.daemon = True
-    monitoring_thread.start()
-    main()
+        # Style the Checkbutton
+        style.configure('TCheckbutton', foreground='#ffffff', padding=10)
+        
+        app = AppLockerGUI(root)
+        root.mainloop()
