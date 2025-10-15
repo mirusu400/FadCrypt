@@ -110,14 +110,27 @@ class ConfigFileMonitor:
         """Create initial backup of all monitored files."""
         backup_folder = self.get_backup_folder()
         
+        # Ensure backup folder exists with proper permissions
+        try:
+            os.makedirs(backup_folder, mode=0o755, exist_ok=True)
+        except Exception as e:
+            print(f"[FILE MONITOR] ⚠️  Could not create backup folder: {e}")
+            return
+        
         for file_path in self.files_to_monitor:
             if os.path.exists(file_path):
                 backup_path = os.path.join(backup_folder, os.path.basename(file_path))
                 try:
                     shutil.copy(file_path, backup_path)
+                    # Ensure backup file is writable
+                    os.chmod(backup_path, 0o644)
                     print(f"[FILE MONITOR] Backed up: {os.path.basename(file_path)}")
+                except PermissionError:
+                    # Silently skip permission errors
+                    pass
                 except Exception as e:
-                    print(f"[FILE MONITOR] Error backing up {file_path}: {e}")
+                    if "Permission denied" not in str(e):
+                        print(f"[FILE MONITOR] Error backing up {file_path}: {e}")
     
     class FileChangeHandler(FileSystemEventHandler):
         """Handle file system events for monitored files."""
@@ -150,10 +163,24 @@ class ConfigFileMonitor:
             if os.path.exists(file_path):
                 backup_path = os.path.join(self.backup_folder, os.path.basename(file_path))
                 try:
+                    # Ensure backup folder exists with write permissions
+                    os.makedirs(self.backup_folder, mode=0o755, exist_ok=True)
+                    
+                    # Copy file (works even if source is read-only)
                     shutil.copy(file_path, backup_path)
+                    
+                    # Ensure backup file is writable for future overwrites
+                    os.chmod(backup_path, 0o644)
+                    
                     print(f"[FILE MONITOR] ✅ Backed up: {os.path.basename(file_path)}")
+                except PermissionError as e:
+                    # Silently skip if backup folder is not writable
+                    # This happens when files are locked and backup folder is in protected location
+                    pass
                 except Exception as e:
-                    print(f"[FILE MONITOR] ❌ Error backing up {file_path}: {e}")
+                    # Only print error for non-permission issues
+                    if "Permission denied" not in str(e):
+                        print(f"[FILE MONITOR] ❌ Error backing up {file_path}: {e}")
         
         def _restore_file(self, file_path: str):
             """

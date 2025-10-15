@@ -117,6 +117,7 @@ class MainWindowBase(QMainWindow):
     
     # Class-level signal for thread-safe password prompts
     password_prompt_requested = pyqtSignal(str, str)
+    file_access_requested = pyqtSignal(str)  # Signal for file access from background thread
     
     def __init__(self, version=None):
         super().__init__()
@@ -141,6 +142,23 @@ class MainWindowBase(QMainWindow):
         
         # Initialize file lock manager (platform-specific)
         self.file_lock_manager = self.get_file_lock_manager(fadcrypt_folder)
+        
+        # Initialize file access monitor (for real-time file monitoring)
+        self.file_access_monitor = None
+        if self.file_lock_manager:
+            try:
+                from core.file_access_monitor import FileAccessMonitor
+                self.file_access_monitor = FileAccessMonitor(
+                    self.file_lock_manager,
+                    self._handle_file_access_attempt_threadsafe,
+                    get_state_func=self.get_monitoring_state,
+                    set_state_func=self.set_monitoring_state
+                )
+                # Connect signal for thread-safe dialog invocation
+                self.file_access_requested.connect(self._handle_file_access_attempt)
+                print("✅ File access monitor initialized")
+            except ImportError as e:
+                print(f"⚠️  Could not initialize file access monitor: {e}")
         
         # Log important paths at startup
         print("\n📁 FadCrypt File Locations:")
@@ -1344,6 +1362,19 @@ class MainWindowBase(QMainWindow):
                             item.get('locked_at')
                         )
                         break
+                
+                # Auto-lock file if monitoring is active
+                if self.monitoring_active and self.file_lock_manager:
+                    print(f"🔒 Auto-locking newly added file: {os.path.basename(file_path)}")
+                    # Re-lock all files (includes the new one)
+                    success, failed = self.file_lock_manager.lock_all()
+                    if success > 0:
+                        print(f"✅ Re-locked {success} items (including new file)")
+                    # Update file access monitor
+                    if self.file_access_monitor:
+                        self.file_access_monitor.update_monitored_items()
+                        print(f"✅ File access monitor updated")
+                
                 self.show_message("Success", f"Added file: {os.path.basename(file_path)}", "success")
             else:
                 self.show_message("Error", "Failed to add file. It may already be in the list.", "error")
@@ -1372,6 +1403,19 @@ class MainWindowBase(QMainWindow):
                             item.get('locked_at')
                         )
                         break
+                
+                # Auto-lock folder if monitoring is active
+                if self.monitoring_active and self.file_lock_manager:
+                    print(f"🔒 Auto-locking newly added folder: {os.path.basename(folder_path)}")
+                    # Re-lock all files (includes the new one)
+                    success, failed = self.file_lock_manager.lock_all()
+                    if success > 0:
+                        print(f"✅ Re-locked {success} items (including new folder)")
+                    # Update file access monitor
+                    if self.file_access_monitor:
+                        self.file_access_monitor.update_monitored_items()
+                        print(f"✅ File access monitor updated")
+                
                 self.show_message("Success", f"Added folder: {os.path.basename(folder_path)}", "success")
             else:
                 self.show_message("Error", "Failed to add folder. It may already be in the list.", "error")
@@ -1399,6 +1443,13 @@ class MainWindowBase(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             if self.file_lock_manager.remove_item(selected_path):
                 self.file_grid_widget.remove_item(selected_path)
+                
+                # Update file access monitor if monitoring is active
+                if self.monitoring_active and self.file_access_monitor:
+                    print(f"📝 Updating file access monitor after removal...")
+                    self.file_access_monitor.update_monitored_items()
+                    print(f"✅ File access monitor updated")
+                
                 self.show_message("Success", "Item removed successfully.", "success")
             else:
                 self.show_message("Error", "Failed to remove item.", "error")
@@ -1741,6 +1792,20 @@ class MainWindowBase(QMainWindow):
         for app in applications:
             print(f"   📦 {app['name']}: {app['path']}")
         
+        # CRITICAL: Check for crash recovery - unlock any stuck files from previous crash
+        print("🔍 Checking for crash recovery...")
+        if self.file_lock_manager:
+            if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
+                # Unlock all items silently (in case they're stuck from crash)
+                success, failed = self.file_lock_manager.unlock_all_with_configs(silent=True)
+                if success > 0:
+                    print(f"♻️  Crash recovery: Restored {success} stuck items from previous session")
+            else:
+                # Windows fallback
+                success, failed = self.file_lock_manager.unlock_all()
+                if success > 0:
+                    print(f"♻️  Crash recovery: Restored {success} stuck items")
+        
         # Initialize UnifiedMonitor
         from core.unified_monitor import UnifiedMonitor
         import platform
@@ -1772,6 +1837,12 @@ class MainWindowBase(QMainWindow):
                 success, failed = self.file_lock_manager.lock_all_with_configs()
                 if failed > 0:
                     print(f"⚠️  Failed to lock {failed} items")
+                
+                # Start file access monitoring after locking
+                if self.file_access_monitor and failed == 0:
+                    print("👁️  Starting file access monitor...")
+                    self.file_access_monitor.start_monitoring()
+                    print("✅ File access monitor started")
             else:
                 # Fallback for other platforms (Windows, etc.)
                 print("🔒 Locking files and folders...")
@@ -1784,6 +1855,12 @@ class MainWindowBase(QMainWindow):
                 # Lock FadCrypt's own config files
                 print("🔒 Protecting FadCrypt config files...")
                 self.file_lock_manager.lock_fadcrypt_configs()
+                
+                # Start file access monitoring after locking
+                if self.file_access_monitor:
+                    print("👁️  Starting file access monitor...")
+                    self.file_access_monitor.start_monitoring()
+                    print("✅ File access monitor started")
         
         # Update UI buttons - disable start, enable stop
         self.start_button.setEnabled(False)
@@ -1846,6 +1923,12 @@ class MainWindowBase(QMainWindow):
             if self.unified_monitor:
                 self.unified_monitor.stop_monitoring()
                 print("🛑 Monitoring stopped successfully")
+            
+            # Stop file access monitoring
+            if self.file_access_monitor:
+                print("🛑 Stopping file access monitor...")
+                self.file_access_monitor.stop_monitoring()
+                print("✅ File access monitor stopped")
             
             self.monitoring_active = False
             
@@ -1952,10 +2035,116 @@ class MainWindowBase(QMainWindow):
             print(f"Error loading monitoring state: {e}")
             self.monitoring_state = {'unlocked_apps': []}
     
+    def _handle_file_access_attempt_threadsafe(self, file_path: str) -> bool:
+        """
+        Thread-safe wrapper for file access attempts
+        Called from watchdog observer thread - must not show Qt dialogs directly
+        
+        Args:
+            file_path: Path to the file being accessed
+        
+        Returns:
+            bool: Always returns False (dialog shown asynchronously in main thread)
+        """
+        filename = os.path.basename(file_path)
+        print(f"🚨 File access attempt detected (from watchdog thread): {filename}")
+        
+        # Emit signal to handle in main Qt thread
+        self.file_access_requested.emit(file_path)
+        
+        # Return False immediately (file stays locked until password entered in main thread)
+        return False
+    
+    def _handle_file_access_from_main_thread(self, file_path: str):
+        """
+        Handle file access in the main Qt thread (called via QMetaObject.invokeMethod)
+        """
+        self._handle_file_access_attempt(file_path)
+    
+    def _handle_file_access_attempt(self, file_path: str) -> bool:
+        """
+        Handle file access attempts - show password dialog
+        Called by FileAccessMonitor when a locked file is accessed
+        
+        Args:
+            file_path: Path to the file being accessed
+        
+        Returns:
+            bool: True if password correct (grant access), False otherwise
+        """
+        from ui.dialogs.password_dialog import ask_password
+        
+        filename = os.path.basename(file_path)
+        print(f"🚨 File access attempt detected: {filename}")
+        
+        # Show password dialog
+        password = ask_password(
+            f"File Access: {filename}",
+            f"Enter password to temporarily access:\n{file_path}",
+            self.resource_path,
+            style=self.password_dialog_style,
+            wallpaper=self.wallpaper_choice,
+            parent=self
+        )
+        
+        if password and self.password_manager.verify_password(password):
+            print(f"✅ Correct password - granting temporary access to {filename}")
+            
+            # Unlock file and add to unlocked state (persistent tracking)
+            import stat
+            try:
+                # Get original permissions
+                original_stat = os.stat(file_path)
+                is_dir = stat.S_ISDIR(original_stat.st_mode)
+                
+                # Make writable
+                if is_dir:
+                    os.chmod(file_path, 0o755)  # rwxr-xr-x
+                    print(f"♻️  Unlocked folder: {filename} (will auto-lock when not in use)")
+                else:
+                    os.chmod(file_path, 0o644)  # rw-r--r--
+                    print(f"♻️  Unlocked file: {filename} (will auto-lock when not in use)")
+                
+                # Add to unlocked files state (persistent tracking like unlocked_apps)
+                unlocked_files = self.get_monitoring_state().get('unlocked_files', [])
+                abs_path = os.path.abspath(file_path)
+                if abs_path not in unlocked_files:
+                    unlocked_files.append(abs_path)
+                    self.set_monitoring_state('unlocked_files', unlocked_files)
+                    print(f"📝 Added {filename} to unlocked files state")
+                
+                # Show success dialog
+                from PyQt6.QtWidgets import QMessageBox
+                msg = QMessageBox(self)
+                msg.setIcon(QMessageBox.Icon.Information)
+                msg.setWindowTitle("File Unlocked")
+                item_type = "Folder" if is_dir else "File"
+                msg.setText(f"✅ Success! {item_type} unlocked and accessible.")
+                msg.setInformativeText(
+                    f"{item_type}: {filename}\n\n"
+                    f"This {item_type.lower()} will remain unlocked while in use.\n"
+                    f"It will automatically lock after 10 seconds of inactivity."
+                )
+                msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+                msg.exec()
+                
+                return True
+            except Exception as e:
+                print(f"❌ Error unlocking {filename}: {e}")
+                return False
+        else:
+            print(f"❌ Incorrect password - access denied to {filename}")
+            return False
+    
     def save_monitoring_state_to_disk(self):
         """Save monitoring state to JSON file including monitoring_active flag"""
         import json
         state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        
+        # Temporarily unlock config file if locked (for writing)
+        if self.file_lock_manager and hasattr(self.file_lock_manager, 'temporarily_unlock_config'):
+            self.file_lock_manager.temporarily_unlock_config('monitoring_state.json')
+        
         try:
             # Add monitoring_active flag
             self.monitoring_state['monitoring_active'] = self.monitoring_active
@@ -1965,6 +2154,10 @@ class MainWindowBase(QMainWindow):
             print(f"💾 Saved monitoring state: active={self.monitoring_active}")
         except Exception as e:
             print(f"❌ Error saving monitoring state: {e}")
+        finally:
+            # Re-lock config file if monitoring is active
+            if self.monitoring_active and self.file_lock_manager and hasattr(self.file_lock_manager, 'relock_config'):
+                self.file_lock_manager.relock_config('monitoring_state.json')
     
     def check_crash_recovery(self):
         """

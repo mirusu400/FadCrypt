@@ -155,14 +155,14 @@ def main():
         # Re-center after window is fully rendered
         QTimer.singleShot(100, window.center_on_screen)
         
-        # Start file monitor daemon after window is created
+        # Start file monitor for config protection
         # This monitors config files and auto-restores them if deleted
         nonlocal _file_monitor
         _file_monitor = start_file_monitor_daemon(
             config_folder_func=window.get_fadcrypt_folder,
             backup_folder_func=window.get_backup_folder if hasattr(window, 'get_backup_folder') else window.get_fadcrypt_folder
         )
-        print("📁 File monitoring daemon started for config protection")
+        print("✅ Config file monitor started")
         
         print("✅ FadCrypt started successfully!")
         

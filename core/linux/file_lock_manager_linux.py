@@ -1,715 +1,389 @@
 """
 Linux File Lock Manager
 
-Implements file/folder locking using chmod + chattr for complete inaccessibility.
-Lock order: chmod 000 (remove all permissions) → chattr +i (make immutable)
-Unlock order: chattr -i (remove immutable) → chmod original (restore permissions)
+Implements file/folder locking using simple chmod (no sudo required).
+- Lock: chmod 000 (remove all permissions) + kill processes with file open
+- Unlock: restore original permissions
+- Stores original permissions for proper restoration
 """
 
 import os
 import subprocess
 import stat
-import tempfile
 from typing import Dict, Optional, Tuple, List
-import time
+import json
+import psutil
 
 from core.file_lock_manager import FileLockManager
 
 
 class FileLockManagerLinux(FileLockManager):
-    """Linux implementation of file/folder locking using chmod + chattr"""
+    """Linux implementation of file/folder locking using chmod (no sudo)"""
     
-    def lock_all_with_configs(self) -> Tuple[int, int]:
+    def __init__(self, config_folder: str):
+        super().__init__(config_folder)
+        # Store original permissions for restoration
+        self.permissions_file = os.path.join(config_folder, '.file_permissions.json')
+        self.original_permissions = self._load_permissions()
+        
+        # Perform cleanup on initialization (handles crash recovery)
+        self._cleanup_on_startup()
+    
+    def _cleanup_on_startup(self):
         """
-        Lock all user items AND config files with a single pkexec prompt.
-        This combines lock_all() and lock_fadcrypt_configs() into one operation.
-        
-        Returns:
-            Tuple of (success_count, failure_count)
+        Cleanup any stuck locks from previous sessions (crash recovery).
+        Unlocks all files that have stored permissions.
         """
-        # Get config files
-        critical_files = [
-            os.path.join(self.config_folder, "apps_config.json"),
-            os.path.join(self.config_folder, "settings.json"),
-            os.path.join(self.config_folder, "encrypted_password.bin"),
-            os.path.join(self.config_folder, "monitoring_state.json")
-        ]
-        existing_config_files = [f for f in critical_files if os.path.exists(f)]
+        if not self.original_permissions:
+            return  # Nothing to clean up
         
-        total_items = len(self.locked_items) + len(existing_config_files)
+        print("🧹 Performing startup cleanup (crash recovery)...")
+        cleaned_count = 0
         
-        if total_items == 0:
-            print("ℹ️  No items to lock")
-            return (0, 0)
+        for path, original_perms in list(self.original_permissions.items()):
+            if os.path.exists(path):
+                try:
+                    # Restore original permissions
+                    perms = int(original_perms, 8)
+                    os.chmod(path, perms)
+                    print(f"  ✅ Restored: {os.path.basename(path)} (chmod {original_perms})")
+                    cleaned_count += 1
+                except Exception as e:
+                    print(f"  ⚠️  Could not restore {path}: {e}")
         
-        print(f"🔒 Locking {len(self.locked_items)} items + {len(existing_config_files)} config files with single password prompt...")
-        
-        # Create unified batch script
-        script_content = "#!/bin/bash\nset -e\n\n"
-        
-        # Add user files/folders
-        for item in self.locked_items:
-            path = item['path']
-            lock_method = item.get('lock_method', 'chmod_chattr')
-            item_type = item['type']
-            
-            if not os.path.exists(path):
-                print(f"⚠️  Skipping (doesn't exist): {item['name']}")
-                continue
-            
-            script_content += f"# Locking user item: {item['name']}\n"
-            script_content += f"chmod 000 '{path}'\n"
-            
-            if lock_method == "chmod_chattr":
-                if item_type == 'folder':
-                    script_content += f"chattr -R +i '{path}'\n"
-                else:
-                    script_content += f"chattr +i '{path}'\n"
-            
-            script_content += "\n"
-        
-        # Add config files (chattr +i only, keep readable)
-        for file_path in existing_config_files:
-            script_content += f"# Locking config: {os.path.basename(file_path)}\n"
-            script_content += f"chattr +i '{file_path}'\n\n"
-        
-        # Write script to temp file
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            os.chmod(script_path, 0o755)
-            
-            # Execute with single pkexec prompt
-            print("  🔑 Requesting elevated privileges (enter password once)...")
-            result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            # Clean up script
+        # Clear permissions storage after cleanup
+        if cleaned_count > 0:
+            self.original_permissions.clear()
+            self._save_permissions()
+            print(f"✅ Startup cleanup complete: Restored {cleaned_count} items")
+    
+    def _load_permissions(self) -> Dict:
+        """Load stored file permissions"""
+        if os.path.exists(self.permissions_file):
             try:
-                os.remove(script_path)
+                with open(self.permissions_file, 'r') as f:
+                    return json.load(f)
             except:
                 pass
-            
-            if result.returncode == 0:
-                print(f"✅ Successfully locked {len(self.locked_items)} items + {len(existing_config_files)} config files")
-                return (total_items, 0)
-            elif result.returncode == 126 or result.returncode == 127:
-                print(f"⚠️  Authentication cancelled - nothing locked")
-                return (0, total_items)
-            else:
-                print(f"❌ Batch lock failed: {result.stderr}")
-                return (0, total_items)
-                
-        except Exception as e:
-            print(f"❌ Error creating unified batch lock script: {e}")
-            return (0, total_items)
+        return {}
     
-    def unlock_all_with_configs(self) -> Tuple[int, int]:
-        """
-        Unlock all user items AND config files with a single pkexec prompt.
-        This combines unlock_all() and unlock_fadcrypt_configs() into one operation.
-        
-        Returns:
-            Tuple of (success_count, failure_count)
-        """
-        # Get config files
-        critical_files = [
-            os.path.join(self.config_folder, "apps_config.json"),
-            os.path.join(self.config_folder, "settings.json"),
-            os.path.join(self.config_folder, "encrypted_password.bin"),
-            os.path.join(self.config_folder, "monitoring_state.json")
-        ]
-        existing_config_files = [f for f in critical_files if os.path.exists(f)]
-        
-        total_items = len(self.locked_items) + len(existing_config_files)
-        
-        if total_items == 0:
-            print("ℹ️  No items to unlock")
-            return (0, 0)
-        
-        print(f"🔓 Unlocking {len(self.locked_items)} items + {len(existing_config_files)} config files with single password prompt...")
-        
-        # Create unified batch script
-        script_content = "#!/bin/bash\n\n"
-        
-        # Add user files/folders
-        for item in self.locked_items:
-            path = item['path']
-            lock_method = item.get('lock_method', 'chmod_chattr')
-            original_permissions = item.get('original_permissions', '644')
-            item_type = item['type']
-            
-            if not os.path.exists(path):
-                print(f"⚠️  Skipping (doesn't exist): {item['name']}")
-                continue
-            
-            script_content += f"# Unlocking user item: {item['name']}\n"
-            if lock_method == "chmod_chattr":
-                if item_type == 'folder':
-                    script_content += f"chattr -R -i '{path}' 2>/dev/null || true\n"
-                else:
-                    script_content += f"chattr -i '{path}' 2>/dev/null || true\n"
-            
-            script_content += f"chmod {original_permissions} '{path}'\n\n"
-        
-        # Add config files
-        for file_path in existing_config_files:
-            script_content += f"# Unlocking config: {os.path.basename(file_path)}\n"
-            script_content += f"chattr -i '{file_path}' 2>/dev/null || true\n\n"
-        
-        # Write script to temp file
+    def _save_permissions(self):
+        """Save file permissions to disk"""
         try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            os.chmod(script_path, 0o755)
-            
-            # Execute with single pkexec prompt
-            print("  🔑 Requesting elevated privileges (enter password once)...")
-            result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            # Clean up script
-            try:
-                os.remove(script_path)
-            except:
-                pass
-            
-            if result.returncode == 0:
-                print(f"✅ Successfully unlocked {len(self.locked_items)} items + {len(existing_config_files)} config files")
-                return (total_items, 0)
-            elif result.returncode == 126 or result.returncode == 127:
-                print(f"⚠️  Authentication cancelled - items remain locked")
-                return (0, total_items)
-            else:
-                print(f"❌ Batch unlock failed: {result.stderr}")
-                return (0, total_items)
-                
+            with open(self.permissions_file, 'w') as f:
+                json.dump(self.original_permissions, f, indent=2)
         except Exception as e:
-            print(f"❌ Error creating unified batch unlock script: {e}")
-            return (0, total_items)
+            print(f"⚠️  Warning: Could not save permissions: {e}")
     
-    def lock_all(self) -> Tuple[int, int]:
-        """
-        Lock all items using a single pkexec prompt (batch operation).
-        
-        Returns:
-            Tuple of (success_count, failure_count)
-        """
-        if not self.locked_items:
-            print("ℹ️  No items to lock")
-            return (0, 0)
-        
-        print(f"🔒 Locking {len(self.locked_items)} items with single password prompt...")
-        
-        # Create batch script
-        script_content = "#!/bin/bash\nset -e\n\n"
-        
-        for item in self.locked_items:
-            path = item['path']
-            lock_method = item.get('lock_method', 'chmod_chattr')
-            item_type = item['type']
-            
-            if not os.path.exists(path):
-                print(f"⚠️  Skipping (doesn't exist): {item['name']}")
-                continue
-            
-            # Add chmod command
-            script_content += f"# Locking: {item['name']}\n"
-            script_content += f"chmod 000 '{path}'\n"
-            
-            # Add chattr command if applicable
-            if lock_method == "chmod_chattr":
-                if item_type == 'folder':
-                    script_content += f"chattr -R +i '{path}'\n"
-                else:
-                    script_content += f"chattr +i '{path}'\n"
-            
-            script_content += "\n"
-        
-        # Write script to temp file
+    def _get_processes_using_file(self, file_path: str) -> List[int]:
+        """Find process IDs that have the file open"""
+        pids = []
         try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            # Make script executable
-            os.chmod(script_path, 0o755)
-            
-            # Execute with single pkexec prompt
-            print("  🔑 Requesting elevated privileges (enter password once)...")
+            # Method 1: Use lsof (more reliable)
             result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            # Clean up script
-            try:
-                os.remove(script_path)
-            except:
-                pass
-            
-            if result.returncode == 0:
-                print(f"✅ Successfully locked {len(self.locked_items)} items")
-                return (len(self.locked_items), 0)
-            elif result.returncode == 126 or result.returncode == 127:
-                # User cancelled pkexec or authentication failed
-                print(f"⚠️  Authentication cancelled - items NOT locked")
-                return (0, len(self.locked_items))
-            else:
-                print(f"❌ Batch lock failed: {result.stderr}")
-                return (0, len(self.locked_items))
-                
-        except Exception as e:
-            print(f"❌ Error creating batch lock script: {e}")
-            # Fallback to individual locking
-            return super().lock_all()
-    
-    def unlock_all(self) -> Tuple[int, int]:
-        """
-        Unlock all items using a single pkexec prompt (batch operation).
-        
-        Returns:
-            Tuple of (success_count, failure_count)
-        """
-        if not self.locked_items:
-            print("ℹ️  No items to unlock")
-            return (0, 0)
-        
-        print(f"🔓 Unlocking {len(self.locked_items)} items with single password prompt...")
-        
-        # Create batch script
-        script_content = "#!/bin/bash\n\n"
-        
-        for item in self.locked_items:
-            path = item['path']
-            lock_method = item.get('lock_method', 'chmod_chattr')
-            original_permissions = item.get('original_permissions', '644')
-            item_type = item['type']
-            
-            if not os.path.exists(path):
-                print(f"⚠️  Skipping (doesn't exist): {item['name']}")
-                continue
-            
-            # Add chattr removal if applicable
-            script_content += f"# Unlocking: {item['name']}\n"
-            if lock_method == "chmod_chattr":
-                if item_type == 'folder':
-                    script_content += f"chattr -R -i '{path}' 2>/dev/null || true\n"
-                else:
-                    script_content += f"chattr -i '{path}' 2>/dev/null || true\n"
-            
-            # Add chmod restoration
-            script_content += f"chmod {original_permissions} '{path}'\n"
-            script_content += "\n"
-        
-        # Write script to temp file
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            # Make script executable
-            os.chmod(script_path, 0o755)
-            
-            # Execute with single pkexec prompt
-            print("  🔑 Requesting elevated privileges (enter password once)...")
-            result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            
-            # Clean up script
-            try:
-                os.remove(script_path)
-            except:
-                pass
-            
-            if result.returncode == 0:
-                print(f"✅ Successfully unlocked {len(self.locked_items)} items")
-                return (len(self.locked_items), 0)
-            elif result.returncode == 126 or result.returncode == 127:
-                # User cancelled pkexec or authentication failed
-                print(f"⚠️  Authentication cancelled - items remain locked")
-                return (0, len(self.locked_items))
-            else:
-                print(f"❌ Batch unlock failed: {result.stderr}")
-                return (0, len(self.locked_items))
-                
-        except Exception as e:
-            print(f"❌ Error creating batch unlock script: {e}")
-            # Fallback to individual unlocking
-            return super().unlock_all()
-    
-    def _detect_filesystem(self, path: str) -> str:
-        """
-        Detect filesystem type for given path.
-        
-        Returns:
-            Filesystem type (e.g., 'ext4', 'ntfs', 'btrfs')
-        """
-        try:
-            result = subprocess.run(
-                ['df', '-T', path],
+                ['lsof', '-t', file_path],
                 capture_output=True,
                 text=True,
                 timeout=5
             )
-            
-            if result.returncode == 0:
-                # Parse output: Filesystem Type Size Used Avail Use% Mounted
-                lines = result.stdout.strip().split('\n')
-                if len(lines) >= 2:
-                    parts = lines[1].split()
-                    if len(parts) >= 2:
-                        fs_type = parts[1].lower()
-                        print(f"  📂 Detected filesystem: {fs_type} for {path}")
-                        return fs_type
-        except Exception as e:
-            print(f"⚠️  Error detecting filesystem: {e}")
+            if result.returncode == 0 and result.stdout.strip():
+                pids = [int(pid) for pid in result.stdout.strip().split('\n') if pid.strip()]
+        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+            # Fallback: Use psutil to scan all processes
+            try:
+                for proc in psutil.process_iter(['pid', 'open_files']):
+                    try:
+                        if proc.info['open_files']:
+                            for file_info in proc.info['open_files']:
+                                if file_info.path == file_path:
+                                    pids.append(proc.info['pid'])
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except Exception:
+                pass
         
-        return "unknown"
+        return pids
     
-    def _get_file_permissions(self, path: str) -> str:
-        """Get file permissions in octal format (e.g., '644')"""
-        try:
-            st = os.stat(path)
-            permissions = oct(st.st_mode)[-3:]
-            return permissions
-        except Exception as e:
-            print(f"⚠️  Error getting permissions for {path}: {e}")
-            return "644"  # Safe default
-    
-    def _get_item_metadata(self, path: str, item_type: str) -> Optional[Dict]:
-        """
-        Get metadata for file or folder.
+    def _kill_processes_using_file(self, file_path: str) -> int:
+        """Kill processes that have the file open. Returns number of processes killed."""
+        pids = self._get_processes_using_file(file_path)
+        killed_count = 0
         
-        Returns dict with: name, path, type, original_permissions, filesystem, lock_method
+        for pid in pids:
+            try:
+                proc = psutil.Process(pid)
+                proc_name = proc.name()
+                print(f"   🔪 Killing process {pid} ({proc_name}) using {os.path.basename(file_path)}")
+                proc.kill()
+                proc.wait(timeout=3)  # Wait for process to die
+                killed_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                pass
+        
+        return killed_count
+    
+    def temporarily_unlock_config(self, config_name: str) -> bool:
         """
+        Temporarily unlock a config file for writing (chmod 644).
+        Returns True if unlocked successfully, False otherwise.
+        """
+        file_path = os.path.join(self.config_folder, config_name)
+        if not os.path.exists(file_path):
+            return True  # Doesn't exist, no need to unlock
+        
         try:
-            filesystem = self._detect_filesystem(path)
-            original_permissions = self._get_file_permissions(path)
+            # Make writable (chmod 644)
+            os.chmod(file_path, 0o644)
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning: Could not unlock {config_name}: {e}")
+            return False
+    
+    def relock_config(self, config_name: str) -> bool:
+        """
+        Re-lock a config file after writing (chmod 444).
+        Returns True if locked successfully, False otherwise.
+        """
+        file_path = os.path.join(self.config_folder, config_name)
+        if not os.path.exists(file_path):
+            return True
+        
+        try:
+            # Make read-only (chmod 444)
+            os.chmod(file_path, 0o444)
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning: Could not relock {config_name}: {e}")
+            return False
+    
+    def lock_all_with_configs(self) -> Tuple[int, int]:
+        """
+        Lock all user items AND config files (no sudo required).
+        Uses chmod 000 to make files/folders inaccessible.
+        
+        Returns:
+            Tuple of (success_count, failure_count)
+        """
+        # Get config files
+        critical_files = [
+            os.path.join(self.config_folder, "apps_config.json"),
+            os.path.join(self.config_folder, "settings.json"),
+            os.path.join(self.config_folder, "encrypted_password.bin"),
+            os.path.join(self.config_folder, "monitoring_state.json")
+        ]
+        existing_config_files = [f for f in critical_files if os.path.exists(f)]
+        
+        total_items = len(self.locked_items) + len(existing_config_files)
+        
+        if total_items == 0:
+            print("ℹ️  No items to lock")
+            return (0, 0)
+        
+        print(f"🔒 Locking {len(self.locked_items)} items + {len(existing_config_files)} config files...")
+        
+        success_count = 0
+        failure_count = 0
+        
+        # Lock user files/folders
+        for item in self.locked_items:
+            path = item['path']
+            item_name = item['name']
             
-            # Determine lock method based on filesystem
-            if 'ntfs' in filesystem:
-                lock_method = "chmod_only"  # chattr doesn't work on NTFS
+            if not os.path.exists(path):
+                print(f"⚠️  Skipping (doesn't exist): {item_name}")
+                failure_count += 1
+                continue
+            
+            try:
+                # Store original permissions before locking
+                original_mode = os.stat(path).st_mode
+                self.original_permissions[path] = oct(stat.S_IMODE(original_mode))
+                
+                # Kill any processes using this file
+                killed = self._kill_processes_using_file(path)
+                if killed > 0:
+                    print(f"   🔪 Killed {killed} process(es) using {item_name}")
+                
+                # Lock strategy:
+                # - Files: Make read-only (chmod 444) so watchdog can monitor modifications
+                # - Folders: Make read-only (chmod 555) so contents can be listed but not modified
+                if item['type'] == 'folder':
+                    os.chmod(path, 0o555)  # r-xr-xr-x (read + execute for listing)
+                    print(f"✅ Locked: {item_name} (chmod 555 - read-only folder)")
+                else:
+                    os.chmod(path, 0o444)  # r--r--r-- (read-only file)
+                    print(f"✅ Locked: {item_name} (chmod 444 - read-only file)")
+                success_count += 1
+                
+            except Exception as e:
+                print(f"❌ Failed to lock {item_name}: {e}")
+                failure_count += 1
+        
+        # Lock config files (keep them readable but protected)
+        for file_path in existing_config_files:
+            try:
+                # Store original permissions
+                original_mode = os.stat(file_path).st_mode
+                self.original_permissions[file_path] = oct(stat.S_IMODE(original_mode))
+                
+                # Make read-only (chmod 444) so config is still readable but not writable
+                os.chmod(file_path, 0o444)
+                print(f"✅ Protected config: {os.path.basename(file_path)} (chmod 444)")
+                success_count += 1
+                
+            except Exception as e:
+                print(f"❌ Failed to protect {os.path.basename(file_path)}: {e}")
+                failure_count += 1
+        
+        # Save permissions to disk
+        self._save_permissions()
+        
+        if failure_count == 0:
+            print(f"✅ Successfully locked {success_count} items")
+        else:
+            print(f"⚠️  Locked {success_count} items, {failure_count} failed")
+        
+        return (success_count, failure_count)
+    
+    def unlock_all_with_configs(self, silent: bool = False) -> Tuple[int, int]:
+        """
+        Unlock all user items AND config files (restore original permissions).
+        Uses stored permissions to restore exact original state.
+        
+        Args:
+            silent: If True, suppress output messages
+        
+        Returns:
+            Tuple of (success_count, failure_count)
+        """
+        # Reload permissions from disk in case they were updated
+        self.original_permissions = self._load_permissions()
+        
+        # Get config files
+        critical_files = [
+            os.path.join(self.config_folder, "apps_config.json"),
+            os.path.join(self.config_folder, "settings.json"),
+            os.path.join(self.config_folder, "encrypted_password.bin"),
+            os.path.join(self.config_folder, "monitoring_state.json")
+        ]
+        existing_config_files = [f for f in critical_files if os.path.exists(f)]
+        
+        total_items = len(self.locked_items) + len(existing_config_files)
+        
+        if total_items == 0:
+            if not silent:
+                print("ℹ️  No items to unlock")
+            return (0, 0)
+        
+        if not silent:
+            print(f"🔓 Unlocking {len(self.locked_items)} items + {len(existing_config_files)} config files...")
+        
+        success_count = 0
+        failure_count = 0
+        
+        # Unlock user files/folders
+        for item in self.locked_items:
+            path = item['path']
+            item_name = item['name']
+            
+            if not os.path.exists(path):
+                if not silent:
+                    print(f"⚠️  Skipping (doesn't exist): {item_name}")
+                failure_count += 1
+                continue
+            
+            try:
+                # Get original permissions (default to 644 for files, 755 for folders if not stored)
+                if path in self.original_permissions:
+                    original_perms = int(self.original_permissions[path], 8)
+                else:
+                    # Default permissions
+                    if item['type'] == 'folder':
+                        original_perms = 0o755
+                    else:
+                        original_perms = 0o644
+                
+                # Restore permissions
+                os.chmod(path, original_perms)
+                if not silent:
+                    print(f"✅ Unlocked: {item_name} (restored chmod {oct(original_perms)})")
+                success_count += 1
+                
+                # Remove from stored permissions
+                if path in self.original_permissions:
+                    del self.original_permissions[path]
+                
+            except Exception as e:
+                if not silent:
+                    print(f"❌ Failed to unlock {item_name}: {e}")
+                failure_count += 1
+        
+        # Unlock config files
+        for file_path in existing_config_files:
+            try:
+                # Get original permissions (default to 644 if not stored)
+                if file_path in self.original_permissions:
+                    original_perms = int(self.original_permissions[file_path], 8)
+                else:
+                    original_perms = 0o644
+                
+                # Restore permissions
+                os.chmod(file_path, original_perms)
+                if not silent:
+                    print(f"✅ Restored config: {os.path.basename(file_path)} (chmod {oct(original_perms)})")
+                success_count += 1
+                
+                # Remove from stored permissions
+                if file_path in self.original_permissions:
+                    del self.original_permissions[file_path]
+                
+            except Exception as e:
+                if not silent:
+                    print(f"❌ Failed to restore {os.path.basename(file_path)}: {e}")
+                failure_count += 1
+        
+        # Save updated permissions
+        self._save_permissions()
+        
+        if not silent:
+            if failure_count == 0:
+                print(f"✅ Successfully unlocked {success_count} items")
             else:
-                lock_method = "chmod_chattr"  # Standard ext4/ext3/ext2
+                print(f"⚠️  Unlocked {success_count} items, {failure_count} failed")
+        
+        return (success_count, failure_count)
+    
+    # Required abstract method implementations (not used in simplified approach)
+    def _get_item_metadata(self, path: str, item_type: str) -> Optional[Dict]:
+        """Get metadata for file or folder"""
+        try:
+            # Get original permissions
+            original_mode = os.stat(path).st_mode
+            original_perms = oct(stat.S_IMODE(original_mode))
             
-            metadata = {
+            return {
                 "name": os.path.basename(path) or path,
                 "path": os.path.abspath(path),
                 "type": item_type,
-                "original_permissions": original_permissions,
-                "filesystem": filesystem,
-                "lock_method": lock_method,
-                "locked_at": int(time.time())
+                "original_permissions": original_perms,
             }
-            
-            print(f"  📋 Metadata: {metadata['name']} | {original_permissions} | {filesystem} | {lock_method}")
-            return metadata
-            
         except Exception as e:
             print(f"❌ Error getting metadata for {path}: {e}")
             return None
     
     def _lock_item(self, item: Dict) -> bool:
-        """
-        Lock file or folder completely (no read/write/delete/rename).
-        
-        Order: chmod 000 → chattr +i (correct order as confirmed by user)
-        """
-        path = item['path']
-        lock_method = item.get('lock_method', 'chmod_chattr')
-        
-        if not os.path.exists(path):
-            print(f"⚠️  Path no longer exists: {path}")
-            return False
-        
-        try:
-            # Step 1: Remove all permissions (make unreadable/unwritable)
-            print(f"  🔒 Step 1: chmod 000 {path}")
-            result = subprocess.run(
-                ['pkexec', 'chmod', '000', path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                print(f"  ❌ chmod failed: {result.stderr}")
-                return False
-            
-            # Step 2: Make immutable (only if not NTFS)
-            if lock_method == "chmod_chattr":
-                print(f"  🔒 Step 2: chattr +i {path}")
-                
-                # For folders, use recursive flag
-                if item['type'] == 'folder':
-                    cmd = ['pkexec', 'chattr', '-R', '+i', path]
-                else:
-                    cmd = ['pkexec', 'chattr', '+i', path]
-                
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    print(f"  ⚠️  chattr warning: {result.stderr}")
-                    # Don't fail if chattr doesn't work, chmod 000 still provides protection
-            
-            # Verify lock by attempting to read
-            if os.path.isfile(path):
-                try:
-                    with open(path, 'r') as f:
-                        f.read(1)
-                    print(f"  ⚠️  Warning: File still readable after lock")
-                except PermissionError:
-                    print(f"  ✅ Verified: File is now unreadable")
-            
-            return True
-            
-        except subprocess.TimeoutExpired:
-            print(f"  ❌ Lock operation timed out for: {path}")
-            return False
-        except Exception as e:
-            print(f"  ❌ Error locking {path}: {e}")
-            return False
+        """Lock item (stub - use lock_all_with_configs instead)"""
+        return False
     
     def _unlock_item(self, item: Dict) -> bool:
-        """
-        Unlock file or folder and restore original permissions.
-        
-        Order: chattr -i → chmod original
-        """
-        path = item['path']
-        lock_method = item.get('lock_method', 'chmod_chattr')
-        original_permissions = item.get('original_permissions', '644')
-        
-        if not os.path.exists(path):
-            print(f"⚠️  Path no longer exists: {path}")
-            return True  # Consider it "unlocked" if it doesn't exist
-        
-        try:
-            # Step 1: Remove immutable flag (only if it was set)
-            if lock_method == "chmod_chattr":
-                print(f"  🔓 Step 1: chattr -i {path}")
-                
-                # For folders, use recursive flag
-                if item['type'] == 'folder':
-                    cmd = ['pkexec', 'chattr', '-R', '-i', path]
-                else:
-                    cmd = ['pkexec', 'chattr', '-i', path]
-                
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    print(f"  ⚠️  chattr warning: {result.stderr}")
-                    # Continue anyway, chmod should still work
-            
-            # Step 2: Restore original permissions
-            print(f"  🔓 Step 2: chmod {original_permissions} {path}")
-            result = subprocess.run(
-                ['pkexec', 'chmod', original_permissions, path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                print(f"  ❌ chmod failed: {result.stderr}")
-                return False
-            
-            # Verify unlock by attempting to read (if it's a file)
-            if os.path.isfile(path):
-                try:
-                    with open(path, 'r') as f:
-                        f.read(1)
-                    print(f"  ✅ Verified: File is now readable")
-                except PermissionError:
-                    print(f"  ⚠️  Warning: File still not readable")
-            
-            return True
-            
-        except subprocess.TimeoutExpired:
-            print(f"  ❌ Unlock operation timed out for: {path}")
-            return False
-        except Exception as e:
-            print(f"  ❌ Error unlocking {path}: {e}")
-            return False
-    
-    def lock_fadcrypt_configs(self):
-        """Lock FadCrypt's config files using batch operation (single password prompt)"""
-        critical_files = [
-            os.path.join(self.config_folder, "apps_config.json"),
-            os.path.join(self.config_folder, "settings.json"),
-            os.path.join(self.config_folder, "encrypted_password.bin"),
-            os.path.join(self.config_folder, "monitoring_state.json")
-        ]
-        
-        # Filter to existing files
-        existing_files = [f for f in critical_files if os.path.exists(f)]
-        
-        if not existing_files:
-            print("ℹ️  No config files to lock")
-            return
-        
-        print(f"🔒 Locking {len(existing_files)} FadCrypt config files...")
-        
-        # Create batch script for all config files
-        script_content = "#!/bin/bash\nset -e\n\n"
-        
-        for file_path in existing_files:
-            script_content += f"# Locking config: {os.path.basename(file_path)}\n"
-            script_content += f"chattr +i '{file_path}'\n\n"
-        
-        # Execute batch script
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            os.chmod(script_path, 0o755)
-            
-            result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            try:
-                os.remove(script_path)
-            except:
-                pass
-            
-            if result.returncode == 0:
-                for file_path in existing_files:
-                    print(f"  ✅ Protected: {os.path.basename(file_path)}")
-            elif result.returncode == 126 or result.returncode == 127:
-                # User cancelled pkexec or authentication failed
-                print(f"  ⚠️  Authentication cancelled - config files NOT protected")
-            else:
-                print(f"  ⚠️  Batch config lock failed: {result.stderr}")
-                
-        except Exception as e:
-            print(f"  ⚠️  Error locking configs: {e}")
-    
-    def unlock_fadcrypt_configs(self):
-        """Unlock FadCrypt's config files using batch operation (single password prompt)"""
-        critical_files = [
-            os.path.join(self.config_folder, "apps_config.json"),
-            os.path.join(self.config_folder, "settings.json"),
-            os.path.join(self.config_folder, "encrypted_password.bin"),
-            os.path.join(self.config_folder, "monitoring_state.json")
-        ]
-        
-        # Filter to existing files
-        existing_files = [f for f in critical_files if os.path.exists(f)]
-        
-        if not existing_files:
-            print("ℹ️  No config files to unlock")
-            return
-        
-        print(f"🔓 Unlocking {len(existing_files)} FadCrypt config files...")
-        
-        # Create batch script for all config files
-        script_content = "#!/bin/bash\n\n"
-        
-        for file_path in existing_files:
-            script_content += f"# Unlocking config: {os.path.basename(file_path)}\n"
-            script_content += f"chattr -i '{file_path}' 2>/dev/null || true\n\n"
-        
-        # Execute batch script
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
-                script_path = f.name
-                f.write(script_content)
-            
-            os.chmod(script_path, 0o755)
-            
-            result = subprocess.run(
-                ['pkexec', 'bash', script_path],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            try:
-                os.remove(script_path)
-            except:
-                pass
-            
-            if result.returncode == 0:
-                for file_path in existing_files:
-                    print(f"  ✅ Unprotected: {os.path.basename(file_path)}")
-            elif result.returncode == 126 or result.returncode == 127:
-                # User cancelled pkexec or authentication failed
-                print(f"  ⚠️  Authentication cancelled - config files remain protected")
-            else:
-                print(f"  ⚠️  Batch config unlock failed: {result.stderr}")
-                
-        except Exception as e:
-            print(f"  ⚠️  Error unlocking configs: {e}")
+        """Unlock item (stub - use unlock_all_with_configs instead)"""
+        return False
     
     def _lock_config_file(self, path: str):
-        """
-        Lock config file (keep readable by FadCrypt, prevent modification/deletion).
-        Only use chattr +i to prevent modifications while keeping readable.
-        Note: This is kept for compatibility but lock_fadcrypt_configs() should be used instead.
-        """
-        if not os.path.exists(path):
-            return
-        
-        try:
-            # Only make immutable, don't change permissions
-            # This prevents deletion/modification but keeps file readable
-            subprocess.run(
-                ['pkexec', 'chattr', '+i', path],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-        except Exception as e:
-            print(f"  ⚠️  Error locking config {path}: {e}")
+        """Lock config file (stub - handled in lock_all_with_configs)"""
+        pass
     
     def _unlock_config_file(self, path: str):
-        """
-        Unlock config file.
-        Note: This is kept for compatibility but unlock_fadcrypt_configs() should be used instead.
-        """
-        if not os.path.exists(path):
-            return
-        
-        try:
-            subprocess.run(
-                ['pkexec', 'chattr', '-i', path],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-        except Exception as e:
-            print(f"  ⚠️  Error unlocking config {path}: {e}")
+        """Unlock config file (stub - handled in unlock_all_with_configs)"""
+        pass
+
