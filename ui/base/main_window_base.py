@@ -2014,11 +2014,20 @@ class MainWindowBase(QMainWindow):
         """Save monitoring state to JSON file"""
         import json
         state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        
+        # Temporarily unlock config file if locked (for writing)
+        if self.file_lock_manager and hasattr(self.file_lock_manager, 'temporarily_unlock_config'):
+            self.file_lock_manager.temporarily_unlock_config('monitoring_state.json')
+        
         try:
             with open(state_file, 'w') as f:
                 json.dump(self.monitoring_state, f, indent=4)
         except Exception as e:
             print(f"Error saving monitoring state: {e}")
+        finally:
+            # Re-lock config file if monitoring is active
+            if self.monitoring_active and self.file_lock_manager and hasattr(self.file_lock_manager, 'relock_config'):
+                self.file_lock_manager.relock_config('monitoring_state.json')
     
     def load_monitoring_state(self):
         """Load monitoring state from JSON file"""

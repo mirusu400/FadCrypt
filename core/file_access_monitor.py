@@ -18,7 +18,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 class FileAccessHandler(FileSystemEventHandler):
     """Handler for file system events on monitored files/folders"""
     
-    def __init__(self, locked_paths: List[str], on_access_callback: Callable):
+    def __init__(self, locked_paths: List[str], on_access_callback: Callable, get_state_func: Callable = None):
         """
         Initialize the file access handler
         
@@ -26,10 +26,12 @@ class FileAccessHandler(FileSystemEventHandler):
             locked_paths: List of file/folder paths that are locked
             on_access_callback: Function to call when locked file is accessed
                                 Signature: callback(file_path) -> bool (True if access allowed)
+            get_state_func: Function to get monitoring state with unlocked files list
         """
         super().__init__()
         self.locked_paths = set(os.path.abspath(p) for p in locked_paths)
         self.on_access_callback = on_access_callback
+        self.get_state = get_state_func if get_state_func else lambda: {}
         self.last_event_time = {}  # Debounce events
         self.debounce_seconds = 5.0  # Ignore events within 5 seconds (increased to reduce spam)
         self.start_time = time.time()  # Track when monitoring started
@@ -51,6 +53,13 @@ class FileAccessHandler(FileSystemEventHandler):
         self.last_event_time[path] = now
         return True
     
+    def _is_file_unlocked(self, file_path: str) -> bool:
+        """Check if file is currently unlocked (temporary access granted)"""
+        abs_path = os.path.abspath(file_path)
+        state = self.get_state()
+        unlocked_files = state.get('unlocked_files', [])
+        return abs_path in unlocked_files
+    
     def _get_process_info(self, file_path: str) -> tuple:
         """
         Get information about process accessing the file
@@ -61,6 +70,9 @@ class FileAccessHandler(FileSystemEventHandler):
         try:
             import psutil
             import subprocess
+            
+            # Processes to ignore (monitoring tools, not actual user access)
+            IGNORED_PROCESSES = {'lsof', 'ps', 'grep', 'python3', 'python', 'FadCrypt'}
             
             # Try lsof first
             try:
@@ -78,7 +90,13 @@ class FileAccessHandler(FileSystemEventHandler):
                         if len(parts) >= 2:
                             pid = int(parts[1])
                             proc = psutil.Process(pid)
-                            info = f" [Process: {proc.name()} (PID: {pid})]"
+                            proc_name = proc.name()
+                            
+                            # Ignore monitoring tools
+                            if proc_name in IGNORED_PROCESSES:
+                                return ("", None)
+                            
+                            info = f" [Process: {proc_name} (PID: {pid})]"
                             return (info, pid)
             except (subprocess.SubprocessError, ValueError, psutil.NoSuchProcess):
                 pass
@@ -106,6 +124,11 @@ class FileAccessHandler(FileSystemEventHandler):
                                     cmd = ' '.join(parts[10:])
                                     # Get just the command name
                                     cmd_name = os.path.basename(parts[10])
+                                    
+                                    # Ignore monitoring tools
+                                    if cmd_name in IGNORED_PROCESSES:
+                                        continue
+                                    
                                     info = f" [Process: {cmd_name} (PID: {pid})]"
                                     return (info, pid)
                                 except (ValueError, IndexError):
@@ -230,6 +253,10 @@ class FileAccessHandler(FileSystemEventHandler):
         """Called when a file is modified"""
         if not event.is_directory and self._is_locked_path(event.src_path):
             if self._should_process_event(event.src_path):
+                # CRITICAL: Check if file is already unlocked (skip if already accessible)
+                if self._is_file_unlocked(event.src_path):
+                    return  # File is unlocked, allow access without prompting
+                
                 # CRITICAL: Only proceed if we detect a process accessing the file
                 proc_info, pid = self._get_process_info(event.src_path)
                 
@@ -240,6 +267,10 @@ class FileAccessHandler(FileSystemEventHandler):
                 # Check if file is inside a locked folder
                 locked_folder = self._get_locked_parent_folder(event.src_path)
                 if locked_folder:
+                    # Check if folder is unlocked
+                    if self._is_file_unlocked(locked_folder):
+                        return  # Folder is unlocked, allow access
+                    
                     # File is inside a locked folder - show dialog for folder, not file
                     if self._should_process_event(locked_folder):
                         print(f"🔒 Locked folder access detected: {locked_folder}{proc_info}")
@@ -261,6 +292,10 @@ class FileAccessHandler(FileSystemEventHandler):
         """Called when a file is created (might indicate attempted access)"""
         if not event.is_directory and self._is_locked_path(event.src_path):
             if self._should_process_event(event.src_path):
+                # CRITICAL: Check if file is already unlocked
+                if self._is_file_unlocked(event.src_path):
+                    return  # File is unlocked, allow access
+                
                 # CRITICAL: Only proceed if we detect a process accessing the file
                 proc_info, pid = self._get_process_info(event.src_path)
                 
@@ -271,6 +306,9 @@ class FileAccessHandler(FileSystemEventHandler):
                 # Check if file is inside a locked folder
                 locked_folder = self._get_locked_parent_folder(event.src_path)
                 if locked_folder:
+                    if self._is_file_unlocked(locked_folder):
+                        return  # Folder is unlocked, allow access
+                    
                     if self._should_process_event(locked_folder):
                         print(f"🔒 Locked folder access detected (creation): {locked_folder}{proc_info}")
                         unlocked = self.on_access_callback(locked_folder)
@@ -290,6 +328,10 @@ class FileAccessHandler(FileSystemEventHandler):
         """Called when a file is opened (if supported by platform)"""
         if not event.is_directory and self._is_locked_path(event.src_path):
             if self._should_process_event(event.src_path):
+                # CRITICAL: Check if file is already unlocked
+                if self._is_file_unlocked(event.src_path):
+                    return  # File is unlocked, allow access
+                
                 # CRITICAL: Only proceed if we detect a process accessing the file
                 proc_info, pid = self._get_process_info(event.src_path)
                 
@@ -300,6 +342,9 @@ class FileAccessHandler(FileSystemEventHandler):
                 # Check if file is inside a locked folder
                 locked_folder = self._get_locked_parent_folder(event.src_path)
                 if locked_folder:
+                    if self._is_file_unlocked(locked_folder):
+                        return  # Folder is unlocked, allow access
+                    
                     if self._should_process_event(locked_folder):
                         print(f"🔒 Locked folder file open: {locked_folder}{proc_info}")
                         unlocked = self.on_access_callback(locked_folder)
@@ -381,7 +426,8 @@ class FileAccessMonitor:
         # Create event handler
         self.event_handler = FileAccessHandler(
             locked_paths=self.monitored_paths,
-            on_access_callback=self._handle_file_access
+            on_access_callback=self._handle_file_access,
+            get_state_func=self.get_state  # Pass state function to check unlocked files
         )
         
         # Create and start observer
