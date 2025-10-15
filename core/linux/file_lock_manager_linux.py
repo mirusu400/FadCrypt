@@ -206,10 +206,11 @@ class FileLockManagerLinux(FileLockManager):
                 
                 # Lock strategy:
                 # - Files: Make read-only (chmod 444) so watchdog can monitor modifications
-                # - Folders: Make read-only (chmod 555) so contents can be listed but not modified
+                # - Folders: Make read-only (chmod 555) with active monitoring for access attempts
+                #   (chmod 000 would block completely but we couldn't detect access or show password dialog)
                 if item['type'] == 'folder':
-                    os.chmod(path, 0o555)  # r-xr-xr-x (read + execute for listing)
-                    print(f"✅ Locked: {item_name} (chmod 555 - read-only folder)")
+                    os.chmod(path, 0o555)  # r-xr-xr-x (read + execute, but we monitor access)
+                    print(f"✅ Locked: {item_name} (chmod 555 - monitored folder)")
                 else:
                     os.chmod(path, 0o444)  # r--r--r-- (read-only file)
                     print(f"✅ Locked: {item_name} (chmod 444 - read-only file)")

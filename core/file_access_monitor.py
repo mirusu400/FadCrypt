@@ -249,6 +249,66 @@ class FileAccessHandler(FileSystemEventHandler):
         
         return None
     
+    def _detect_folder_access(self, folder_path: str) -> tuple:
+        """
+        Detect if any file manager process is accessing the folder
+        
+        Returns:
+            tuple: (process_info_string, pid) or ("", None) if not found
+        """
+        try:
+            import psutil
+            import subprocess
+            
+            # Common file manager process names AND shell commands
+            FILE_MANAGERS = {
+                'nautilus', 'nemo', 'thunar', 'dolphin', 'pcmanfm', 
+                'caja', 'konqueror', 'spacefm', 'ranger', 'mc',
+                'bash', 'zsh', 'sh', 'fish', 'ls', 'cd'  # Added shell commands
+            }
+            
+            # Method 1: Use lsof to detect directory access (faster, no +D)
+            try:
+                result = subprocess.run(
+                    ['lsof', folder_path],  # Just check the folder itself, not recursively
+                    capture_output=True,
+                    text=True,
+                    timeout=0.5  # Reduced timeout
+                )
+                if result.returncode == 0 and result.stdout:
+                    lines = result.stdout.strip().split('\n')
+                    if len(lines) > 1:
+                        # Parse first match
+                        parts = lines[1].split()
+                        if len(parts) >= 2:
+                            pid = int(parts[1])
+                            proc = psutil.Process(pid)
+                            proc_name = proc.name()
+                            
+                            # Return any process (not just file managers)
+                            info = f" [Process: {proc_name} (PID: {pid})]"
+                            return (info, pid)
+            except:
+                pass
+            
+            # Method 2: Check running file managers and see if they have the folder open
+            for proc in psutil.process_iter(['pid', 'name', 'cwd']):
+                try:
+                    proc_name = proc.info.get('name', '')
+                    if proc_name in FILE_MANAGERS:
+                        # Check if process current working directory is the locked folder
+                        cwd = proc.info.get('cwd', '')
+                        if cwd and (cwd == folder_path or cwd.startswith(folder_path + os.sep)):
+                            pid = proc.info['pid']
+                            info = f" [Process: {proc_name} (PID: {pid})]"
+                            return (info, pid)
+                except:
+                    continue
+            
+            return ("", None)
+        except Exception:
+            return ("", None)
+    
     def on_modified(self, event: FileSystemEvent):
         """Called when a file is modified"""
         if not event.is_directory and self._is_locked_path(event.src_path):
@@ -458,97 +518,112 @@ class FileAccessMonitor:
     def _auto_lock_loop(self):
         """
         Background thread that checks unlocked files and re-locks them when not in use
+        Also monitors locked folders for file manager access attempts
         Similar to unified_monitor's auto-lock logic
         """
         import subprocess
         
+        check_counter = 0  # Counter for less frequent checks
+        
         while self.auto_lock_running:
             try:
-                time.sleep(2)  # Check every 2 seconds
+                time.sleep(0.5)  # Check every 0.5 seconds for faster folder detection
+                check_counter += 1
                 
-                state = self.get_state()
-                unlocked_files = state.get('unlocked_files', [])
+                # Part 1: Check for folder access attempts MORE FREQUENTLY (every cycle)
+                self._check_locked_folders()
                 
-                if not unlocked_files:
-                    continue
-                
-                files_to_relock = []
-                
-                for file_path in unlocked_files:
-                    # Check if any process is using this file
-                    has_process = False
+                # Part 2: Auto-lock unlocked files LESS FREQUENTLY (every 4th cycle = 2 seconds)
+                if check_counter % 4 == 0:
+                    self._check_auto_lock_files()
                     
-                    try:
-                        # Method 1: Try lsof
-                        result = subprocess.run(
-                            ['lsof', file_path],
-                            capture_output=True,
-                            text=True,
-                            timeout=0.5
-                        )
-                        if result.returncode == 0 and result.stdout:
-                            lines = result.stdout.strip().split('\n')
-                            if len(lines) > 1:  # Header + at least one process
-                                has_process = True
-                    except:
-                        pass
-                    
-                    # Method 2: ps aux fallback
-                    if not has_process:
-                        try:
-                            result = subprocess.run(
-                                ['ps', 'aux'],
-                                capture_output=True,
-                                text=True,
-                                timeout=0.5
-                            )
-                            if result.returncode == 0:
-                                for line in result.stdout.split('\n'):
-                                    if file_path in line and 'grep' not in line and 'ps aux' not in line:
-                                        has_process = True
-                                        break
-                        except:
-                            pass
-                    
-                    # Update no-process counter
-                    if not has_process:
-                        self.no_process_counts[file_path] = self.no_process_counts.get(file_path, 0) + 1
-                        
-                        # Auto-lock after 5 consecutive checks (10 seconds)
-                        if self.no_process_counts[file_path] >= 5:
-                            files_to_relock.append(file_path)
-                    else:
-                        # Reset counter if process found
-                        self.no_process_counts[file_path] = 0
-                
-                # Re-lock files that have been idle
-                for file_path in files_to_relock:
-                    try:
-                        import stat
-                        original_stat = os.stat(file_path)
-                        is_dir = stat.S_ISDIR(original_stat.st_mode)
-                        
-                        # Re-lock
-                        if is_dir:
-                            os.chmod(file_path, 0o555)  # r-xr-xr-x
-                        else:
-                            os.chmod(file_path, 0o444)  # r--r--r--
-                        
-                        filename = os.path.basename(file_path)
-                        print(f"🔒 [AUTO-LOCK] Re-locked {filename} (no active processes)")
-                        
-                        # Remove from unlocked state
-                        unlocked_files.remove(file_path)
-                        self.set_state('unlocked_files', unlocked_files)
-                        
-                        # Reset counter
-                        self.no_process_counts[file_path] = 0
-                        
-                    except Exception as e:
-                        print(f"⚠️  [AUTO-LOCK] Could not re-lock {os.path.basename(file_path)}: {e}")
-                
             except Exception as e:
                 print(f"⚠️  [AUTO-LOCK] Error in auto-lock loop: {e}")
+    
+    def _check_auto_lock_files(self):
+        """Check unlocked files and re-lock them when not in use"""
+        import subprocess
+        
+        state = self.get_state()
+        unlocked_files = state.get('unlocked_files', [])
+        
+        if not unlocked_files:
+            return
+                
+        files_to_relock = []
+                
+        for file_path in unlocked_files:
+            # Check if any process is using this file
+            has_process = False
+            
+            try:
+                # Method 1: Try lsof
+                result = subprocess.run(
+                    ['lsof', file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=0.5
+                )
+                if result.returncode == 0 and result.stdout:
+                    lines = result.stdout.strip().split('\n')
+                    if len(lines) > 1:  # Header + at least one process
+                        has_process = True
+            except:
+                pass
+            
+            # Method 2: ps aux fallback
+            if not has_process:
+                try:
+                    result = subprocess.run(
+                        ['ps', 'aux'],
+                        capture_output=True,
+                        text=True,
+                        timeout=0.5
+                    )
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            if file_path in line and 'grep' not in line and 'ps aux' not in line:
+                                has_process = True
+                                break
+                except:
+                    pass
+            
+            # Update no-process counter
+            if not has_process:
+                self.no_process_counts[file_path] = self.no_process_counts.get(file_path, 0) + 1
+                
+                # Auto-lock after 5 consecutive checks (10 seconds)
+                if self.no_process_counts[file_path] >= 5:
+                    files_to_relock.append(file_path)
+            else:
+                # Reset counter if process found
+                self.no_process_counts[file_path] = 0
+        
+        # Re-lock files that have been idle
+        for file_path in files_to_relock:
+            try:
+                import stat
+                original_stat = os.stat(file_path)
+                is_dir = stat.S_ISDIR(original_stat.st_mode)
+                
+                # Re-lock
+                if is_dir:
+                    os.chmod(file_path, 0o555)  # r-xr-xr-x
+                else:
+                    os.chmod(file_path, 0o444)  # r--r--r--
+                
+                filename = os.path.basename(file_path)
+                print(f"🔒 [AUTO-LOCK] Re-locked {filename} (no active processes)")
+                
+                # Remove from unlocked state
+                unlocked_files.remove(file_path)
+                self.set_state('unlocked_files', unlocked_files)
+                
+                # Reset counter
+                self.no_process_counts[file_path] = 0
+                
+            except Exception as e:
+                print(f"⚠️  [AUTO-LOCK] Could not re-lock {os.path.basename(file_path)}: {e}")
     
     def stop_monitoring(self):
         """Stop monitoring file access"""
@@ -571,6 +646,47 @@ class FileAccessMonitor:
         self.is_monitoring = False
         print("🛑 File access monitoring stopped")
         return True
+    
+    def _check_locked_folders(self):
+        """
+        Periodically check if any file manager is accessing locked folders
+        This is needed because watchdog doesn't detect directory browsing
+        """
+        import os
+        
+        # Skip if not monitoring or no event handler
+        if not self.is_monitoring or not self.event_handler:
+            return
+        
+        # Get list of locked folders
+        locked_folders = [item['path'] for item in self.file_lock_manager.locked_items 
+                         if item['type'] == 'folder']
+        
+        state = self.get_state()
+        unlocked_files = state.get('unlocked_files', [])
+        
+        for folder_path in locked_folders:
+            # Skip if folder is already unlocked
+            if folder_path in unlocked_files:
+                continue
+            
+            # Skip if folder doesn't exist
+            if not os.path.exists(folder_path):
+                continue
+            
+            # Detect if file manager is accessing this folder
+            proc_info, pid = self.event_handler._detect_folder_access(folder_path)
+            
+            if pid:  # File manager detected
+                folder_name = os.path.basename(folder_path)
+                print(f"🔒 Locked folder access detected: {folder_path}{proc_info}")
+                
+                # Show password dialog
+                unlocked = self.password_callback(folder_path)
+                
+                if not unlocked:
+                    # Kill the file manager process
+                    self.event_handler._kill_process_accessing_file(folder_path)
     
     def _handle_file_access(self, file_path: str):
         """
