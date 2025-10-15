@@ -251,20 +251,58 @@ class FileAccessHandler(FileSystemEventHandler):
     
     def _detect_folder_access(self, folder_path: str) -> tuple:
         """
-        Detect if any file manager process is accessing the folder
+        Detect if any file manager process is accessing the folder (cross-platform)
         
         Returns:
             tuple: (process_info_string, pid) or ("", None) if not found
         """
+        import platform
+        system = platform.system()
+        
+        if system == "Windows":
+            return self._detect_folder_access_windows(folder_path)
+        else:  # Linux/Unix
+            return self._detect_folder_access_linux(folder_path)
+    
+    def _detect_folder_access_linux(self, folder_path: str) -> tuple:
+        """Linux-specific folder access detection"""
         try:
             import psutil
             import subprocess
             
-            # Common file manager process names AND shell commands
+            # COMPREHENSIVE list of Linux file managers and shell commands
             FILE_MANAGERS = {
-                'nautilus', 'nemo', 'thunar', 'dolphin', 'pcmanfm', 
-                'caja', 'konqueror', 'spacefm', 'ranger', 'mc',
-                'bash', 'zsh', 'sh', 'fish', 'ls', 'cd'  # Added shell commands
+                # GNOME/GTK file managers
+                'nautilus',  # GNOME Files (Ubuntu, Fedora, etc.)
+                'nemo',  # Cinnamon Files (Linux Mint)
+                'thunar',  # Xfce Files
+                'caja',  # MATE Files
+                'spacefm',  # SpaceFM
+                
+                # KDE/Qt file managers  
+                'dolphin',  # KDE Plasma Files
+                'konqueror',  # KDE Browser/Files
+                'krusader',  # KDE Advanced Files
+                
+                # Lightweight file managers
+                'pcmanfm',  # LXDE/LXQt Files
+                'pcmanfm-qt',  # LXQt Files
+                'thunar',  # Xfce Files
+                
+                # Terminal-based file managers
+                'ranger',  # Terminal ranger
+                'mc',  # Midnight Commander
+                'nnn',  # Terminal nnn
+                'vifm',  # Vim-like file manager
+                'lf',  # List Files
+                
+                # Alternative desktop environments
+                'deepin-file-manager',  # Deepin
+                'elementary-files',  # elementary OS
+                
+                # Shell commands
+                'bash', 'zsh', 'sh', 'fish', 'dash', 'ksh', 'tcsh',  # Shells
+                'ls', 'cd', 'dir',  # Directory commands
             }
             
             # Method 1: Use lsof to detect directory access (faster, no +D)
@@ -302,6 +340,108 @@ class FileAccessHandler(FileSystemEventHandler):
                             pid = proc.info['pid']
                             info = f" [Process: {proc_name} (PID: {pid})]"
                             return (info, pid)
+                except:
+                    continue
+            
+            return ("", None)
+        except Exception:
+            return ("", None)
+    
+    def _detect_folder_access_windows(self, folder_path: str) -> tuple:
+        """
+        Windows-specific folder access detection
+        Uses Windows API and process enumeration to detect Explorer and other file managers
+        """
+        try:
+            import psutil
+            
+            # COMPREHENSIVE list of Windows file managers
+            FILE_MANAGERS = {
+                # Built-in Windows
+                'explorer.exe',  # Windows Explorer (default)
+                'cmd.exe',  # Command Prompt
+                'powershell.exe',  # PowerShell
+                'pwsh.exe',  # PowerShell Core
+                
+                # Third-party file managers
+                'TotalCmd64.exe', 'TOTALCMD.EXE',  # Total Commander
+                'FreeCommander.exe',  # Free Commander
+                'XYplorer.exe',  # XYplorer
+                'DirectoryOpus.exe', 'dopus.exe',  # Directory Opus
+                'Q-Dir.exe',  # Q-Dir
+                'OneCommander.exe',  # One Commander
+                'Files.exe',  # Files App (UWP)
+                'MultiCommander.exe',  # Multi Commander
+                'Altap.exe',  # Altap Salamander
+                'xplorer2.exe',  # xplorer²
+                
+                # Alternative shells
+                'Double Commander.exe',  # Double Commander
+                'Far.exe',  # Far Manager
+            }
+            
+            # Normalize path for Windows
+            folder_path_lower = os.path.abspath(folder_path).lower()
+            
+            # Method 1: Check open file handles (similar to lsof on Linux)
+            # Note: This requires pywin32, fallback to process enumeration if not available
+            try:
+                import win32api
+                import win32file
+                import win32con
+                
+                # Try to open the folder to see if it's in use
+                try:
+                    handle = win32file.CreateFile(
+                        folder_path,
+                        win32con.GENERIC_READ,
+                        0,  # No sharing - will fail if folder is open
+                        None,
+                        win32con.OPEN_EXISTING,
+                        win32file.FILE_FLAG_BACKUP_SEMANTICS,  # Required for directories
+                        None
+                    )
+                    win32api.CloseHandle(handle)
+                except:
+                    # Folder is in use - find the process
+                    for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                        try:
+                            proc_name = proc.info.get('name', '').lower()
+                            if proc_name in [fm.lower() for fm in FILE_MANAGERS]:
+                                # Windows Explorer found - assume it's accessing the folder
+                                pid = proc.info['pid']
+                                info = f" [Process: {proc.info['name']} (PID: {pid})]"
+                                return (info, pid)
+                        except:
+                            continue
+            except ImportError:
+                pass  # Fall through to Method 2
+            
+            # Method 2: Check running file managers and their open handles
+            for proc in psutil.process_iter(['pid', 'name', 'exe', 'cwd']):
+                try:
+                    proc_name = proc.info.get('name', '')
+                    if proc_name in FILE_MANAGERS:
+                        # Check current working directory
+                        try:
+                            cwd = proc.info.get('cwd', '')
+                            if cwd and os.path.abspath(cwd).lower() == folder_path_lower:
+                                pid = proc.info['pid']
+                                info = f" [Process: {proc_name} (PID: {pid})]"
+                                return (info, pid)
+                        except:
+                            pass
+                        
+                        # Check open files for this process
+                        try:
+                            p = psutil.Process(proc.info['pid'])
+                            for file_obj in p.open_files():
+                                if file_obj.path.lower().startswith(folder_path_lower):
+                                    pid = proc.info['pid']
+                                    info = f" [Process: {proc_name} (PID: {pid})]"
+                                    return (info, pid)
+                        except:
+                            pass
                 except:
                     continue
             
