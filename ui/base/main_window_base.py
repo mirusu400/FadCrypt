@@ -139,6 +139,9 @@ class MainWindowBase(QMainWindow):
         password_file = os.path.join(fadcrypt_folder, "encrypted_password.bin")
         self.password_manager = PasswordManager(password_file, self.crypto_manager)
         
+        # Initialize file lock manager (platform-specific)
+        self.file_lock_manager = self.get_file_lock_manager(fadcrypt_folder)
+        
         # Log important paths at startup
         print("\n📁 FadCrypt File Locations:")
         print(f"   Main Config Folder: {fadcrypt_folder}")
@@ -173,6 +176,9 @@ class MainWindowBase(QMainWindow):
         self.load_monitoring_state()
         
         self.init_ui()
+        
+        # Check for crash recovery (orphaned locks from previous session)
+        self.check_crash_recovery()
         
         # Initialize system tray after UI
         self.init_system_tray()
@@ -754,6 +760,114 @@ class MainWindowBase(QMainWindow):
         # Load saved applications
         self.load_applications_config()
         
+        # ============================================
+        # FILES TAB - Protected Files & Folders
+        # ============================================
+        files_tab = QWidget()
+        files_layout = QVBoxLayout(files_tab)
+        files_layout.setContentsMargins(20, 20, 20, 20)
+        files_layout.setSpacing(15)
+        
+        # Header
+        files_header = QLabel("🔒 Protected Files & Folders")
+        files_header.setStyleSheet("""
+            QLabel {
+                font-size: 18pt;
+                font-weight: bold;
+                color: #ffffff;
+                padding: 10px;
+            }
+        """)
+        files_layout.addWidget(files_header)
+        
+        # Description
+        files_desc = QLabel(
+            "Lock files and folders to prevent read, write, delete, or rename operations. "
+            "Locked items are completely inaccessible until monitoring is stopped."
+        )
+        files_desc.setWordWrap(True)
+        files_desc.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 10pt;
+                padding: 5px;
+            }
+        """)
+        files_layout.addWidget(files_desc)
+        
+        # File grid widget
+        from ui.components.file_grid_widget import FileGridWidget
+        self.file_grid_widget = FileGridWidget()
+        files_layout.addWidget(self.file_grid_widget)
+        
+        # File action buttons
+        file_buttons_layout = QHBoxLayout()
+        file_buttons_layout.setSpacing(10)
+        
+        # Add File button
+        self.add_file_btn = QPushButton("📄 Add File")
+        self.add_file_btn.clicked.connect(self.add_file)
+        self.add_file_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 11pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+        file_buttons_layout.addWidget(self.add_file_btn)
+        
+        # Add Folder button
+        self.add_folder_btn = QPushButton("📁 Add Folder")
+        self.add_folder_btn.clicked.connect(self.add_folder)
+        self.add_folder_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 11pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+        file_buttons_layout.addWidget(self.add_folder_btn)
+        
+        # Remove button
+        self.remove_file_btn = QPushButton("🗑️  Remove")
+        self.remove_file_btn.clicked.connect(self.remove_file_item)
+        self.remove_file_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 11pt;
+            }
+            QPushButton:hover {
+                background-color: #b71c1c;
+            }
+        """)
+        file_buttons_layout.addWidget(self.remove_file_btn)
+        
+        file_buttons_layout.addStretch()
+        files_layout.addLayout(file_buttons_layout)
+        
+        self.tabs.addTab(files_tab, "Protected Files")
+        
+        # Load locked files after widget is created
+        self.load_locked_files()
+        
     def create_config_tab(self):
         """Create Config tab for viewing encrypted apps list"""
         config_tab = QWidget()
@@ -1026,6 +1140,25 @@ class MainWindowBase(QMainWindow):
         
         return fadcrypt_folder
     
+    def get_file_lock_manager(self, config_folder: str):
+        """
+        Get platform-specific file lock manager.
+        To be overridden by platform-specific subclasses.
+        """
+        import platform
+        system = platform.system()
+        
+        if system == "Linux":
+            from core.linux.file_lock_manager_linux import FileLockManagerLinux
+            return FileLockManagerLinux(config_folder)
+        elif system == "Windows":
+            from core.windows.file_lock_manager_windows import FileLockManagerWindows
+            return FileLockManagerWindows(config_folder)
+        else:
+            # Fallback (shouldn't happen)
+            print(f"⚠️  File locking not supported on {system}")
+            return None
+    
     def on_settings_changed(self):
         """Handle settings changes from SettingsPanel"""
         # Get current settings
@@ -1181,6 +1314,109 @@ class MainWindowBase(QMainWindow):
         """Toggle lock status of selected applications - NOT USED IN PyQt6 VERSION"""
         # This method is for backward compatibility but not used in new design
         pass
+    
+    # ========================================
+    # FILE/FOLDER LOCKING METHODS
+    # ========================================
+    
+    def add_file(self):
+        """Add file to protected items list"""
+        if not self.file_lock_manager:
+            self.show_message("Error", "File locking not available on this platform.", "error")
+            return
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select File to Protect",
+            os.path.expanduser('~'),
+            "All Files (*.*)"
+        )
+        
+        if file_path:
+            if self.file_lock_manager.add_item(file_path, "file"):
+                # Get metadata to display
+                items = self.file_lock_manager.get_locked_items()
+                for item in items:
+                    if item['path'] == file_path:
+                        self.file_grid_widget.add_item(
+                            file_path,
+                            "file",
+                            item.get('locked_at')
+                        )
+                        break
+                self.show_message("Success", f"Added file: {os.path.basename(file_path)}", "success")
+            else:
+                self.show_message("Error", "Failed to add file. It may already be in the list.", "error")
+    
+    def add_folder(self):
+        """Add folder to protected items list"""
+        if not self.file_lock_manager:
+            self.show_message("Error", "File locking not available on this platform.", "error")
+            return
+        
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Folder to Protect",
+            os.path.expanduser('~')
+        )
+        
+        if folder_path:
+            if self.file_lock_manager.add_item(folder_path, "folder"):
+                # Get metadata to display
+                items = self.file_lock_manager.get_locked_items()
+                for item in items:
+                    if item['path'] == folder_path:
+                        self.file_grid_widget.add_item(
+                            folder_path,
+                            "folder",
+                            item.get('locked_at')
+                        )
+                        break
+                self.show_message("Success", f"Added folder: {os.path.basename(folder_path)}", "success")
+            else:
+                self.show_message("Error", "Failed to add folder. It may already be in the list.", "error")
+    
+    def remove_file_item(self):
+        """Remove selected file/folder from protected items list"""
+        if not self.file_lock_manager:
+            return
+        
+        selected_path = self.file_grid_widget.get_selected_path()
+        
+        if not selected_path:
+            self.show_message("Info", "Please select a file or folder to remove.", "info")
+            return
+        
+        # Confirm removal
+        item_name = os.path.basename(selected_path)
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Remove {item_name} from protected items?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.file_lock_manager.remove_item(selected_path):
+                self.file_grid_widget.remove_item(selected_path)
+                self.show_message("Success", "Item removed successfully.", "success")
+            else:
+                self.show_message("Error", "Failed to remove item.", "error")
+    
+    def load_locked_files(self):
+        """Load locked files/folders from config and display in grid"""
+        if not self.file_lock_manager:
+            return
+        
+        self.file_grid_widget.clear()
+        items = self.file_lock_manager.get_locked_items()
+        
+        for item in items:
+            self.file_grid_widget.add_item(
+                item['path'],
+                item['type'],
+                item.get('locked_at')
+            )
     
     def select_all_apps(self):
         """Select all applications in the list"""
@@ -1525,6 +1761,30 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
+        # Save monitoring state to disk (for crash recovery)
+        self.save_monitoring_state_to_disk()
+        
+        # Lock files and folders + config files with single password prompt
+        if self.file_lock_manager:
+            # Check if manager has unified method (Linux implementation)
+            if hasattr(self.file_lock_manager, 'lock_all_with_configs'):
+                print("🔒 Locking files, folders, and config files...")
+                success, failed = self.file_lock_manager.lock_all_with_configs()
+                if failed > 0:
+                    print(f"⚠️  Failed to lock {failed} items")
+            else:
+                # Fallback for other platforms (Windows, etc.)
+                print("🔒 Locking files and folders...")
+                success, failed = self.file_lock_manager.lock_all()
+                if success > 0:
+                    print(f"✅ Locked {success} items successfully")
+                if failed > 0:
+                    print(f"⚠️  Failed to lock {failed} items")
+                
+                # Lock FadCrypt's own config files
+                print("🔒 Protecting FadCrypt config files...")
+                self.file_lock_manager.lock_fadcrypt_configs()
+        
         # Update UI buttons - disable start, enable stop
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -1588,6 +1848,30 @@ class MainWindowBase(QMainWindow):
                 print("🛑 Monitoring stopped successfully")
             
             self.monitoring_active = False
+            
+            # Save monitoring state to disk (for crash recovery)
+            self.save_monitoring_state_to_disk()
+            
+            # Unlock files and folders + config files with single password prompt
+            if self.file_lock_manager:
+                # Check if manager has unified method (Linux implementation)
+                if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
+                    print("🔓 Unlocking files, folders, and config files...")
+                    success, failed = self.file_lock_manager.unlock_all_with_configs()
+                    if failed > 0:
+                        print(f"⚠️  Failed to unlock {failed} items")
+                else:
+                    # Fallback for other platforms (Windows, etc.)
+                    print("🔓 Unlocking files and folders...")
+                    success, failed = self.file_lock_manager.unlock_all()
+                    if success > 0:
+                        print(f"✅ Unlocked {success} items successfully")
+                    if failed > 0:
+                        print(f"⚠️  Failed to unlock {failed} items")
+                    
+                    # Unlock FadCrypt's config files
+                    print("🔓 Unprotecting FadCrypt config files...")
+                    self.file_lock_manager.unlock_fadcrypt_configs()
             
             # Update UI buttons - enable start, disable stop
             self.start_button.setEnabled(True)
@@ -1667,6 +1951,112 @@ class MainWindowBase(QMainWindow):
         except Exception as e:
             print(f"Error loading monitoring state: {e}")
             self.monitoring_state = {'unlocked_apps': []}
+    
+    def save_monitoring_state_to_disk(self):
+        """Save monitoring state to JSON file including monitoring_active flag"""
+        import json
+        state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        try:
+            # Add monitoring_active flag
+            self.monitoring_state['monitoring_active'] = self.monitoring_active
+            
+            with open(state_file, 'w') as f:
+                json.dump(self.monitoring_state, f, indent=2)
+            print(f"💾 Saved monitoring state: active={self.monitoring_active}")
+        except Exception as e:
+            print(f"❌ Error saving monitoring state: {e}")
+    
+    def check_crash_recovery(self):
+        """
+        Check if monitoring was active during last session (crash/power loss).
+        If so, prompt user to unlock files since they're still locked.
+        """
+        state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
+        
+        # Check if state file exists and indicates monitoring was active
+        if not os.path.exists(state_file):
+            return
+        
+        try:
+            import json
+            with open(state_file, 'r') as f:
+                state = json.load(f)
+            
+            monitoring_was_active = state.get('monitoring_active', False)
+            
+            if monitoring_was_active:
+                print("\n🚨 CRASH RECOVERY MODE")
+                print("📁 Detected that monitoring was active before app closed")
+                print("🔒 Files and folders may still be locked")
+                
+                # Show recovery dialog
+                from PyQt6.QtWidgets import QMessageBox
+                from PyQt6.QtCore import QTimer
+                
+                def show_recovery_dialog():
+                    reply = QMessageBox.question(
+                        self,
+                        "🚨 Crash Recovery",
+                        "Monitoring was active when FadCrypt closed unexpectedly.\n\n"
+                        "Protected files and folders are still locked.\n\n"
+                        "Would you like to unlock them now?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    
+                    if reply == QMessageBox.StandardButton.Yes:
+                        # Ask for password
+                        from ui.dialogs.password_dialog import ask_password
+                        password = ask_password(
+                            "Unlock Files",
+                            "Enter your password to unlock files:",
+                            self.resource_path,
+                            style=self.password_dialog_style,
+                            wallpaper=self.wallpaper_choice,
+                            parent=self
+                        )
+                        
+                        if password and self.password_manager.verify_password(password):
+                            # Unlock files
+                            if self.file_lock_manager:
+                                print("🔓 Unlocking files and folders...")
+                                success, failed = self.file_lock_manager.unlock_all()
+                                if success > 0:
+                                    print(f"✅ Unlocked {success} items")
+                                if failed > 0:
+                                    print(f"⚠️  Failed to unlock {failed} items")
+                                
+                                # Unlock config files
+                                self.file_lock_manager.unlock_fadcrypt_configs()
+                            
+                            # Clear monitoring state
+                            state['monitoring_active'] = False
+                            with open(state_file, 'w') as f:
+                                json.dump(state, f, indent=2)
+                            
+                            self.show_message(
+                                "Success",
+                                "Files unlocked successfully. Monitoring state cleared.",
+                                "success"
+                            )
+                        else:
+                            self.show_message(
+                                "Failed",
+                                "Incorrect password. Files remain locked.",
+                                "error"
+                            )
+                    else:
+                        # User chose not to unlock
+                        self.show_message(
+                            "Info",
+                            "Files remain locked. Stop monitoring manually to unlock.",
+                            "info"
+                        )
+                
+                # Schedule dialog after UI is fully loaded
+                QTimer.singleShot(500, show_recovery_dialog)
+                
+        except Exception as e:
+            print(f"⚠️  Error during crash recovery check: {e}")
     
     def _launch_app_after_unlock(self, app_name, app_path):
         """Launch application after successful password unlock"""
