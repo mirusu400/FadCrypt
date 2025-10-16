@@ -125,6 +125,11 @@ class MainWindowBase(QMainWindow):
         self.version_code = __version_code__
         self.monitoring_active = False
         
+        # Initialize log capture FIRST (before any logging)
+        from ui.components.logs_tab_widget import LogCapture
+        self.log_capture = LogCapture()
+        self.log_capture.start()  # Start capturing all output
+        
         # Flag to track if we're doing a forced exit (Ctrl+C, etc.)
         self._force_quit = False
         
@@ -332,6 +337,7 @@ class MainWindowBase(QMainWindow):
         # Create all tabs
         self.create_main_tab()
         self.create_applications_tab()
+        self.create_logs_tab()  # Logs tab for viewing application output
         self.create_config_tab()
         self.create_settings_tab()
         self.create_about_tab()
@@ -433,6 +439,9 @@ class MainWindowBase(QMainWindow):
                     self.unified_monitor.stop_monitoring()
                 # Really exit the application
                 from PyQt6.QtWidgets import QApplication
+                # Cleanup logs widget
+                if hasattr(self, 'logs_tab_widget'):
+                    self.logs_tab_widget.cleanup()
                 QApplication.quit()
             else:
                 print("❌ Incorrect password - exit cancelled")
@@ -446,6 +455,9 @@ class MainWindowBase(QMainWindow):
             # Not monitoring, exit without password
             print("✅ Exiting FadCrypt (no monitoring active)")
             from PyQt6.QtWidgets import QApplication
+            # Cleanup logs widget
+            if hasattr(self, 'logs_tab_widget'):
+                self.logs_tab_widget.cleanup()
             QApplication.quit()
         
     def create_main_tab(self):
@@ -885,6 +897,13 @@ class MainWindowBase(QMainWindow):
         
         # Load locked files after widget is created
         self.load_locked_files()
+    
+    def create_logs_tab(self):
+        """Create Logs tab for viewing real-time application logs"""
+        from ui.components.logs_tab_widget import LogsTabWidget
+        
+        self.logs_tab_widget = LogsTabWidget(self.log_capture, self)
+        self.tabs.addTab(self.logs_tab_widget, "Logs")
         
     def create_config_tab(self):
         """Create Config tab for viewing encrypted apps list"""
