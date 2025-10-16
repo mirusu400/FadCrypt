@@ -1338,19 +1338,24 @@ class MainWindowBase(QMainWindow):
     # ========================================
     
     def add_file(self):
-        """Add file to protected items list"""
+        """Add file(s) to protected items list - supports multi-selection"""
         if not self.file_lock_manager:
             self.show_message("Error", "File locking not available on this platform.", "error")
             return
         
-        file_path, _ = QFileDialog.getOpenFileName(
+        # Use getOpenFileNames for multi-selection
+        file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select File to Protect",
+            "Select File(s) to Protect (Hold Shift/Ctrl for multiple)",
             os.path.expanduser('~'),
             "All Files (*.*)"
         )
         
-        if file_path:
+        if not file_paths:
+            return
+        
+        added_count = 0
+        for file_path in file_paths:
             if self.file_lock_manager.add_item(file_path, "file"):
                 # Get metadata to display
                 items = self.file_lock_manager.get_locked_items()
@@ -1359,25 +1364,28 @@ class MainWindowBase(QMainWindow):
                         self.file_grid_widget.add_item(
                             file_path,
                             "file",
-                            item.get('locked_at')
+                            item.get('unlock_count', 0),
+                            item.get('added_at')
                         )
                         break
-                
-                # Auto-lock file if monitoring is active
-                if self.monitoring_active and self.file_lock_manager:
-                    print(f"🔒 Auto-locking newly added file: {os.path.basename(file_path)}")
-                    # Re-lock all files (includes the new one)
-                    success, failed = self.file_lock_manager.lock_all()
-                    if success > 0:
-                        print(f"✅ Re-locked {success} items (including new file)")
-                    # Update file access monitor
-                    if self.file_access_monitor:
-                        self.file_access_monitor.update_monitored_items()
-                        print(f"✅ File access monitor updated")
-                
-                self.show_message("Success", f"Added file: {os.path.basename(file_path)}", "success")
-            else:
-                self.show_message("Error", "Failed to add file. It may already be in the list.", "error")
+                added_count += 1
+        
+        if added_count > 0:
+            # Auto-lock files if monitoring is active
+            if self.monitoring_active and self.file_lock_manager:
+                print(f"🔒 Auto-locking {added_count} newly added file(s)")
+                # Re-lock all files (includes the new ones)
+                success, failed = self.file_lock_manager.lock_all()
+                if success > 0:
+                    print(f"✅ Re-locked {success} items (including new files)")
+                # Update file access monitor
+                if self.file_access_monitor:
+                    self.file_access_monitor.update_monitored_items()
+                    print(f"✅ File access monitor updated")
+            
+            self.show_message("Success", f"Added {added_count} file(s) successfully.", "success")
+        else:
+            self.show_message("Error", "Failed to add files. They may already be in the list.", "error")
     
     def add_folder(self):
         """Add folder to protected items list"""
@@ -1400,7 +1408,8 @@ class MainWindowBase(QMainWindow):
                         self.file_grid_widget.add_item(
                             folder_path,
                             "folder",
-                            item.get('locked_at')
+                            item.get('unlock_count', 0),
+                            item.get('added_at')
                         )
                         break
                 
@@ -1425,34 +1434,44 @@ class MainWindowBase(QMainWindow):
         if not self.file_lock_manager:
             return
         
-        selected_path = self.file_grid_widget.get_selected_path()
+        # Get all selected paths (supports multi-selection)
+        selected_paths = self.file_grid_widget.get_selected_paths()
         
-        if not selected_path:
-            self.show_message("Info", "Please select a file or folder to remove.", "info")
+        if not selected_paths:
+            self.show_message("Info", "Please select one or more files/folders to remove.", "info")
             return
         
         # Confirm removal
-        item_name = os.path.basename(selected_path)
+        if len(selected_paths) == 1:
+            item_name = os.path.basename(selected_paths[0])
+            message = f"Remove {item_name} from protected items?"
+        else:
+            message = f"Remove {len(selected_paths)} selected items from protected items?"
+        
         reply = QMessageBox.question(
             self,
             "Confirm Removal",
-            f"Remove {item_name} from protected items?",
+            message,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            if self.file_lock_manager.remove_item(selected_path):
-                self.file_grid_widget.remove_item(selected_path)
-                
-                # Update file access monitor if monitoring is active
-                if self.monitoring_active and self.file_access_monitor:
-                    print(f"📝 Updating file access monitor after removal...")
-                    self.file_access_monitor.update_monitored_items()
-                    print(f"✅ File access monitor updated")
-                
-                self.show_message("Success", "Item removed successfully.", "success")
+            removed_count = 0
+            for selected_path in selected_paths:
+                if self.file_lock_manager.remove_item(selected_path):
+                    self.file_grid_widget.remove_item(selected_path)
+                    removed_count += 1
+            
+            # Update file access monitor if monitoring is active
+            if self.monitoring_active and self.file_access_monitor:
+                print(f"📝 Updating file access monitor after removal...")
+                self.file_access_monitor.update_monitored_items()
+                print(f"✅ File access monitor updated")
+            
+            if removed_count > 0:
+                self.show_message("Success", f"Removed {removed_count} item(s) successfully.", "success")
             else:
-                self.show_message("Error", "Failed to remove item.", "error")
+                self.show_message("Error", "Failed to remove items.", "error")
     
     def load_locked_files(self):
         """Load locked files/folders from config and display in grid"""
@@ -1466,7 +1485,8 @@ class MainWindowBase(QMainWindow):
             self.file_grid_widget.add_item(
                 item['path'],
                 item['type'],
-                item.get('locked_at')
+                item.get('unlock_count', 0),  # Pass unlock_count as 3rd param
+                item.get('added_at')          # Pass added_at as 4th param
             )
     
     def select_all_apps(self):
@@ -2121,6 +2141,11 @@ class MainWindowBase(QMainWindow):
                     unlocked_files.append(abs_path)
                     self.set_monitoring_state('unlocked_files', unlocked_files)
                     print(f"📝 Added {filename} to unlocked files state")
+                
+                # Increment unlock count for tracking
+                if self.file_lock_manager:
+                    self.file_lock_manager.increment_unlock_count(abs_path)
+                    print(f"📊 Incremented unlock count for {filename}")
                 
                 # Show success dialog
                 from PyQt6.QtWidgets import QMessageBox

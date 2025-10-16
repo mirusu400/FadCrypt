@@ -13,6 +13,7 @@ import stat
 from typing import Dict, Optional, Tuple, List
 import json
 import psutil
+from datetime import datetime
 
 from core.file_lock_manager import FileLockManager
 
@@ -367,6 +368,8 @@ class FileLockManagerLinux(FileLockManager):
                 "path": os.path.abspath(path),
                 "type": item_type,
                 "original_permissions": original_perms,
+                "unlock_count": 0,  # Initialize unlock counter
+                "added_at": datetime.now().isoformat()
             }
         except Exception as e:
             print(f"❌ Error getting metadata for {path}: {e}")

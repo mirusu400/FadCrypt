@@ -108,6 +108,14 @@ class FileLockManager(ABC):
         """Get list of all locked items"""
         return self.locked_items.copy()
     
+    def increment_unlock_count(self, path: str):
+        """Increment unlock count for a file/folder"""
+        for item in self.locked_items:
+            if item['path'] == path:
+                item['unlock_count'] = item.get('unlock_count', 0) + 1
+                self._save_locked_items()
+                break
+    
     def lock_all(self) -> Tuple[int, int]:
         """
         Lock all items in the locked items list.
