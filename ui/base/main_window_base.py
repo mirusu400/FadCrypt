@@ -822,12 +822,12 @@ class MainWindowBase(QMainWindow):
         file_buttons_layout = QHBoxLayout()
         file_buttons_layout.setSpacing(10)
         
-        # Add File button
+        # Add File button (green)
         self.add_file_btn = QPushButton("📄 Add File")
         self.add_file_btn.clicked.connect(self.add_file)
         self.add_file_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2a2a2a;
+                background-color: #10b981;
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
@@ -836,17 +836,17 @@ class MainWindowBase(QMainWindow):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #d32f2f;
+                background-color: #059669;
             }
         """)
         file_buttons_layout.addWidget(self.add_file_btn)
         
-        # Add Folder button
+        # Add Folder button (blue)
         self.add_folder_btn = QPushButton("📁 Add Folder")
         self.add_folder_btn.clicked.connect(self.add_folder)
         self.add_folder_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2a2a2a;
+                background-color: #3b82f6;
                 color: #ffffff;
                 border: none;
                 border-radius: 8px;
@@ -855,7 +855,7 @@ class MainWindowBase(QMainWindow):
                 font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #d32f2f;
+                background-color: #2563eb;
             }
         """)
         file_buttons_layout.addWidget(self.add_folder_btn)

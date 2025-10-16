@@ -311,7 +311,7 @@ class FileGridWidget(QWidget):
         toolbar_layout.addWidget(select_all_btn)
         
         # Deselect All button
-        deselect_all_btn = QPushButton("☐ Deselect All")
+        deselect_all_btn = QPushButton("❌ Deselect All")
         deselect_all_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2a2a2a;
@@ -366,11 +366,20 @@ class FileGridWidget(QWidget):
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setSpacing(15)  # Match AppGridWidget spacing
         self.grid_layout.setContentsMargins(10, 10, 10, 10)
-        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        # Cards align top-center when present
+        self.grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
         
-        # Placeholder (shown when no items)
+        # Placeholder (shown when no items) - wrapped in centered container
+        self.placeholder_container = QWidget()
+        placeholder_container_layout = QVBoxLayout(self.placeholder_container)
+        placeholder_container_layout.setContentsMargins(0, 0, 0, 0)
+        placeholder_container_layout.addStretch(1)
+        
         self.placeholder = self._create_placeholder()
-        self.grid_layout.addWidget(self.placeholder, 0, 0, 1, self.current_columns, Qt.AlignmentFlag.AlignCenter)  # Span all columns, centered
+        placeholder_container_layout.addWidget(self.placeholder)
+        placeholder_container_layout.addStretch(1)
+        
+        self.grid_layout.addWidget(self.placeholder_container, 0, 0, 1, self.current_columns)  # Span all columns
         
         scroll.setWidget(self.grid_container)
         layout.addWidget(scroll)
@@ -433,11 +442,13 @@ class FileGridWidget(QWidget):
     
     def refresh_grid(self):
         """Refresh grid layout with current column count"""
-        # Remove all widgets except placeholder
+        # Remove all widgets except placeholder container
         for i in reversed(range(self.grid_layout.count())):
-            widget = self.grid_layout.itemAt(i).widget()
-            if widget and widget != self.placeholder:
-                self.grid_layout.removeWidget(widget)
+            item = self.grid_layout.itemAt(i)
+            if item:
+                widget = item.widget()
+                if widget and widget != self.placeholder_container:
+                    self.grid_layout.removeWidget(widget)
         
         # Re-add cards in responsive grid
         for idx, (path, card) in enumerate(self.cards.items()):
@@ -445,9 +456,9 @@ class FileGridWidget(QWidget):
             col = idx % self.current_columns
             self.grid_layout.addWidget(card, row, col)
         
-        # Re-add placeholder spanning all columns
-        self.grid_layout.removeWidget(self.placeholder)
-        self.grid_layout.addWidget(self.placeholder, 0, 0, 1, self.current_columns, Qt.AlignmentFlag.AlignCenter)
+        # Re-add placeholder container spanning all columns
+        self.grid_layout.removeWidget(self.placeholder_container)
+        self.grid_layout.addWidget(self.placeholder_container, 0, 0, 1, self.current_columns)
     
     def _rebuild_grid(self):
         """Rebuild grid when column count changes (responsive behavior)"""
@@ -588,11 +599,11 @@ class FileGridWidget(QWidget):
     def _create_placeholder(self) -> QWidget:
         """Create placeholder widget shown when no items"""
         placeholder = QWidget()
-        placeholder.setMinimumHeight(400)  # Ensure minimum height for vertical centering
+        # Don't set minimum height - let it fill available space naturally
         placeholder_layout = QVBoxLayout(placeholder)
         placeholder_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         placeholder_layout.setSpacing(20)
-        placeholder_layout.addStretch()  # Push content to center
+        placeholder_layout.addStretch(1)  # Push content to center
         
         # Icon
         icon_label = QLabel("📂")
@@ -612,7 +623,7 @@ class FileGridWidget(QWidget):
         placeholder_layout.addWidget(msg_label)
         
         # Hint
-        hint_label = QLabel("Add files and folders using the '+' button above")
+        hint_label = QLabel("Use 'Add File' or 'Add Folder' buttons below to start protecting")
         hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint_label.setStyleSheet("""
             color: #666666;
@@ -620,7 +631,7 @@ class FileGridWidget(QWidget):
             background-color: transparent;
         """)
         placeholder_layout.addWidget(hint_label)
-        placeholder_layout.addStretch()  # Push content to center
+        placeholder_layout.addStretch(1)  # Push content to center
         
         placeholder.hide()  # Hidden by default
         return placeholder
