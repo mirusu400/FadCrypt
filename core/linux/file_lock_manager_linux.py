@@ -13,6 +13,8 @@ import stat
 from typing import Dict, Optional, Tuple, List
 import json
 import psutil
+import concurrent.futures
+import threading
 from datetime import datetime
 
 from core.file_lock_manager import FileLockManager
@@ -76,52 +78,101 @@ class FileLockManagerLinux(FileLockManager):
         except Exception as e:
             print(f"⚠️  Warning: Could not save permissions: {e}")
     
-    def _get_processes_using_file(self, file_path: str) -> List[int]:
-        """Find process IDs that have the file open"""
-        pids = []
+    def _get_processes_using_files(self, file_paths: List[str]) -> Dict[str, List[int]]:
+        """
+        Find process IDs that have any of the files open - optimized batch scanning using fuser.
+        Returns dict mapping file_path to list of PIDs using that file.
+        """
+        file_to_pids = {path: [] for path in file_paths}
+        
+        if not file_paths:
+            return file_to_pids
+        
         try:
-            # Method 1: Use lsof (more reliable)
+            # Method 1: Use fuser (much faster than lsof for batch operations)
             result = subprocess.run(
-                ['lsof', '-t', file_path],
+                ['fuser'] + file_paths,
                 capture_output=True,
                 text=True,
                 timeout=5
             )
+            
             if result.returncode == 0 and result.stdout.strip():
-                pids = [int(pid) for pid in result.stdout.strip().split('\n') if pid.strip()]
-        except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
-            # Fallback: Use psutil to scan all processes
+                # fuser outputs PIDs separated by spaces
+                pids = [int(pid) for pid in result.stdout.strip().split() if pid.strip()]
+                # fuser doesn't tell us which file each PID is using, so we need to check each file individually
+                # But this is still faster than lsof for most cases
+                for file_path in file_paths:
+                    try:
+                        single_result = subprocess.run(
+                            ['fuser', file_path],
+                            capture_output=True,
+                            text=True,
+                            timeout=2
+                        )
+                        if single_result.returncode == 0 and single_result.stdout.strip():
+                            file_pids = [int(pid) for pid in single_result.stdout.strip().split() if pid.strip()]
+                            file_to_pids[file_path] = file_pids
+                    except (subprocess.TimeoutExpired, ValueError):
+                        pass
+                        
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            # Fallback: Use psutil to scan all processes (slower but works)
             try:
+                file_set = set(file_paths)  # For faster lookup
                 for proc in psutil.process_iter(['pid', 'open_files']):
                     try:
                         if proc.info['open_files']:
                             for file_info in proc.info['open_files']:
-                                if file_info.path == file_path:
-                                    pids.append(proc.info['pid'])
+                                if file_info.path in file_set:
+                                    file_to_pids[file_info.path].append(proc.info['pid'])
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
             except Exception:
                 pass
         
-        return pids
+        return file_to_pids
     
-    def _kill_processes_using_file(self, file_path: str) -> int:
-        """Kill processes that have the file open. Returns number of processes killed."""
-        pids = self._get_processes_using_file(file_path)
-        killed_count = 0
+    def _get_processes_using_file(self, file_path: str) -> List[int]:
+        """Find process IDs that have the file open - single file wrapper"""
+        result = self._get_processes_using_files([file_path])
+        return result.get(file_path, [])
+        #     try:
+        #         for proc in psutil.process_iter(['pid', 'open_files']):
+        #             try:
+        #                 if proc.info['open_files']:
+        #                     for file_info in proc.info['open_files']:
+        #                         if file_info.path == file_path:
+        #                             pids.append(proc.info['pid'])
+        #             except (psutil.NoSuchProcess, psutil.AccessDenied):
+        #                 continue
+        #     except Exception:
+        #         pass
+        # 
+        # return pids
+    
+    def _kill_processes_using_files(self, file_to_pids: Dict[str, List[int]]) -> Dict[str, int]:
+        """
+        Kill processes using the specified files - batch operation.
+        Returns dict mapping file_path to number of processes killed.
+        """
+        killed_counts = {}
         
-        for pid in pids:
-            try:
-                proc = psutil.Process(pid)
-                proc_name = proc.name()
-                print(f"   🔪 Killing process {pid} ({proc_name}) using {os.path.basename(file_path)}")
-                proc.kill()
-                proc.wait(timeout=3)  # Wait for process to die
-                killed_count += 1
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-                pass
-        
-        return killed_count
+        for file_path, pids in file_to_pids.items():
+            killed_count = 0
+            for pid in pids:
+                try:
+                    proc = psutil.Process(pid)
+                    proc_name = proc.name()
+                    print(f"   🔪 Killing process {pid} ({proc_name}) using {os.path.basename(file_path)}")
+                    proc.kill()
+                    proc.wait(timeout=3)  # Wait for process to die
+                    killed_count += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                    pass
+            killed_counts[file_path] = killed_count
+            
+        return killed_counts
     
     def temporarily_unlock_config(self, config_name: str) -> bool:
         """
@@ -157,110 +208,122 @@ class FileLockManagerLinux(FileLockManager):
             print(f"⚠️  Warning: Could not relock {config_name}: {e}")
             return False
     
-    def lock_all_with_configs(self) -> Tuple[int, int]:
+    def _lock_single_item(self, item: Dict) -> Tuple[bool, str]:
         """
-        Lock all user items AND config files (no sudo required).
-        Uses chmod 000 to make files/folders inaccessible.
+        Lock a single file/folder item.
+        Note: Process killing is now handled in batch before parallel locking.
         
-        Returns:
-            Tuple of (success_count, failure_count)
+        Returns (success, message)
         """
-        # Get config files
-        critical_files = [
-            os.path.join(self.config_folder, "apps_config.json"),
-            os.path.join(self.config_folder, "settings.json"),
-            os.path.join(self.config_folder, "encrypted_password.bin"),
-            os.path.join(self.config_folder, "monitoring_state.json")
-        ]
-        existing_config_files = [f for f in critical_files if os.path.exists(f)]
+        path = item['path']
+        item_name = item['name']
         
-        total_items = len(self.locked_items) + len(existing_config_files)
+        if not os.path.exists(path):
+            return False, f"⚠️  Skipping (doesn't exist): {item_name}"
         
-        if total_items == 0:
-            print("ℹ️  No items to lock")
-            return (0, 0)
-        
-        print(f"🔒 Locking {len(self.locked_items)} items + {len(existing_config_files)} config files...")
-        
-        success_count = 0
-        failure_count = 0
-        
-        # Lock user files/folders
-        for item in self.locked_items:
-            path = item['path']
-            item_name = item['name']
+        try:
+            # Store original permissions before locking
+            original_mode = os.stat(path).st_mode
+            self.original_permissions[path] = oct(stat.S_IMODE(original_mode))
             
-            if not os.path.exists(path):
-                print(f"⚠️  Skipping (doesn't exist): {item_name}")
-                failure_count += 1
-                continue
+            # Lock strategy:
+            # - Files: Make read-only (chmod 444) so watchdog can monitor modifications
+            # - Folders: Make read-only (chmod 555) with active monitoring for access attempts
+            if item['type'] == 'folder':
+                os.chmod(path, 0o555)  # r-xr-xr-x (read + execute, but we monitor access)
+                return True, f"✅ Locked: {item_name} (chmod 555 - monitored folder)"
+            else:
+                os.chmod(path, 0o444)  # r--r--r-- (read-only file)
+                return True, f"✅ Locked: {item_name} (chmod 444 - read-only file)"
+                
+        except Exception as e:
+            return False, f"❌ Failed to lock {item_name}: {e}"
+    
+    def _lock_config_file(self, file_path: str) -> Tuple[bool, str]:
+        """
+        Lock a single config file.
+        Returns (success, message)
+        """
+        try:
+            # Store original permissions
+            original_mode = os.stat(file_path).st_mode
+            self.original_permissions[file_path] = oct(stat.S_IMODE(original_mode))
             
-            try:
-                # Store original permissions before locking
-                original_mode = os.stat(path).st_mode
-                self.original_permissions[path] = oct(stat.S_IMODE(original_mode))
-                
-                # Kill any processes using this file
-                killed = self._kill_processes_using_file(path)
-                if killed > 0:
-                    print(f"   🔪 Killed {killed} process(es) using {item_name}")
-                
-                # Lock strategy:
-                # - Files: Make read-only (chmod 444) so watchdog can monitor modifications
-                # - Folders: Make read-only (chmod 555) with active monitoring for access attempts
-                #   (chmod 000 would block completely but we couldn't detect access or show password dialog)
+            # Make read-only (chmod 444) so config is still readable but not writable
+            os.chmod(file_path, 0o444)
+            return True, f"✅ Protected config: {os.path.basename(file_path)} (chmod 444)"
+            
+        except Exception as e:
+            return False, f"❌ Failed to protect {os.path.basename(file_path)}: {e}"
+    
+    def _unlock_single_item(self, item: Dict, silent: bool = False) -> Tuple[bool, str]:
+        """
+        Unlock a single file/folder item.
+        Returns (success, message)
+        """
+        path = item['path']
+        item_name = item['name']
+        
+        if not os.path.exists(path):
+            return False, f"⚠️  Skipping (doesn't exist): {item_name}"
+        
+        try:
+            # Get original permissions (default to 644 for files, 755 for folders if not stored)
+            if path in self.original_permissions:
+                original_perms = int(self.original_permissions[path], 8)
+            else:
+                # Default permissions
                 if item['type'] == 'folder':
-                    os.chmod(path, 0o555)  # r-xr-xr-x (read + execute, but we monitor access)
-                    print(f"✅ Locked: {item_name} (chmod 555 - monitored folder)")
+                    original_perms = 0o755
                 else:
-                    os.chmod(path, 0o444)  # r--r--r-- (read-only file)
-                    print(f"✅ Locked: {item_name} (chmod 444 - read-only file)")
-                success_count += 1
-                
-            except Exception as e:
-                print(f"❌ Failed to lock {item_name}: {e}")
-                failure_count += 1
-        
-        # Lock config files (keep them readable but protected)
-        for file_path in existing_config_files:
-            try:
-                # Store original permissions
-                original_mode = os.stat(file_path).st_mode
-                self.original_permissions[file_path] = oct(stat.S_IMODE(original_mode))
-                
-                # Make read-only (chmod 444) so config is still readable but not writable
-                os.chmod(file_path, 0o444)
-                print(f"✅ Protected config: {os.path.basename(file_path)} (chmod 444)")
-                success_count += 1
-                
-            except Exception as e:
-                print(f"❌ Failed to protect {os.path.basename(file_path)}: {e}")
-                failure_count += 1
-        
-        # Save permissions to disk
-        self._save_permissions()
-        
-        if failure_count == 0:
-            print(f"✅ Successfully locked {success_count} items")
-        else:
-            print(f"⚠️  Locked {success_count} items, {failure_count} failed")
-        
-        return (success_count, failure_count)
+                    original_perms = 0o644
+            
+            # Restore permissions
+            os.chmod(path, original_perms)
+            message = f"✅ Unlocked: {item_name} (restored chmod {oct(original_perms)})"
+            
+            # Remove from stored permissions
+            if path in self.original_permissions:
+                del self.original_permissions[path]
+            
+            return True, message
+            
+        except Exception as e:
+            return False, f"❌ Failed to unlock {item_name}: {e}"
+    
+    def _unlock_config_file(self, file_path: str, silent: bool = False) -> Tuple[bool, str]:
+        """
+        Unlock a single config file.
+        Returns (success, message)
+        """
+        try:
+            # Get original permissions (default to 644 if not stored)
+            if file_path in self.original_permissions:
+                original_perms = int(self.original_permissions[file_path], 8)
+            else:
+                original_perms = 0o644
+            
+            # Restore permissions
+            os.chmod(file_path, original_perms)
+            message = f"✅ Unlocked config: {os.path.basename(file_path)} (restored chmod {oct(original_perms)})"
+            
+            # Remove from stored permissions
+            if file_path in self.original_permissions:
+                del self.original_permissions[file_path]
+            
+            return True, message
+            
+        except Exception as e:
+            return False, f"❌ Failed to unlock {os.path.basename(file_path)}: {e}"
     
     def unlock_all_with_configs(self, silent: bool = False) -> Tuple[int, int]:
         """
         Unlock all user items AND config files (restore original permissions).
-        Uses stored permissions to restore exact original state.
-        
-        Args:
-            silent: If True, suppress output messages
+        Uses parallel processing for faster unlocking.
         
         Returns:
             Tuple of (success_count, failure_count)
         """
-        # Reload permissions from disk in case they were updated
-        self.original_permissions = self._load_permissions()
-        
         # Get config files
         critical_files = [
             os.path.join(self.config_folder, "apps_config.json"),
@@ -282,69 +345,36 @@ class FileLockManagerLinux(FileLockManager):
         
         success_count = 0
         failure_count = 0
+        lock = threading.Lock()  # For thread-safe counting
         
-        # Unlock user files/folders
-        for item in self.locked_items:
-            path = item['path']
-            item_name = item['name']
-            
-            if not os.path.exists(path):
-                if not silent:
-                    print(f"⚠️  Skipping (doesn't exist): {item_name}")
-                failure_count += 1
-                continue
-            
-            try:
-                # Get original permissions (default to 644 for files, 755 for folders if not stored)
-                if path in self.original_permissions:
-                    original_perms = int(self.original_permissions[path], 8)
-                else:
-                    # Default permissions
-                    if item['type'] == 'folder':
-                        original_perms = 0o755
-                    else:
-                        original_perms = 0o644
+        # Unlock user files/folders in parallel
+        if self.locked_items:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(self.locked_items))) as executor:
+                # Submit all unlocking tasks
+                future_to_item = {executor.submit(self._unlock_single_item, item, silent): item for item in self.locked_items}
                 
-                # Restore permissions
-                os.chmod(path, original_perms)
-                if not silent:
-                    print(f"✅ Unlocked: {item_name} (restored chmod {oct(original_perms)})")
-                success_count += 1
-                
-                # Remove from stored permissions
-                if path in self.original_permissions:
-                    del self.original_permissions[path]
-                
-            except Exception as e:
-                if not silent:
-                    print(f"❌ Failed to unlock {item_name}: {e}")
-                failure_count += 1
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_item):
+                    success, message = future.result()
+                    with lock:
+                        if success:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                    if not silent:
+                        print(message)
         
         # Unlock config files
         for file_path in existing_config_files:
-            try:
-                # Get original permissions (default to 644 if not stored)
-                if file_path in self.original_permissions:
-                    original_perms = int(self.original_permissions[file_path], 8)
-                else:
-                    original_perms = 0o644
-                
-                # Restore permissions
-                os.chmod(file_path, original_perms)
-                if not silent:
-                    print(f"✅ Restored config: {os.path.basename(file_path)} (chmod {oct(original_perms)})")
+            success, message = self._unlock_config_file(file_path, silent)
+            if success:
                 success_count += 1
-                
-                # Remove from stored permissions
-                if file_path in self.original_permissions:
-                    del self.original_permissions[file_path]
-                
-            except Exception as e:
-                if not silent:
-                    print(f"❌ Failed to restore {os.path.basename(file_path)}: {e}")
+            else:
                 failure_count += 1
+            if not silent:
+                print(message)
         
-        # Save updated permissions
+        # Save updated permissions to disk
         self._save_permissions()
         
         if not silent:
@@ -352,6 +382,80 @@ class FileLockManagerLinux(FileLockManager):
                 print(f"✅ Successfully unlocked {success_count} items")
             else:
                 print(f"⚠️  Unlocked {success_count} items, {failure_count} failed")
+        
+        return (success_count, failure_count)
+    
+    def lock_all_with_configs(self) -> Tuple[int, int]:
+        """
+        Lock all user items AND config files (no sudo required).
+        Uses parallel processing for faster locking with batch process scanning.
+        
+        Returns:
+            Tuple of (success_count, failure_count)
+        """
+        # Get config files
+        critical_files = [
+            os.path.join(self.config_folder, "apps_config.json"),
+            os.path.join(self.config_folder, "settings.json"),
+            os.path.join(self.config_folder, "encrypted_password.bin"),
+            os.path.join(self.config_folder, "monitoring_state.json")
+        ]
+        existing_config_files = [f for f in critical_files if os.path.exists(f)]
+        
+        total_items = len(self.locked_items) + len(existing_config_files)
+        
+        if total_items == 0:
+            print("ℹ️  No items to lock")
+            return (0, 0)
+        
+        print(f"🔒 Locking {len(self.locked_items)} items + {len(existing_config_files)} config files...")
+        
+        # STEP 1: Batch scan all files for processes using them (single fast scan)
+        all_file_paths = [item['path'] for item in self.locked_items] + existing_config_files
+        file_to_pids = self._get_processes_using_files(all_file_paths)
+        
+        # STEP 2: Kill processes in batch
+        killed_counts = self._kill_processes_using_files(file_to_pids)
+        total_killed = sum(killed_counts.values())
+        if total_killed > 0:
+            print(f"🔪 Killed {total_killed} processes using locked files")
+        
+        success_count = 0
+        failure_count = 0
+        lock = threading.Lock()  # For thread-safe counting
+        
+        # STEP 3: Lock user files/folders in parallel (no more individual process scans needed)
+        if self.locked_items:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(self.locked_items))) as executor:
+                # Submit all locking tasks
+                future_to_item = {executor.submit(self._lock_single_item, item): item for item in self.locked_items}
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_item):
+                    success, message = future.result()
+                    with lock:
+                        if success:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                    print(message)
+        
+        # STEP 4: Lock config files (keep them readable but protected)
+        for file_path in existing_config_files:
+            success, message = self._lock_config_file(file_path)
+            if success:
+                success_count += 1
+            else:
+                failure_count += 1
+            print(message)
+        
+        # Save permissions to disk
+        self._save_permissions()
+        
+        if failure_count == 0:
+            print(f"✅ Successfully locked {success_count} items")
+        else:
+            print(f"⚠️  Locked {success_count} items, {failure_count} failed")
         
         return (success_count, failure_count)
     
@@ -382,12 +486,4 @@ class FileLockManagerLinux(FileLockManager):
     def _unlock_item(self, item: Dict) -> bool:
         """Unlock item (stub - use unlock_all_with_configs instead)"""
         return False
-    
-    def _lock_config_file(self, path: str):
-        """Lock config file (stub - handled in lock_all_with_configs)"""
-        pass
-    
-    def _unlock_config_file(self, path: str):
-        """Unlock config file (stub - handled in unlock_all_with_configs)"""
-        pass
 
