@@ -19,37 +19,66 @@ class FileLockManager(ABC):
     Handles locking, unlocking, permission backup, and metadata management.
     """
     
-    def __init__(self, config_folder: str):
+    def __init__(self, config_folder: str, app_locker=None):
         """
         Initialize file lock manager.
         
         Args:
             config_folder: Path to FadCrypt config folder
+            app_locker: Reference to AppLocker instance for unified config access (optional)
         """
         self.config_folder = config_folder
+        self.app_locker = app_locker
         self.locked_items: List[Dict] = []
-        self.config_file = os.path.join(config_folder, "locked_files.json")
+        self.config_file = os.path.join(config_folder, "apps_config.json")
         self._load_locked_items()
     
-    def _load_locked_items(self):
-        """Load locked items from config file"""
-        if os.path.exists(self.config_file):
+    def _get_config(self) -> Dict:
+        """Get the current configuration from app_locker or direct file"""
+        if self.app_locker and hasattr(self.app_locker, 'config'):
+            return self.app_locker.config
+        elif os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
-                    self.locked_items = json.load(f)
-                print(f"📁 Loaded {len(self.locked_items)} locked items from config")
-            except Exception as e:
-                print(f"⚠️  Error loading locked items: {e}")
-                self.locked_items = []
-        else:
-            self.locked_items = []
+                    return json.load(f)
+            except Exception:
+                return {"applications": [], "locked_files_and_folders": []}
+        return {"applications": [], "locked_files_and_folders": []}
+    
+    def _load_locked_items(self):
+        """Load locked items from unified config (apps_config.json)"""
+        config = self._get_config()
+        self.locked_items = config.get("locked_files_and_folders", [])
+        if self.locked_items:
+            print(f"📁 Loaded {len(self.locked_items)} locked items from unified config")
     
     def _save_locked_items(self):
-        """Save locked items to config file"""
+        """Save locked items to unified config (apps_config.json)"""
         try:
-            with open(self.config_file, 'w') as f:
-                json.dump(self.locked_items, f, indent=2)
-            print(f"💾 Saved {len(self.locked_items)} locked items to config")
+            config = self._get_config()
+            config["locked_files_and_folders"] = self.locked_items
+            
+            # Ensure applications key exists
+            if "applications" not in config:
+                config["applications"] = []
+            
+            if self.app_locker and hasattr(self.app_locker, 'config'):
+                # Update app_locker's in-memory config
+                self.app_locker.config = config
+                # Save via app_locker if it has save_config method
+                if hasattr(self.app_locker, 'save_config'):
+                    self.app_locker.save_config()
+                    print(f"💾 Saved {len(self.locked_items)} locked items to unified config via app_locker")
+                else:
+                    # Fallback: save directly
+                    with open(self.config_file, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    print(f"💾 Saved {len(self.locked_items)} locked items to unified config")
+            else:
+                # Direct file save (new PyQt6 version)
+                with open(self.config_file, 'w') as f:
+                    json.dump(config, f, indent=2)
+                print(f"💾 Saved {len(self.locked_items)} locked items to unified config")
         except Exception as e:
             print(f"❌ Error saving locked items: {e}")
     

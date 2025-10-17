@@ -51,7 +51,7 @@ class AppListWidget(QListWidget):
         # Connect item click
         self.itemClicked.connect(self._on_item_clicked)
     
-    def add_app(self, app_name: str, app_path: str, is_locked: bool = True):
+    def add_app(self, app_name: str, app_path: str, is_locked: bool = True, unlock_count: int = 0, added_at: str | None = None):
         """
         Add an application to the list.
         
@@ -59,11 +59,17 @@ class AppListWidget(QListWidget):
             app_name: Name of the application
             app_path: Full path to the application executable
             is_locked: Whether the app is currently locked
+            unlock_count: Number of times unlocked
+            added_at: ISO format timestamp when added
         """
+        from datetime import datetime
+        
         # Store app data
         self.apps_data[app_name] = {
             'path': app_path,
-            'is_locked': is_locked
+            'is_locked': is_locked,
+            'unlock_count': unlock_count,
+            'added_at': added_at or datetime.now().isoformat()
         }
         
         # Create list item

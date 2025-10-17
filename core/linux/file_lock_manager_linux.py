@@ -23,8 +23,8 @@ from core.file_lock_manager import FileLockManager
 class FileLockManagerLinux(FileLockManager):
     """Linux implementation of file/folder locking using chmod (no sudo)"""
     
-    def __init__(self, config_folder: str):
-        super().__init__(config_folder)
+    def __init__(self, config_folder: str, app_locker=None):
+        super().__init__(config_folder, app_locker)
         # Store original permissions for restoration
         self.permissions_file = os.path.join(config_folder, '.file_permissions.json')
         self.original_permissions = self._load_permissions()

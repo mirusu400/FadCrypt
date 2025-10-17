@@ -28,7 +28,7 @@ class ConfigManager:
     
     def export_config(self, show_message_func):
         """
-        Export configuration to a JSON file
+        Export unified configuration to a JSON file (includes applications and locked files/folders).
         
         Args:
             show_message_func: Function to show messages to user (title, message)
@@ -44,9 +44,25 @@ class ConfigManager:
         
         if file_path:
             try:
+                # Export unified config with both applications and locked items
+                export_data = {
+                    "applications": self.app_locker.config.get("applications", []),
+                    "locked_files_and_folders": self.app_locker.config.get("locked_files_and_folders", [])
+                }
+                
                 with open(file_path, "w") as f:
-                    json.dump(self.app_locker.config, f, indent=4)
-                show_message_func("Success", f"Config exported successfully to {file_path}")
+                    json.dump(export_data, f, indent=4)
+                
+                app_count = len(export_data.get("applications", []))
+                item_count = len(export_data.get("locked_files_and_folders", []))
+                
+                show_message_func(
+                    "Success",
+                    f"Config exported successfully!\n\n"
+                    f"Applications: {app_count}\n"
+                    f"Locked files/folders: {item_count}\n\n"
+                    f"Saved to: {file_path}"
+                )
                 return True
             except Exception as e:
                 show_message_func("Error", f"Failed to export config: {e}")
@@ -82,12 +98,16 @@ class ConfigManager:
                 show_message_func("Error", "Invalid config file format. Missing 'applications' key.")
                 return False
             
-            # Ask for confirmation
+            # Get counts for confirmation dialog
             num_apps = len(imported_config.get("applications", []))
+            num_locked = len(imported_config.get("locked_files_and_folders", []))
+            
             response = messagebox.askyesno(
                 "Confirm Import",
-                f"This will import {num_apps} application(s).\n\n"
-                "Current applications will be replaced.\n\n"
+                f"This will import:\n"
+                f"  • {num_apps} application(s)\n"
+                f"  • {num_locked} locked file(s)/folder(s)\n\n"
+                f"Current configuration will be replaced.\n\n"
                 "Do you want to continue?"
             )
             
@@ -109,9 +129,13 @@ class ConfigManager:
             except Exception as e:
                 print(f"Warning: Could not create backup: {e}")
             
-            # Import the config
+            # Import the unified config
             self.app_locker.config = imported_config
             self.app_locker.save_config()
+            
+            # Reload locked items if file_lock_manager is available
+            if hasattr(self.app_locker, 'file_lock_manager'):
+                self.app_locker.file_lock_manager._load_locked_items()
             
             # Refresh the applications list display
             update_display_func()
@@ -119,7 +143,8 @@ class ConfigManager:
             show_message_func(
                 "Success",
                 f"Config imported successfully!\n\n"
-                f"Imported {num_apps} application(s).\n"
+                f"Applications: {num_apps}\n"
+                f"Locked files/folders: {num_locked}\n\n"
                 f"Previous config backed up to:\n{os.path.basename(backup_path)}"
             )
             

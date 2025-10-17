@@ -17,8 +17,8 @@ from core.file_lock_manager import FileLockManager
 class FileLockManagerWindows(FileLockManager):
     """Windows implementation of file/folder locking using icacls"""
     
-    def __init__(self, config_folder: str):
-        super().__init__(config_folder)
+    def __init__(self, config_folder: str, app_locker=None):
+        super().__init__(config_folder, app_locker)
         self.acl_backup_folder = os.path.join(config_folder, "acl_backups")
         os.makedirs(self.acl_backup_folder, exist_ok=True)
     

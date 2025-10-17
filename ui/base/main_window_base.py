@@ -931,7 +931,7 @@ class MainWindowBase(QMainWindow):
         self.config_text = QTextEdit()
         self.config_text.setReadOnly(True)
         self.config_text.setMinimumHeight(300)
-        self.config_text.setPlaceholderText("No applications locked yet...")
+        self.config_text.setPlaceholderText("No config yet. Add applications or lock files to create config...")
         
         # Apply JSON syntax highlighting
         self.json_highlighter = JsonSyntaxHighlighter(self.config_text.document())
@@ -953,10 +953,10 @@ class MainWindowBase(QMainWindow):
         
         # Description
         desc_label = QLabel(
-            "This is the list of applications currently locked by FadCrypt.\n"
+            "This is the unified configuration containing all locked applications and files/folders.\n"
             "It is displayed in plain text here for your convenience, "
             "but rest assured, the data is encrypted when saved on your computer,\n"
-            "keeping your locked apps confidential."
+            "keeping your locked items confidential."
         )
         desc_label.setWordWrap(True)
         desc_label.setStyleSheet("color: gray;")
@@ -973,7 +973,7 @@ class MainWindowBase(QMainWindow):
         export_title.setStyleSheet("font-weight: bold;")
         config_layout.addWidget(export_title)
         
-        export_desc = QLabel("Export your lock list to a file or import a previously saved configuration.")
+        export_desc = QLabel("Export your complete configuration (applications + locked files/folders) or import a previously saved configuration.")
         export_desc.setWordWrap(True)
         export_desc.setStyleSheet("color: gray;")
         config_layout.addWidget(export_desc)
@@ -1113,7 +1113,7 @@ class MainWindowBase(QMainWindow):
         # Add path labels
         config_layout.addWidget(create_path_label("Config Folder:", fadcrypt_folder))
         config_layout.addWidget(create_path_label("Password File:", os.path.join(fadcrypt_folder, "encrypted_password.bin")))
-        config_layout.addWidget(create_path_label("Apps Config:", os.path.join(fadcrypt_folder, "apps_config.json")))
+        config_layout.addWidget(create_path_label("Unified Config:", os.path.join(fadcrypt_folder, "apps_config.json")))
         config_layout.addWidget(create_path_label("Settings File:", os.path.join(fadcrypt_folder, "settings.json")))
         config_layout.addWidget(create_path_label("State File:", os.path.join(fadcrypt_folder, "monitoring_state.json")))
         config_layout.addWidget(create_path_label("Backup Folder:", backup_folder))
@@ -1179,18 +1179,21 @@ class MainWindowBase(QMainWindow):
     
     def get_file_lock_manager(self, config_folder: str):
         """
-        Get platform-specific file lock manager.
+        Get platform-specific file lock manager with access to unified config.
         To be overridden by platform-specific subclasses.
         """
         import platform
         system = platform.system()
         
+        # Get app_locker reference if available
+        app_locker = getattr(self, 'app_locker', None)
+        
         if system == "Linux":
             from core.linux.file_lock_manager_linux import FileLockManagerLinux
-            return FileLockManagerLinux(config_folder)
+            return FileLockManagerLinux(config_folder, app_locker)
         elif system == "Windows":
             from core.windows.file_lock_manager_windows import FileLockManagerWindows
-            return FileLockManagerWindows(config_folder)
+            return FileLockManagerWindows(config_folder, app_locker)
         else:
             # Fallback (shouldn't happen)
             print(f"⚠️  File locking not supported on {system}")
@@ -1306,14 +1309,21 @@ class MainWindowBase(QMainWindow):
         dialog.exec()
     
     def on_application_added(self, app_name, app_path):
-        """Handle application added from dialog"""
+        """Handle application added from dialog - uses ISO format timestamp"""
+        from datetime import datetime
+        
         # Check if already added
         if app_name in self.app_list_widget.apps_data:
             self.show_message("Info", f"Application '{app_name}' is already in the list.", "info")
             return
         
-        # Add to the grid (with unlock_count=0 by default)
-        self.app_list_widget.add_app(app_name, app_path, unlock_count=0)
+        # Add to the grid with ISO format timestamp
+        self.app_list_widget.add_app(
+            app_name, 
+            app_path, 
+            unlock_count=0, 
+            added_at=datetime.now().isoformat()
+        )
         self.save_applications_config()
         self.update_app_count()
         self.show_message("Success", f"Application '{app_name}' added successfully.", "success")
@@ -1402,6 +1412,10 @@ class MainWindowBase(QMainWindow):
                     self.file_access_monitor.update_monitored_items()
                     print(f"✅ File access monitor updated")
             
+            # Update config display to show new locked items
+            if hasattr(self, 'update_config_display'):
+                self.update_config_display()
+            
             self.show_message("Success", f"Added {added_count} file(s) successfully.", "success")
         else:
             self.show_message("Error", "Failed to add files. They may already be in the list.", "error")
@@ -1443,6 +1457,10 @@ class MainWindowBase(QMainWindow):
                     if self.file_access_monitor:
                         self.file_access_monitor.update_monitored_items()
                         print(f"✅ File access monitor updated")
+                
+                # Update config display to show new locked items
+                if hasattr(self, 'update_config_display'):
+                    self.update_config_display()
                 
                 self.show_message("Success", f"Added folder: {os.path.basename(folder_path)}", "success")
             else:
@@ -1721,22 +1739,38 @@ class MainWindowBase(QMainWindow):
         self.show_message("Success", f"Application '{app_name}' is now {status}.", "success")
     
     def save_applications_config(self):
-        """Save applications configuration to JSON file"""
+        """Save applications configuration to unified JSON file"""
         config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
         
-        # Build config data
-        config_data = {}
+        # Load existing config to preserve locked files/folders
+        existing_config = {"applications": [], "locked_files_and_folders": []}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    existing_config = json.load(f)
+            except:
+                pass
+        
+        # Build applications array in unified format with consistent ISO timestamps
+        applications = []
         for app_name, app_data in self.app_list_widget.apps_data.items():
-            config_data[app_name] = {
+            applications.append({
+                'name': app_name,
                 'path': app_data['path'],
                 'unlock_count': app_data.get('unlock_count', 0),
-                'date_added': app_data.get('date_added', None)
-            }
+                'added_at': app_data.get('added_at', None)
+            })
+        
+        # Create unified config - preserve locked items
+        unified_config = {
+            'applications': applications,
+            'locked_files_and_folders': existing_config.get('locked_files_and_folders', [])
+        }
         
         try:
             with open(config_file, 'w') as f:
-                json.dump(config_data, f, indent=4)
-            print(f"Applications config saved: {len(config_data)} apps")
+                json.dump(unified_config, f, indent=4)
+            print(f"Applications config saved: {len(applications)} apps (preserved {len(unified_config.get('locked_files_and_folders', []))} locked items)")
             
             # Also update the config tab display
             self.update_config_display()
@@ -1744,7 +1778,7 @@ class MainWindowBase(QMainWindow):
             print(f"Error saving applications config: {e}")
     
     def update_config_display(self):
-        """Update the config display in Config tab - show raw JSON"""
+        """Update the config display in Config tab - show raw JSON with applications and locked files"""
         config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
         
         if os.path.exists(config_file):
@@ -1755,13 +1789,17 @@ class MainWindowBase(QMainWindow):
                 # Display raw JSON with proper formatting
                 raw_json = json.dumps(config_data, indent=4)
                 self.config_text.setPlainText(raw_json)
-                print(f"[Config Display] Updated with {len(config_data)} apps")
+                
+                # Count items
+                app_count = len(config_data.get('applications', []))
+                locked_count = len(config_data.get('locked_files_and_folders', []))
+                print(f"[Config Display] Updated with {app_count} apps and {locked_count} locked items")
             except Exception as e:
                 error_msg = f"Error loading config: {e}"
                 self.config_text.setPlainText(error_msg)
                 print(f"[Config Display] {error_msg}")
         else:
-            empty_msg = "No configuration file found. Add applications to create config."
+            empty_msg = "No configuration file found. Add applications or lock files to create config."
             self.config_text.setPlainText(empty_msg)
             print(f"[Config Display] {empty_msg}")
     
@@ -1779,17 +1817,18 @@ class MainWindowBase(QMainWindow):
             # Clear current grid
             self.app_list_widget.apps_data.clear()
             
-            # Load apps
-            for app_name, app_data in config_data.items():
+            # Load apps from unified config format with consistent ISO timestamps
+            apps_list = config_data.get('applications', [])
+            for app in apps_list:
                 self.app_list_widget.add_app(
-                    app_name,
-                    app_data['path'],
-                    unlock_count=app_data.get('unlock_count', 0),
-                    date_added=app_data.get('date_added', None)
+                    app['name'],
+                    app['path'],
+                    unlock_count=app.get('unlock_count', 0),
+                    added_at=app.get('added_at', None)
                 )
             
             self.update_app_count()
-            print(f"Applications config loaded: {len(config_data)} apps")
+            print(f"Applications config loaded: {len(apps_list)} apps")
             
             # Update config display to show the loaded apps (if config tab has been created)
             if hasattr(self, 'config_text'):
