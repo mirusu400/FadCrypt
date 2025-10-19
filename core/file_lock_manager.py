@@ -55,6 +55,12 @@ class FileLockManager(ABC):
     def _save_locked_items(self):
         """Save locked items to unified config (apps_config.json)"""
         try:
+            # Temporarily unlock config if using Linux implementation
+            should_relock = False
+            if hasattr(self, 'temporarily_unlock_config'):
+                self.temporarily_unlock_config('apps_config.json')
+                should_relock = True
+            
             config = self._get_config()
             config["locked_files_and_folders"] = self.locked_items
             
@@ -79,6 +85,10 @@ class FileLockManager(ABC):
                 with open(self.config_file, 'w') as f:
                     json.dump(config, f, indent=2)
                 print(f"💾 Saved {len(self.locked_items)} locked items to unified config")
+            
+            # Relock config after saving
+            if should_relock and hasattr(self, 'relock_config'):
+                self.relock_config('apps_config.json')
         except Exception as e:
             print(f"❌ Error saving locked items: {e}")
     

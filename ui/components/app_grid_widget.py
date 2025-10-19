@@ -363,13 +363,15 @@ class AppGridWidget(QWidget):
             self.empty_state_widget.hide()
             self.grid_layout.removeWidget(self.empty_state_widget)
     
-    def add_app(self, app_name, app_path, unlock_count=0, date_added=None):
+    def add_app(self, app_name, app_path, unlock_count=0, date_added=None, added_at=None):
         """Add an application to the grid"""
         import time
+        # Support both date_added and added_at parameter names for compatibility
+        timestamp = added_at or date_added or time.time()
         self.apps_data[app_name] = {
             'path': app_path,
             'unlock_count': unlock_count,
-            'date_added': date_added if date_added else time.time()
+            'date_added': timestamp
         }
         self.refresh_grid()
     

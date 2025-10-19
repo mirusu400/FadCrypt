@@ -1805,6 +1805,15 @@ class MainWindowBase(QMainWindow):
         """Save applications configuration to unified JSON file"""
         config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
         
+        # Temporarily unlock config if needed using file_lock_manager
+        should_relock = False
+        if self.file_lock_manager and hasattr(self.file_lock_manager, 'temporarily_unlock_config'):
+            try:
+                self.file_lock_manager.temporarily_unlock_config('apps_config.json')
+                should_relock = True
+            except:
+                pass
+        
         # Load existing config to preserve locked files/folders
         existing_config = {"applications": [], "locked_files_and_folders": []}
         if os.path.exists(config_file):
@@ -1839,6 +1848,13 @@ class MainWindowBase(QMainWindow):
             self.update_config_display()
         except Exception as e:
             print(f"Error saving applications config: {e}")
+        finally:
+            # Relock config if it was unlocked using file_lock_manager
+            if should_relock and self.file_lock_manager and hasattr(self.file_lock_manager, 'relock_config'):
+                try:
+                    self.file_lock_manager.relock_config('apps_config.json')
+                except:
+                    pass
     
     def update_config_display(self):
         """Update the config display in Config tab - show raw JSON with applications and locked files"""
@@ -1912,11 +1928,28 @@ class MainWindowBase(QMainWindow):
             )
             return
         
-        # Check if any apps are added
-        if not self.app_list_widget.apps_data:
+        # Check if any apps or locked items are added
+        apps_count = len(self.app_list_widget.apps_data) if self.app_list_widget.apps_data else 0
+        
+        # Get locked files/folders from config
+        locked_items = []
+        try:
+            config_file = os.path.join(self.get_fadcrypt_folder(), "apps_config.json")
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    import json
+                    config = json.load(f)
+                    locked_items = config.get('locked_files_and_folders', [])
+        except:
+            locked_items = []
+        
+        locked_count = len(locked_items) if locked_items else 0
+        total_items = apps_count + locked_count
+        
+        if total_items == 0:
             self.show_message(
-                "No Applications",
-                "Please add applications to monitor first.",
+                "No Items to Monitor",
+                "Please add applications or lock files/folders to monitor first.",
                 "info"
             )
             return
@@ -2371,17 +2404,27 @@ class MainWindowBase(QMainWindow):
                 
                 # Show recovery dialog
                 from PyQt6.QtWidgets import QMessageBox
-                from PyQt6.QtCore import QTimer
+                from PyQt6.QtCore import QTimer, Qt
+                
+                # Hide main window temporarily
+                was_visible = self.isVisible()
+                if was_visible:
+                    self.hide()
                 
                 def show_recovery_dialog():
-                    reply = QMessageBox.question(
-                        self,
+                    msg_box = QMessageBox(
+                        QMessageBox.Icon.Question,
                         "🚨 Crash Recovery",
                         "Monitoring was active when FadCrypt closed unexpectedly.\n\n"
                         "Protected files and folders are still locked.\n\n"
                         "Would you like to unlock them now?",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        None  # No parent so it's truly independent
                     )
+                    # Set window flags to keep on top and make it modal
+                    msg_box.setWindowFlags(msg_box.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Dialog)
+                    msg_box.setModal(True)
+                    reply = msg_box.exec()
                     
                     if reply == QMessageBox.StandardButton.Yes:
                         # Ask for password
@@ -2431,6 +2474,12 @@ class MainWindowBase(QMainWindow):
                             "Files remain locked. Stop monitoring manually to unlock.",
                             "info"
                         )
+                    
+                    # Show main window again after dialog is done
+                    if was_visible:
+                        self.show()
+                        self.activateWindow()
+                        self.raise_()
                 
                 # Schedule dialog after UI is fully loaded
                 QTimer.singleShot(500, show_recovery_dialog)

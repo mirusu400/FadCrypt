@@ -20,8 +20,54 @@ class StatisticsManager:
         self.config_file = os.path.join(config_folder, 'apps_config.json')
         self.activity_log_file = os.path.join(config_folder, 'activity.log')
         self.stats_cache_file = os.path.join(config_folder, 'statistics.json')
+        self.metadata_file = os.path.join(config_folder, 'metadata.json')
         self.cache_duration = 60  # seconds - recalculate if older than this
         
+        # Initialize session metadata on first creation (once per app session)
+        self._init_session_metadata()
+        
+    def _init_session_metadata(self):
+        """Initialize session metadata (called once per app startup)"""
+        try:
+            # Create fresh metadata file with current startup time
+            startup_data = {'first_startup': datetime.now().isoformat()}
+            with open(self.metadata_file, 'w') as f:
+                json.dump(startup_data, f, indent=2)
+        except:
+            pass
+    
+    def get_session_uptime(self) -> Dict:
+        """Get FadCrypt session uptime (current app instance only)"""
+        # Load the startup time from metadata (created fresh on app startup)
+        startup_time = datetime.now()
+        
+        try:
+            if os.path.exists(self.metadata_file):
+                with open(self.metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    startup_time = datetime.fromisoformat(metadata.get('first_startup', datetime.now().isoformat()))
+        except:
+            pass
+        
+        # Calculate uptime
+        uptime = datetime.now() - startup_time
+        
+        days = uptime.days
+        hours, remainder = divmod(uptime.seconds, 3600)
+        minutes = remainder // 60
+        
+        total_hours = uptime.total_seconds() / 3600
+        total_minutes = uptime.total_seconds() / 60
+        
+        return {
+            'uptime_seconds': int(uptime.total_seconds()),
+            'uptime_minutes': int(total_minutes),
+            'uptime_hours': round(total_hours, 2),
+            'uptime_formatted': f"{days}d {hours}h {minutes}m",
+            'first_startup': startup_time.isoformat(),
+            'current_time': datetime.now().isoformat()
+        }
+    
     def _get_config(self) -> Dict:
         """Load unified config"""
         if os.path.exists(self.config_file):
@@ -314,45 +360,6 @@ class StatisticsManager:
             durations['averages']['avg_unlock_duration_seconds'] = round(sum(unlock_durations) / len(unlock_durations), 1)
         
         return durations
-    
-    def get_session_uptime(self) -> Dict:
-        """Get FadCrypt session uptime"""
-        metadata_file = os.path.join(self.config_folder, 'metadata.json')
-        
-        # Create or load metadata with first startup time
-        if os.path.exists(metadata_file):
-            try:
-                with open(metadata_file, 'r') as f:
-                    metadata = json.load(f)
-                    startup_time = datetime.fromisoformat(metadata.get('first_startup'))
-            except:
-                startup_time = datetime.now()
-        else:
-            startup_time = datetime.now()
-            try:
-                with open(metadata_file, 'w') as f:
-                    json.dump({'first_startup': startup_time.isoformat()}, f, indent=2)
-            except:
-                pass
-        
-        # Calculate uptime
-        uptime = datetime.now() - startup_time
-        
-        days = uptime.days
-        hours, remainder = divmod(uptime.seconds, 3600)
-        minutes = remainder // 60
-        
-        total_hours = uptime.total_seconds() / 3600
-        total_minutes = uptime.total_seconds() / 60
-        
-        return {
-            'uptime_seconds': int(uptime.total_seconds()),
-            'uptime_minutes': int(total_minutes),
-            'uptime_hours': round(total_hours, 2),
-            'uptime_formatted': f"{days}d {hours}h {minutes}m",
-            'first_startup': startup_time.isoformat(),
-            'current_time': datetime.now().isoformat()
-        }
     
     def get_comprehensive_stats(self) -> Dict:
         """Get all statistics including charts and durations"""

@@ -4,11 +4,151 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QScrollArea, QGridLayout, QFrame, QTabWidget
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtCore import Qt, QTimer, QEvent, QRect, QPoint
+from PyQt6.QtGui import QFont, QColor, QPainter, QBrush, QPen
 from PyQt6.QtCore import QSize
 import pyqtgraph as pg
 import json
+
+
+class PieChartWidget(QWidget):
+    """Custom pie chart widget with integrated labels"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(250, 250)
+        self.setMaximumSize(400, 400)
+        self.labels = []
+        self.data = []
+        self.colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#F7B731', '#5F27CD', '#FF9500', '#00BFA5']
+        self.hovered_slice = -1
+        self.setMouseTracking(True)
+    
+    def set_data(self, labels, data):
+        """Set pie chart data"""
+        self.labels = labels
+        self.data = data
+        self.hovered_slice = -1
+        self.update()
+    
+    def _get_slice_at_position(self, x, y):
+        """Get slice index at given position"""
+        width = self.width()
+        height = self.height()
+        size = min(width - 40, height - 40)  # Leave room for labels
+        chart_x = (width - size) // 2
+        chart_y = (height - size) // 2
+        
+        center_x = chart_x + size // 2
+        center_y = chart_y + size // 2
+        dx = x - center_x
+        dy = y - center_y
+        distance = (dx * dx + dy * dy) ** 0.5
+        
+        if distance < size // 2:
+            # Over the pie - calculate angle
+            import math
+            angle = math.atan2(dy, dx)
+            if angle < 0:
+                angle += 2 * math.pi
+            
+            # Map angle to slice
+            total = sum(self.data)
+            if total == 0:
+                return -1
+            
+            current_angle = 0
+            for i, value in enumerate(self.data):
+                if value == 0:
+                    continue
+                slice_angle = (value / total) * 2 * math.pi
+                if current_angle <= angle < current_angle + slice_angle:
+                    return i
+                current_angle += slice_angle
+        return -1
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse hover for slice highlighting"""
+        new_hovered = self._get_slice_at_position(event.pos().x(), event.pos().y())
+        if new_hovered != self.hovered_slice:
+            self.hovered_slice = new_hovered
+            self.update()
+    
+    def leaveEvent(self, event):
+        """Handle mouse leaving widget"""
+        if self.hovered_slice >= 0:
+            self.hovered_slice = -1
+            self.update()
+    
+    def paintEvent(self, event):
+        """Draw pie chart"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw background
+        painter.fillRect(self.rect(), QColor("#1e1e1e"))
+        
+        if not self.data or sum(self.data) == 0:
+            painter.setPen(QPen(QColor("#999")))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No data available")
+            return
+        
+        # Calculate dimensions - smaller chart to fit labels inside
+        width = self.width()
+        height = self.height()
+        size = min(width - 40, height - 40)
+        x = (width - size) // 2
+        y = (height - size) // 2
+        
+        # Draw pie slices
+        total = sum(self.data)
+        angle_start = 0
+        
+        for i, (value, label) in enumerate(zip(self.data, self.labels)):
+            if value == 0:
+                continue
+            
+            import math
+            angle_span = (value / total) * 360  # In degrees
+            angle_span_qt = int(angle_span * 16)  # Qt uses 16ths of degrees
+            angle_start_qt = int(angle_start * 16)
+            
+            # Draw slice
+            color = QColor(self.colors[i % len(self.colors)])
+            
+            # Highlight hovered slice
+            if i == self.hovered_slice:
+                color.setAlpha(255)
+                painter.setBrush(QBrush(color))
+                painter.setPen(QPen(QColor("#fff"), 2))
+            else:
+                painter.setBrush(QBrush(color))
+                painter.setPen(QPen(QColor("#2a2a2a"), 1))
+            
+            painter.drawPie(QRect(x, y, size, size), angle_start_qt, angle_span_qt)
+            
+            # Draw label with percentage INSIDE the slice
+            percentage = (value / total) * 100
+            angle_mid = angle_start + angle_span / 2
+            angle_rad = math.radians(angle_mid)
+            
+            # Position text in middle of slice (2/3 radius for readable placement)
+            radius = size // 2 - 15
+            label_x = x + size // 2 + int(radius * 0.65 * math.cos(angle_rad))
+            label_y = y + size // 2 + int(radius * 0.65 * math.sin(angle_rad))
+            
+            # Draw label name + percentage
+            painter.setPen(QPen(QColor("#fff")))
+            font = painter.font()
+            font.setPointSize(8)
+            painter.setFont(font)
+            
+            # Format: "Name\n12.3%"
+            text_lines = [label, f"{percentage:.1f}%"]
+            for j, text_line in enumerate(text_lines):
+                painter.drawText(int(label_x) - 40, int(label_y) - 15 + (j * 12), 80, 12,
+                               Qt.AlignmentFlag.AlignCenter, text_line)
+            
+            angle_start += angle_span
 
 
 class EnhancedStatsWindow(QWidget):
@@ -24,10 +164,10 @@ class EnhancedStatsWindow(QWidget):
         
         self.init_ui()
         
-        # Auto-refresh every 60 seconds
+        # Auto-refresh timer - only when window is visible
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_stats)
-        self.refresh_timer.start(60000)
+        self.refresh_timer.start(1000)  # Update every 1 second when visible
     
     def _default_resource_path(self, path):
         return path
@@ -91,43 +231,29 @@ class EnhancedStatsWindow(QWidget):
         
         # Charts Tab
         charts_widget = self._create_charts_tab()
-        tabs.addTab(charts_widget, "Charts & Trends")
+        tabs.addTab(charts_widget, "Charts and Trends")
         
         # Duration Stats Tab
         duration_widget = self._create_duration_tab()
         tabs.addTab(duration_widget, "Duration Statistics")
         
-        # System Info Tab
-        system_widget = self._create_system_tab()
-        tabs.addTab(system_widget, "System Information")
-        
         main_layout.addWidget(tabs, 1)
-        
-        # Refresh button at bottom
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        
-        refresh_btn = QPushButton("🔄 Refresh Now")
-        refresh_btn.setMaximumWidth(200)
-        refresh_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #FF6B6B;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #FF5252;
-            }
-        """)
-        refresh_btn.clicked.connect(self.refresh_stats)
-        button_layout.addWidget(refresh_btn)
-        
-        main_layout.addLayout(button_layout)
-        
-        self.refresh_stats()
+    
+    def changeEvent(self, event):
+        """Handle visibility changes to manage refresh timer"""
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.WindowDeactivate:
+            self.refresh_timer.stop()
+        elif event.type() == QEvent.Type.WindowActivate:
+            self.refresh_timer.start()
+        super().changeEvent(event)
+    
+    def closeEvent(self, event):
+        """Handle window close event"""
+        # Stop the timer to prevent memory leaks and ensure clean shutdown
+        if self.refresh_timer:
+            self.refresh_timer.stop()
+        event.accept()
     
     def _create_overview_tab(self) -> QWidget:
         """Create overview tab with key metrics"""
@@ -148,29 +274,23 @@ class EnhancedStatsWindow(QWidget):
         # Top metrics row
         self.metric_cards = {}
         
-        # Protection %
-        card1 = self._create_metric_card("🛡️ Protection Level", "0%", 
-                                        "Percentage of items currently protected/locked")
-        self.metric_cards['protection'] = card1
-        grid.addWidget(card1, 0, 0)
-        
         # Total items
         card2 = self._create_metric_card("📦 Total Items", "0",
                                         "Total count of all applications and locked files/folders")
         self.metric_cards['total_items'] = card2
-        grid.addWidget(card2, 0, 1)
+        grid.addWidget(card2, 0, 0)
         
         # Lock Events
         card3 = self._create_metric_card("🔒 Lock Events", "0",
                                         "Total number of lock operations performed")
         self.metric_cards['lock_events'] = card3
-        grid.addWidget(card3, 0, 2)
+        grid.addWidget(card3, 0, 1)
         
         # Unlock Events
         card4 = self._create_metric_card("🔓 Unlock Events", "0",
                                         "Total number of unlock operations performed")
         self.metric_cards['unlock_events'] = card4
-        grid.addWidget(card4, 0, 3)
+        grid.addWidget(card4, 0, 2)
         
         # Uptime
         card5 = self._create_metric_card("⏱️ FadCrypt Uptime", "0h 0m",
@@ -184,17 +304,11 @@ class EnhancedStatsWindow(QWidget):
         self.metric_cards['avg_lock_duration'] = card6
         grid.addWidget(card6, 1, 1)
         
-        # Peak Hour
-        card7 = self._create_metric_card("📈 Peak Lock Hour", "N/A",
-                                        "The hour of day (0-23) with most lock activity")
-        self.metric_cards['peak_hour'] = card7
-        grid.addWidget(card7, 1, 2)
-        
         # Failed Attempts
-        card8 = self._create_metric_card("⚠️ Failed Attempts", "0",
+        card7 = self._create_metric_card("⚠️ Failed Attempts", "0",
                                         "Number of failed unlock attempts")
-        self.metric_cards['failed_attempts'] = card8
-        grid.addWidget(card8, 1, 3)
+        self.metric_cards['failed_attempts'] = card7
+        grid.addWidget(card7, 1, 2)
         
         content_layout.addLayout(grid)
         
@@ -228,53 +342,59 @@ class EnhancedStatsWindow(QWidget):
         """Create charts visualization tab"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
         
         # Info text
         info_text = QLabel("ℹ️ Visual Analytics\nPie chart shows distribution of protected items by type. Line chart shows 7-day activity trend.")
         info_text.setStyleSheet("color: #999; padding: 10px; background-color: #2a2a2a; border-radius: 4px;")
         layout.addWidget(info_text)
-        layout.addSpacing(10)
         
-        # Horizontal layout for charts
+        # Horizontal layout for charts (equal spacing)
         charts_layout = QHBoxLayout()
+        charts_layout.setSpacing(15)
         
         # Pie chart - item type distribution
         pie_label = QLabel("Item Type Distribution")
         pie_font = QFont()
-        pie_font.setPointSize(12)
+        pie_font.setPointSize(11)
         pie_font.setBold(True)
         pie_label.setFont(pie_font)
         
-        self.pie_chart = pg.PlotWidget(title="Item Types")
-        self.pie_chart.setLabel('left', '')
-        self.pie_chart.setLabel('bottom', '')
-        self.pie_chart.showGrid(False, False)
-        self.pie_chart.setMouseEnabled(x=False, y=False)
+        self.pie_chart = PieChartWidget()
+        self.pie_chart.setMinimumHeight(300)
         
         pie_container = QVBoxLayout()
+        pie_container.setContentsMargins(0, 0, 0, 0)
         pie_container.addWidget(pie_label)
-        pie_container.addWidget(self.pie_chart)
-        charts_layout.addLayout(pie_container)
+        pie_container.addWidget(self.pie_chart, 1)
+        pie_container_widget = QWidget()
+        pie_container_widget.setLayout(pie_container)
+        charts_layout.addWidget(pie_container_widget, 1)
         
         # Line chart - lock/unlock timeline
         timeline_label = QLabel("Lock/Unlock Timeline (7 days)")
         timeline_font = QFont()
-        timeline_font.setPointSize(12)
+        timeline_font.setPointSize(11)
         timeline_font.setBold(True)
         timeline_label.setFont(timeline_font)
         
-        self.line_chart = pg.PlotWidget(title="Activity Timeline")
+        self.line_chart = pg.PlotWidget(title="")
         self.line_chart.setLabel('left', 'Events')
         self.line_chart.setLabel('bottom', 'Date')
         self.line_chart.showGrid(True, True)
-        self.line_chart.setMouseEnabled(x=False, y=False)
+        self.line_chart.setMouseEnabled(x=True, y=False)  # Allow x-axis hover
+        self.line_chart.setMinimumHeight(300)
         
         timeline_container = QVBoxLayout()
+        timeline_container.setContentsMargins(0, 0, 0, 0)
         timeline_container.addWidget(timeline_label)
-        timeline_container.addWidget(self.line_chart)
-        charts_layout.addLayout(timeline_container)
+        timeline_container.addWidget(self.line_chart, 1)
+        timeline_container_widget = QWidget()
+        timeline_container_widget.setLayout(timeline_container)
+        charts_layout.addWidget(timeline_container_widget, 1)
         
-        layout.addLayout(charts_layout)
+        layout.addLayout(charts_layout, 1)
         return widget
     
     def _create_duration_tab(self) -> QWidget:
@@ -358,62 +478,6 @@ class EnhancedStatsWindow(QWidget):
         
         return widget
     
-    def _create_system_tab(self) -> QWidget:
-        """Create system information tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        
-        # Info text
-        info_text = QLabel("ℹ️ System & Session Information\nMetadata about FadCrypt's current session and cache status")
-        info_text.setStyleSheet("color: #999; padding: 10px; background-color: #2a2a2a; border-radius: 4px;")
-        content_layout.addWidget(info_text)
-        content_layout.addSpacing(10)
-        
-        title = QLabel("Session Details")
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title.setFont(title_font)
-        content_layout.addWidget(title)
-        
-        grid = QGridLayout()
-        grid.setSpacing(15)
-        
-        self.system_cards = {}
-        
-        card1 = self._create_metric_card("🚀 Session Start", "N/A",
-                                        "Timestamp when FadCrypt was first started")
-        self.system_cards['session_start'] = card1
-        grid.addWidget(card1, 0, 0)
-        
-        card2 = self._create_metric_card("⏱️ Session Duration", "N/A",
-                                        "How long FadCrypt has been running")
-        self.system_cards['session_duration'] = card2
-        grid.addWidget(card2, 0, 1)
-        
-        card3 = self._create_metric_card("📅 Last Activity", "N/A",
-                                        "Timestamp of the last lock/unlock operation")
-        self.system_cards['last_activity'] = card3
-        grid.addWidget(card3, 0, 2)
-        
-        card4 = self._create_metric_card("🔄 Cache Status", "Fresh",
-                                        "Whether statistics cache is fresh or needs refresh")
-        self.system_cards['cache_status'] = card4
-        grid.addWidget(card4, 0, 3)
-        
-        content_layout.addLayout(grid)
-        content_layout.addStretch()
-        
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        
-        return widget
     
     def _create_metric_card(self, title: str, value: str, tooltip: str = "") -> QFrame:
         """Create a metric display card"""
@@ -467,7 +531,6 @@ class EnhancedStatsWindow(QWidget):
             self._update_overview(stats)
             self._update_charts(stats)
             self._update_duration_stats(stats)
-            self._update_system_info(stats)
         except Exception as e:
             print(f"Error refreshing stats: {e}")
     
@@ -477,9 +540,6 @@ class EnhancedStatsWindow(QWidget):
             summary = stats.get('summary', {})
             activity = stats.get('activity', {})
             
-            self.metric_cards['protection'].value_label.setText(
-                f"{summary.get('protection_percentage', 0)}%"
-            )
             self.metric_cards['total_items'].value_label.setText(
                 str(summary.get('total_items', 0))
             )
@@ -498,9 +558,6 @@ class EnhancedStatsWindow(QWidget):
             avg_lock = durations.get('averages', {}).get('avg_lock_duration_seconds', 0)
             self._format_duration_card(self.metric_cards['avg_lock_duration'], avg_lock)
             
-            self.metric_cards['peak_hour'].value_label.setText(
-                f"{activity.get('peak_lock_hour', 0)}:00"
-            )
             self.metric_cards['failed_attempts'].value_label.setText(
                 str(activity.get('failed_unlock_attempts', 0))
             )
@@ -535,27 +592,18 @@ class EnhancedStatsWindow(QWidget):
             print(f"Error updating charts: {e}")
     
     def _draw_pie_chart(self, labels: list, data: list):
-        """Draw pie chart (using bar representation in PyQtGraph)"""
+        """Draw circular pie chart visualization"""
         try:
-            self.pie_chart.clear()
-            
             # Ensure data is numeric and non-negative
-            numeric_data = [max(0, float(d)) if d else 0 for d in data]
+            numeric_data = [max(0, int(float(d)) if d else 0) for d in data]
             
             # Skip if no data
             if not numeric_data or sum(numeric_data) == 0:
-                self.pie_chart.addItem(pg.TextItem("No data available"))
+                self.pie_chart.set_data([], [])
                 return
             
-            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+            self.pie_chart.set_data(labels, numeric_data)
             
-            x = list(range(len(labels)))
-            bar_graph = pg.BarGraphItem(x=x, height=numeric_data, width=0.6, brush=colors[:len(labels)])
-            self.pie_chart.addItem(bar_graph)
-            
-            # Set x-axis labels
-            ax = self.pie_chart.getAxis('bottom')
-            ax.setTicks([[(i, label) for i, label in enumerate(labels)]])
         except Exception as e:
             print(f"Error drawing pie chart: {e}")
     
@@ -614,27 +662,36 @@ class EnhancedStatsWindow(QWidget):
         except Exception as e:
             print(f"Error updating duration stats: {e}")
     
-    def _update_system_info(self, stats: dict):
-        """Update system information tab"""
+    @staticmethod
+    def _format_timestamp(timestamp_str: str) -> str:
+        """Format ISO timestamp to 12-hour AM/PM format like '24th June 2024, 03:45 PM'"""
+        if not timestamp_str or timestamp_str == 'N/A':
+            return 'N/A'
+        
         try:
-            uptime = stats.get('session_uptime', {})
-            activity = stats.get('activity', {})
+            from datetime import datetime
+            # Parse ISO format: "2025-10-19T14:30:45"
+            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
             
-            start_time = uptime.get('first_startup', 'N/A')
-            self.system_cards['session_start'].value_label.setText(start_time[:19])  # Date only
+            # Format as: "24th June 2024, 03:45 PM"
+            day = dt.day
+            # Get ordinal suffix (st, nd, rd, th)
+            if day in [1, 21, 31]:
+                day_suffix = 'st'
+            elif day in [2, 22]:
+                day_suffix = 'nd'
+            elif day in [3, 23]:
+                day_suffix = 'rd'
+            else:
+                day_suffix = 'th'
             
-            self.system_cards['session_duration'].value_label.setText(
-                uptime.get('uptime_formatted', 'N/A')
-            )
+            month = dt.strftime('%B')  # Full month name
+            year = dt.year
+            time_12h = dt.strftime('%I:%M %p')  # 12-hour format with AM/PM
             
-            last_activity = activity.get('last_activity', {})
-            if last_activity:
-                timestamp = last_activity.get('timestamp', 'N/A')
-                self.system_cards['last_activity'].value_label.setText(timestamp[:19])
-            
-            self.system_cards['cache_status'].value_label.setText("Fresh")
-        except Exception as e:
-            print(f"Error updating system info: {e}")
+            return f"{day}{day_suffix} {month} {year}, {time_12h}"
+        except:
+            return timestamp_str[:19] if timestamp_str else 'N/A'
     
     @staticmethod
     def _format_duration_card(card: QFrame, seconds: float):

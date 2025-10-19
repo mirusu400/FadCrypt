@@ -216,7 +216,8 @@ class FileLockManagerLinux(FileLockManager):
         Returns (success, message)
         """
         path = item['path']
-        item_name = item['name']
+        # Locked items use 'path', applications use 'name'
+        item_name = item.get('name', os.path.basename(path))
         
         if not os.path.exists(path):
             return False, f"⚠️  Skipping (doesn't exist): {item_name}"
@@ -262,7 +263,8 @@ class FileLockManagerLinux(FileLockManager):
         Returns (success, message)
         """
         path = item['path']
-        item_name = item['name']
+        # Locked items use 'path', applications use 'name'
+        item_name = item.get('name', os.path.basename(path))
         
         if not os.path.exists(path):
             return False, f"⚠️  Skipping (doesn't exist): {item_name}"
