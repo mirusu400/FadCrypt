@@ -15,6 +15,7 @@ class SystemTray(QObject):
     start_monitoring_requested = pyqtSignal()
     stop_monitoring_requested = pyqtSignal()
     snake_game_requested = pyqtSignal()
+    stats_requested = pyqtSignal()
     exit_requested = pyqtSignal()
     
     def __init__(self, resource_path_func, parent=None):
@@ -22,6 +23,9 @@ class SystemTray(QObject):
         self.resource_path = resource_path_func
         self.tray_icon = None
         self.monitoring_active = False
+        self.protection_percentage = 0
+        self.locked_items_count = 0
+        self.unlock_count = 0
         
         self.init_tray()
     
@@ -75,6 +79,11 @@ class SystemTray(QObject):
         snake_action.triggered.connect(self.snake_game_requested.emit)
         menu.addAction(snake_action)
         
+        # Stats action
+        self.stats_action = QAction('📊 Statistics & Activity', self)
+        self.stats_action.triggered.connect(self.stats_requested.emit)
+        menu.addAction(self.stats_action)
+        
         menu.addSeparator()
         
         # Exit action
@@ -110,6 +119,28 @@ class SystemTray(QObject):
             self.start_monitoring_action.setEnabled(True)
             self.stop_monitoring_action.setEnabled(False)
             print("🔓 System tray: Monitoring INACTIVE")
+    
+    def update_stats_display(self, protection_percentage: int, locked_items_count: int, unlock_count: int = 0):
+        """Update tray tooltip with live protection stats"""
+        self.protection_percentage = protection_percentage
+        self.locked_items_count = locked_items_count
+        self.unlock_count = unlock_count
+        
+        # Format tooltip with stats
+        if self.monitoring_active:
+            tooltip = (
+                f'FadCrypt - Monitoring Active 🔒\n'
+                f'Protected: {locked_items_count} items ({protection_percentage}%)\n'
+                f'Unlocks today: {unlock_count}'
+            )
+        else:
+            tooltip = (
+                f'FadCrypt - Ready to Monitor\n'
+                f'Protected: {locked_items_count} items ({protection_percentage}%)\n'
+                f'Unlocks today: {unlock_count}'
+            )
+        
+        self.tray_icon.setToolTip(tooltip)
     
     def show_message(self, title: str, message: str, icon=QSystemTrayIcon.MessageIcon.Information):
         """Show a notification message"""

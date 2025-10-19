@@ -24,6 +24,8 @@ from core.crypto_manager import CryptoManager
 from core.password_manager import PasswordManager
 from core.config_manager import ConfigManager
 from core.application_manager import ApplicationManager
+from core.activity_manager import ActivityManager
+from core.statistics_manager import StatisticsManager
 
 # Import version info
 from version import __version__, __version_code__
@@ -179,6 +181,13 @@ class MainWindowBase(QMainWindow):
         # Config manager (will be fully integrated later)
         self.config_manager = None
         self.app_manager = None
+        
+        # Activity and Statistics managers
+        self.activity_manager = ActivityManager(fadcrypt_folder)
+        self.statistics_manager = StatisticsManager(fadcrypt_folder)
+        
+        # Stats window (created on demand)
+        self.stats_window = None
         
         # Monitoring state
         self.monitoring_active = False
@@ -338,6 +347,7 @@ class MainWindowBase(QMainWindow):
         self.create_main_tab()
         self.create_applications_tab()
         self.create_logs_tab()  # Logs tab for viewing application output
+        self.create_activity_logs_tab()  # Activity logs tab for audit trail
         self.create_config_tab()
         self.create_settings_tab()
         self.create_about_tab()
@@ -354,6 +364,7 @@ class MainWindowBase(QMainWindow):
         self.system_tray.start_monitoring_requested.connect(self.on_start_monitoring)
         self.system_tray.stop_monitoring_requested.connect(self.on_stop_monitoring)
         self.system_tray.snake_game_requested.connect(self.on_snake_game)
+        self.system_tray.stats_requested.connect(self.open_stats_window)
         self.system_tray.exit_requested.connect(self.on_exit_requested)
         
         # Show tray icon
@@ -596,6 +607,25 @@ class MainWindowBase(QMainWindow):
         """)
         snake_button.clicked.connect(self.on_snake_game)
         sidebar_layout.addWidget(snake_button)
+        
+        stats_button = QPushButton("📊 Statistics")
+        stats_button.setFixedWidth(180)
+        stats_button.setStyleSheet("""
+            QPushButton {
+                background-color: #424242;
+                color: white;
+                font-weight: bold;
+                padding: 10px 15px;
+                border-radius: 5px;
+                text-align: left;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+        """)
+        stats_button.clicked.connect(self.open_stats_window)
+        sidebar_layout.addWidget(stats_button)
         
         sidebar_layout.addStretch()
         
@@ -904,6 +934,19 @@ class MainWindowBase(QMainWindow):
         
         self.logs_tab_widget = LogsTabWidget(self.log_capture, self)
         self.tabs.addTab(self.logs_tab_widget, "Logs")
+        
+    def create_activity_logs_tab(self):
+        """Create Activity Logs tab for viewing audit trail of lock/unlock events"""
+        from ui.components.activity_logs_panel import ActivityLogsPanel
+        
+        activity_tab = QWidget()
+        tab_layout = QVBoxLayout(activity_tab)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.activity_logs_panel = ActivityLogsPanel(self.activity_manager, activity_tab)
+        tab_layout.addWidget(self.activity_logs_panel)
+        
+        self.tabs.addTab(activity_tab, "Activity")
         
     def create_config_tab(self):
         """Create Config tab for viewing encrypted apps list"""
@@ -1326,6 +1369,16 @@ class MainWindowBase(QMainWindow):
         )
         self.save_applications_config()
         self.update_app_count()
+        
+        # Log activity
+        self.log_activity(
+            'add_item',
+            app_name,
+            'application',
+            success=True,
+            details=f"Added application: {app_path}"
+        )
+        
         self.show_message("Success", f"Application '{app_name}' added successfully.", "success")
     
     def update_app_count(self):
@@ -1353,6 +1406,16 @@ class MainWindowBase(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             for app_name in selected_apps:
                 self.app_list_widget.remove_app(app_name)
+                
+                # Log activity
+                self.log_activity(
+                    'remove_item',
+                    app_name,
+                    'application',
+                    success=True,
+                    details=f"Removed application from list"
+                )
+            
             self.save_applications_config()
             self.update_app_count()
             self.show_message("Success", f"Removed {len(selected_apps)} application(s) successfully.", "success")
@@ -1916,6 +1979,14 @@ class MainWindowBase(QMainWindow):
                 if failed > 0:
                     print(f"⚠️  Failed to lock {failed} items")
                 
+                # Log lock event
+                self.log_activity(
+                    'lock',
+                    'all_items',
+                    success=True,
+                    details=f"Locked {success} items"
+                )
+                
                 # Start file access monitoring after locking
                 if self.file_access_monitor and failed == 0:
                     print("👁️  Starting file access monitor...")
@@ -1929,6 +2000,14 @@ class MainWindowBase(QMainWindow):
                     print(f"✅ Locked {success} items successfully")
                 if failed > 0:
                     print(f"⚠️  Failed to lock {failed} items")
+                
+                # Log lock event
+                self.log_activity(
+                    'lock',
+                    'all_items',
+                    success=True,
+                    details=f"Locked {success} items"
+                )
                 
                 # Lock FadCrypt's own config files
                 print("🔒 Protecting FadCrypt config files...")
@@ -2021,6 +2100,14 @@ class MainWindowBase(QMainWindow):
                     success, failed = self.file_lock_manager.unlock_all_with_configs()
                     if failed > 0:
                         print(f"⚠️  Failed to unlock {failed} items")
+                    
+                    # Log unlock event
+                    self.log_activity(
+                        'unlock',
+                        'all_items',
+                        success=True,
+                        details=f"Unlocked {success} items"
+                    )
                 else:
                     # Fallback for other platforms (Windows, etc.)
                     print("🔓 Unlocking files and folders...")
@@ -2029,6 +2116,14 @@ class MainWindowBase(QMainWindow):
                         print(f"✅ Unlocked {success} items successfully")
                     if failed > 0:
                         print(f"⚠️  Failed to unlock {failed} items")
+                    
+                    # Log unlock event
+                    self.log_activity(
+                        'unlock',
+                        'all_items',
+                        success=True,
+                        details=f"Unlocked {success} items"
+                    )
                     
                     # Unlock FadCrypt's config files
                     print("🔓 Unprotecting FadCrypt config files...")
@@ -2724,3 +2819,193 @@ class MainWindowBase(QMainWindow):
                 self.show_message("Success", f"Imported {imported_count} application(s) from:\n{file_path}", "success")
             except Exception as e:
                 self.show_message("Error", f"Failed to import configuration:\n{e}", "error")
+
+    def add_file(self):
+        """Add a file to protected files"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select File to Protect",
+            "",
+            "All Files (*.*)"
+        )
+        
+        if file_path:
+            self.file_grid_widget.add_item(file_path, item_type='file')
+            self.save_locked_files_config()
+            
+            # Log activity
+            self.log_activity(
+                'add_item',
+                file_path,
+                'file',
+                success=True,
+                details=f"Added file to protection list"
+            )
+            
+            self.show_message("Success", f"File '{file_path}' added to protection list.", "success")
+    
+    def add_folder(self):
+        """Add a folder to protected files"""
+        from PyQt6.QtWidgets import QFileDialog
+        
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Folder to Protect",
+            ""
+        )
+        
+        if folder_path:
+            self.file_grid_widget.add_item(folder_path, item_type='folder')
+            self.save_locked_files_config()
+            
+            # Log activity
+            self.log_activity(
+                'add_item',
+                folder_path,
+                'folder',
+                success=True,
+                details=f"Added folder to protection list"
+            )
+            
+            self.show_message("Success", f"Folder '{folder_path}' added to protection list.", "success")
+    
+    def remove_file_item(self):
+        """Remove selected file or folder from protected items"""
+        selected_items = self.file_grid_widget.get_selected_paths()
+        
+        if not selected_items:
+            self.show_message("Info", "Please select at least one item to remove.", "info")
+            return
+        
+        # Confirm removal
+        items_str = ", ".join([os.path.basename(p) for p in selected_items])
+        reply = QMessageBox.question(
+            self,
+            "Confirm Removal",
+            f"Are you sure you want to remove:\n{items_str}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            for item_path in selected_items:
+                self.file_grid_widget.remove_item(item_path)
+                
+                # Log activity
+                self.log_activity(
+                    'remove_item',
+                    item_path,
+                    'file_or_folder',
+                    success=True,
+                    details=f"Removed from protection list"
+                )
+            
+            self.save_locked_files_config()
+            self.show_message("Success", f"Removed {len(selected_items)} item(s) successfully.", "success")
+    
+    def save_locked_files_config(self):
+        """Save locked files to unified config file"""
+        from datetime import datetime
+        
+        config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
+        
+        # Load existing config to preserve applications
+        existing_config = {"applications": [], "locked_files_and_folders": []}
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    existing_config = json.load(f)
+            except:
+                pass
+        
+        # Build locked items array from file grid
+        items_dict = self.file_grid_widget.cards
+        locked_items = [
+            {
+                'path': card.item_path,
+                'type': card.item_type,
+                'added_at': card.date_added or datetime.now().isoformat()
+            }
+            for card in items_dict.values()
+        ]
+        
+        # Create unified config - preserve applications
+        unified_config = {
+            'applications': existing_config.get('applications', []),
+            'locked_files_and_folders': locked_items
+        }
+        
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(unified_config, f, indent=4)
+            print(f"Protected files config saved: {len(locked_items)} items (preserved {len(unified_config.get('applications', []))} apps)")
+            
+            # Update config tab display
+            self.update_config_display()
+        except Exception as e:
+            print(f"Error saving locked files config: {e}")
+    
+    def open_stats_window(self):
+        """Open the statistics dashboard window in independent QThread"""
+        from PyQt6.QtCore import QThread
+        
+        # Check if window already exists and is visible
+        if hasattr(self, 'stats_window') and self.stats_window and self.stats_window.isVisible():
+            # Bring existing window to front
+            self.stats_window.raise_()
+            self.stats_window.activateWindow()
+            return
+        
+        try:
+            from ui.windows.stats_window import StatsWindow
+            
+            # Create window without parent (independent window)
+            stats_window = StatsWindow(
+                statistics_manager=self.statistics_manager,
+                resource_path=self.resource_path,
+                parent=None  # No parent - truly independent
+            )
+            
+            # Store reference in main window for reuse
+            self.stats_window = stats_window
+            
+            # Show the window (will run in main Qt thread but as independent window)
+            stats_window.show()
+            stats_window.raise_()
+            stats_window.activateWindow()
+            print("✅ Stats window opened as independent floating window")
+        except Exception as e:
+            print(f"Error opening stats window: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def log_activity(self, event_type: str, item_name: str | None = None, 
+                    item_type: str | None = None, **kwargs):
+        """Log an activity event"""
+        if self.activity_manager:
+            self.activity_manager.log_event(event_type, item_name, item_type, **kwargs)
+        
+        # Update tray stats after logging
+        self.update_tray_stats_display()
+    
+    def update_tray_stats_display(self):
+        """Update system tray with live protection stats"""
+        if not self.statistics_manager or not self.system_tray:
+            return
+        
+        try:
+            stats = self.statistics_manager.get_stats()
+            protection_percentage = int(stats.get('protection_percentage', 0))
+            locked_items = stats.get('total_items', 0)
+            unlock_count = stats.get('total_unlock_events', 0)
+            
+            self.system_tray.update_stats_display(
+                protection_percentage=protection_percentage,
+                locked_items_count=locked_items,
+                unlock_count=unlock_count
+            )
+        except Exception as e:
+            print(f"Error updating tray stats: {e}")
+
+
