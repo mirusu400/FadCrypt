@@ -2947,8 +2947,7 @@ class MainWindowBase(QMainWindow):
             print(f"Error saving locked files config: {e}")
     
     def open_stats_window(self):
-        """Open the statistics dashboard window in independent QThread"""
-        from PyQt6.QtCore import QThread
+        """Open the enhanced statistics dashboard window"""
         
         # Check if window already exists and is visible
         if hasattr(self, 'stats_window') and self.stats_window and self.stats_window.isVisible():
@@ -2958,10 +2957,10 @@ class MainWindowBase(QMainWindow):
             return
         
         try:
-            from ui.windows.stats_window import StatsWindow
+            from ui.windows.enhanced_stats_window import EnhancedStatsWindow
             
             # Create window without parent (independent window)
-            stats_window = StatsWindow(
+            stats_window = EnhancedStatsWindow(
                 statistics_manager=self.statistics_manager,
                 resource_path=self.resource_path,
                 parent=None  # No parent - truly independent
@@ -2974,9 +2973,9 @@ class MainWindowBase(QMainWindow):
             stats_window.show()
             stats_window.raise_()
             stats_window.activateWindow()
-            print("✅ Stats window opened as independent floating window")
+            print("✅ Enhanced stats window opened as independent floating window")
         except Exception as e:
-            print(f"Error opening stats window: {e}")
+            print(f"Error opening enhanced stats window: {e}")
             import traceback
             traceback.print_exc()
     

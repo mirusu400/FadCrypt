@@ -8,6 +8,7 @@ requests
 
 # PyQt6 dependencies (modern UI framework)
 PyQt6
+PyQtGraph
 
 # Legacy Tkinter dependencies (will be deprecated after migration)
 tkinterdnd2

@@ -1,13 +1,15 @@
 """
 Statistics Manager - Calculates and caches statistics
 Parses config and activity logs to generate insights
+Includes duration tracking and chart data generation
 """
 
 import json
 import os
+import psutil
 from datetime import datetime, timedelta
-from typing import Dict, List
-from collections import Counter
+from typing import Dict, List, Tuple
+from collections import Counter, defaultdict
 
 
 class StatisticsManager:
@@ -62,10 +64,10 @@ class StatisticsManager:
         total_locks = sum(app.get('unlock_count', 0) for app in apps)
         total_locks += sum(item.get('unlock_count', 0) for item in locked_items)
         
-        # Most locked items
+        # Most locked items - handle both structures
         most_locked = sorted(
-            [(app['name'], app.get('unlock_count', 0)) for app in apps] +
-            [(item['name'], item.get('unlock_count', 0)) for item in locked_items],
+            [(app.get('name', 'Unknown'), app.get('unlock_count', 0)) for app in apps] +
+            [(item.get('path', 'Unknown'), item.get('unlock_count', 0)) for item in locked_items],
             key=lambda x: x[1],
             reverse=True
         )
@@ -173,3 +175,196 @@ class StatisticsManager:
             pass
         
         return stats
+    
+    def get_pie_chart_data(self) -> Dict:
+        """Get data for item type distribution pie chart"""
+        config = self._get_config()
+        
+        apps = len(config.get('applications', []))
+        files = 0
+        folders = 0
+        
+        for item in config.get('locked_files_and_folders', []):
+            if item.get('type') == 'file':
+                files += 1
+            elif item.get('type') == 'folder':
+                folders += 1
+        
+        return {
+            'labels': ['Applications', 'Files', 'Folders'],
+            'data': [apps, files, folders],
+            'colors': ['#FF6B6B', '#4ECDC4', '#45B7D1']
+        }
+    
+    def get_lock_unlock_timeline(self, days: int = 7) -> Dict:
+        """Get lock/unlock events over time for line chart"""
+        events = self._get_activity_events()
+        now = datetime.now()
+        start_date = now - timedelta(days=days)
+        
+        # Group events by day and type
+        timeline = defaultdict(lambda: {'locks': 0, 'unlocks': 0})
+        
+        for event in events:
+            try:
+                event_time = datetime.fromisoformat(event['timestamp'])
+                if event_time >= start_date:
+                    date_key = event_time.date().isoformat()
+                    event_type = event.get('event_type', '').lower()
+                    
+                    if 'lock' in event_type and 'unlock' not in event_type:
+                        timeline[date_key]['locks'] += 1
+                    elif 'unlock' in event_type:
+                        timeline[date_key]['unlocks'] += 1
+            except:
+                pass
+        
+        # Fill in missing dates with zeros
+        all_dates = []
+        for i in range(days, -1, -1):
+            date = (now - timedelta(days=i)).date().isoformat()
+            all_dates.append(date)
+            if date not in timeline:
+                timeline[date] = {'locks': 0, 'unlocks': 0}
+        
+        return {
+            'dates': all_dates,
+            'locks': [timeline[d]['locks'] for d in all_dates],
+            'unlocks': [timeline[d]['unlocks'] for d in all_dates]
+        }
+    
+    def get_duration_stats(self) -> Dict:
+        """Calculate duration statistics from activity logs"""
+        events = self._get_activity_events()
+        
+        # Find lock/unlock pairs to calculate durations
+        item_sessions = defaultdict(list)
+        
+        for event in events:
+            item_name = event.get('item_name', 'Unknown')
+            event_type = event.get('event_type', '').lower()
+            timestamp = event.get('timestamp')
+            
+            if item_name and timestamp:
+                if 'lock' in event_type and 'unlock' not in event_type:
+                    item_sessions[item_name].append({
+                        'type': 'lock',
+                        'timestamp': datetime.fromisoformat(timestamp)
+                    })
+                elif 'unlock' in event_type:
+                    item_sessions[item_name].append({
+                        'type': 'unlock',
+                        'timestamp': datetime.fromisoformat(timestamp)
+                    })
+        
+        # Calculate durations
+        durations = {
+            'by_item': {},
+            'averages': {
+                'avg_lock_duration_seconds': 0,
+                'avg_unlock_duration_seconds': 0
+            }
+        }
+        
+        lock_durations = []
+        unlock_durations = []
+        
+        for item_name, sessions in item_sessions.items():
+            item_lock_durations = []
+            item_unlock_durations = []
+            
+            sessions_sorted = sorted(sessions, key=lambda x: x['timestamp'])
+            locked_since = None
+            unlocked_since = None
+            
+            for session in sessions_sorted:
+                if session['type'] == 'lock':
+                    if unlocked_since:
+                        # Calculate unlock duration
+                        duration = (session['timestamp'] - unlocked_since).total_seconds()
+                        item_unlock_durations.append(duration)
+                        unlock_durations.append(duration)
+                        unlocked_since = None
+                    locked_since = session['timestamp']
+                
+                elif session['type'] == 'unlock':
+                    if locked_since:
+                        # Calculate lock duration
+                        duration = (session['timestamp'] - locked_since).total_seconds()
+                        item_lock_durations.append(duration)
+                        lock_durations.append(duration)
+                        locked_since = None
+                    unlocked_since = session['timestamp']
+            
+            # Store item-specific stats
+            avg_lock = sum(item_lock_durations) / len(item_lock_durations) if item_lock_durations else 0
+            avg_unlock = sum(item_unlock_durations) / len(item_unlock_durations) if item_unlock_durations else 0
+            
+            durations['by_item'][item_name] = {
+                'avg_lock_duration_seconds': round(avg_lock, 1),
+                'avg_unlock_duration_seconds': round(avg_unlock, 1),
+                'total_lock_sessions': len(item_lock_durations),
+                'total_unlock_sessions': len(item_unlock_durations)
+            }
+        
+        # Calculate overall averages
+        if lock_durations:
+            durations['averages']['avg_lock_duration_seconds'] = round(sum(lock_durations) / len(lock_durations), 1)
+        if unlock_durations:
+            durations['averages']['avg_unlock_duration_seconds'] = round(sum(unlock_durations) / len(unlock_durations), 1)
+        
+        return durations
+    
+    def get_session_uptime(self) -> Dict:
+        """Get FadCrypt session uptime"""
+        metadata_file = os.path.join(self.config_folder, 'metadata.json')
+        
+        # Create or load metadata with first startup time
+        if os.path.exists(metadata_file):
+            try:
+                with open(metadata_file, 'r') as f:
+                    metadata = json.load(f)
+                    startup_time = datetime.fromisoformat(metadata.get('first_startup'))
+            except:
+                startup_time = datetime.now()
+        else:
+            startup_time = datetime.now()
+            try:
+                with open(metadata_file, 'w') as f:
+                    json.dump({'first_startup': startup_time.isoformat()}, f, indent=2)
+            except:
+                pass
+        
+        # Calculate uptime
+        uptime = datetime.now() - startup_time
+        
+        days = uptime.days
+        hours, remainder = divmod(uptime.seconds, 3600)
+        minutes = remainder // 60
+        
+        total_hours = uptime.total_seconds() / 3600
+        total_minutes = uptime.total_seconds() / 60
+        
+        return {
+            'uptime_seconds': int(uptime.total_seconds()),
+            'uptime_minutes': int(total_minutes),
+            'uptime_hours': round(total_hours, 2),
+            'uptime_formatted': f"{days}d {hours}h {minutes}m",
+            'first_startup': startup_time.isoformat(),
+            'current_time': datetime.now().isoformat()
+        }
+    
+    def get_comprehensive_stats(self) -> Dict:
+        """Get all statistics including charts and durations"""
+        base_stats = self.get_stats(use_cache=False)
+        
+        return {
+            'generated_at': datetime.now().isoformat(),
+            'summary': base_stats.get('summary', {}),
+            'activity': base_stats.get('activity', {}),
+            'items': base_stats.get('items', {}),
+            'pie_chart': self.get_pie_chart_data(),
+            'timeline': self.get_lock_unlock_timeline(days=7),
+            'durations': self.get_duration_stats(),
+            'session_uptime': self.get_session_uptime()
+        }
