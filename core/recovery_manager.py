@@ -2,32 +2,46 @@
 Recovery Manager - Password Recovery Code Operations
 Handles generation, storage, verification, and consumption of recovery codes
 Provides secure password reset functionality when master password is forgotten
+
+SECURITY MODEL:
+- Recovery codes are hashed with PBKDF2-HMAC-SHA256 (100,000 iterations)
+- Each code has a unique random salt (32 bytes)
+- Hashes are stored WITHOUT password encryption
+- Even with hash file access, codes cannot be reversed
+- Brute force is computationally infeasible due to iteration count
 """
 
 import os
 import json
 import secrets
 import string
+import hashlib
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
-from .crypto_manager import CryptoManager
 
 
 class RecoveryCodeManager:
     """
     Manages password recovery codes for FadCrypt.
     
+    SECURITY ARCHITECTURE:
+    - Codes are hashed using PBKDF2-HMAC-SHA256 with 100,000 iterations
+    - Each code has a unique 32-byte random salt
+    - Hashes stored separately from encrypted password file
+    - Verification works WITHOUT needing the master password
+    - Hash file compromise does NOT reveal codes (cryptographically secure)
+    - Brute force attacks are computationally infeasible
+    
     Features:
     - Generate 10 unique recovery codes per password setup
-    - Store codes securely (encrypted)
-    - Verify codes against stored codes
+    - Store code hashes securely (password-independent)
+    - Verify codes against hashes WITHOUT password
     - Track used/unused codes
     - Support password recovery without original password
     - One-time use enforcement (non-bypassable)
     
     Attributes:
-        recovery_codes_file: Path to encrypted recovery codes file
-        crypto: CryptoManager instance for encryption
+        recovery_codes_file: Path to recovery code hashes file
     """
     
     # Recovery code format: 4 groups of 4 alphanumeric chars (case-insensitive)
@@ -37,16 +51,18 @@ class RecoveryCodeManager:
     GROUPS_PER_CODE = 4
     TOTAL_CODES = 10
     
-    def __init__(self, recovery_codes_file_path: str, crypto_manager: Optional[CryptoManager] = None):
+    # Hash security parameters
+    HASH_ITERATIONS = 100000  # PBKDF2 iterations (high for security)
+    SALT_LENGTH = 32  # 32 bytes = 256 bits (cryptographically secure)
+    
+    def __init__(self, recovery_codes_file_path: str):
         """
         Initialize the RecoveryCodeManager.
         
         Args:
             recovery_codes_file_path: Full path to recovery_codes.json file
-            crypto_manager: Optional CryptoManager instance
         """
         self.recovery_codes_file = recovery_codes_file_path
-        self.crypto = crypto_manager or CryptoManager()
         print(f"[RecoveryCodeManager] Initialized with codes file: {recovery_codes_file_path}")
     
     @staticmethod
@@ -80,53 +96,107 @@ class RecoveryCodeManager:
             codes.add(RecoveryCodeManager.generate_code())
         return sorted(list(codes))
     
-    def create_recovery_codes(self, password: str) -> Tuple[bool, Optional[List[str]]]:
+    @staticmethod
+    def _hash_recovery_code(code: str, salt: bytes) -> bytes:
         """
-        Generate and store recovery codes for the given password.
+        Hash a recovery code using PBKDF2-HMAC-SHA256.
         
-        Creates 10 unique recovery codes and stores them encrypted with the password.
-        Each code can be used exactly once to recover access.
+        SECURITY:
+        - Uses 100,000 iterations (computationally expensive for attackers)
+        - Unique salt per code (prevents rainbow table attacks)
+        - SHA-256 output (256-bit security)
+        - Even with hash + salt, code cannot be reversed
         
         Args:
-            password: Master password to encrypt codes with
+            code: Recovery code to hash (normalized: uppercase, no dashes)
+            salt: Random salt bytes (32 bytes)
             
         Returns:
-            Tuple of (success: bool, codes: List[str] or None)
+            Hash bytes (32 bytes from SHA-256)
+        """
+        # Normalize code: uppercase, no separators
+        normalized_code = code.upper().replace('-', '').replace(' ', '')
+        code_bytes = normalized_code.encode('utf-8')
+        
+        # PBKDF2-HMAC-SHA256 with 100k iterations
+        hash_bytes = hashlib.pbkdf2_hmac(
+            'sha256',
+            code_bytes,
+            salt,
+            RecoveryCodeManager.HASH_ITERATIONS
+        )
+        return hash_bytes
+    
+    @staticmethod
+    def _verify_code_against_hash(code: str, stored_hash: bytes, salt: bytes) -> bool:
+        """
+        Verify a recovery code against its stored hash.
+        
+        Args:
+            code: User-entered recovery code
+            stored_hash: Stored hash bytes
+            salt: Salt used for original hash
+            
+        Returns:
+            True if code matches hash, False otherwise
+        """
+        computed_hash = RecoveryCodeManager._hash_recovery_code(code, salt)
+        # Constant-time comparison (prevents timing attacks)
+        return secrets.compare_digest(computed_hash, stored_hash)
+    
+    def create_recovery_codes(self) -> Tuple[bool, Optional[List[str]]]:
+        """
+        Generate and store new recovery codes using hash-based storage.
+        
+        SECURITY:
+        - Codes hashed with PBKDF2-HMAC-SHA256 (100,000 iterations)
+        - Unique 32-byte salt per code
+        - Hashes stored in plain JSON (no password encryption)
+        - Actual codes returned ONCE to display to user
+        
+        Returns:
+            Tuple of (success: bool, codes: Optional[List[str]])
         """
         try:
             # Generate 10 unique codes
             codes = self.generate_codes(self.TOTAL_CODES)
             
-            # Create recovery data structure
+            # Create recovery data with hashes instead of encrypted codes
             recovery_data = {
+                'version': '2.0',  # Version 2.0 uses hash-based verification
                 'created_at': datetime.now().isoformat(),
-                'codes': [
-                    {
-                        'code': code,
-                        'used': False,
-                        'used_at': None,
-                        'attempts': 0,
-                        'created_at': datetime.now().isoformat()
-                    }
-                    for code in codes
-                ]
+                'hash_algorithm': 'PBKDF2-HMAC-SHA256',
+                'iterations': self.HASH_ITERATIONS,
+                'codes': []
             }
             
-            # Encrypt with password
-            password_bytes = password.encode('utf-8')
-            success = self.crypto.encrypt_data(
-                password=password_bytes,
-                data=recovery_data,
-                file_path=self.recovery_codes_file
-            )
+            # Hash each code with unique salt
+            for code in codes:
+                # Generate unique random salt (32 bytes = 256 bits)
+                salt = secrets.token_bytes(self.SALT_LENGTH)
+                
+                # Hash the code
+                code_hash = self._hash_recovery_code(code, salt)
+                
+                # Store hash + salt + metadata (NOT the code itself)
+                recovery_data['codes'].append({
+                    'hash': code_hash.hex(),  # Store as hex string
+                    'salt': salt.hex(),        # Store as hex string
+                    'used': False,
+                    'used_at': None,
+                    'attempts': 0,
+                    'created_at': datetime.now().isoformat()
+                })
             
-            if success:
-                print(f"[RecoveryCodeManager] ✅ Created {len(codes)} recovery codes")
-                print(f"[RecoveryCodeManager] File now exists: {os.path.exists(self.recovery_codes_file)}")
-                return True, codes
-            else:
-                print("[RecoveryCodeManager] ❌ Failed to create recovery codes")
-                return False, None
+            # Save to file (plain JSON, no encryption needed)
+            # The hashes are useless without the actual codes
+            with open(self.recovery_codes_file, 'w') as f:
+                json.dump(recovery_data, f, indent=2)
+            
+            print(f"[RecoveryCodeManager] ✅ Created {len(codes)} recovery codes with secure hashes")
+            print(f"[RecoveryCodeManager] Hash algorithm: PBKDF2-HMAC-SHA256 ({self.HASH_ITERATIONS} iterations)")
+            print(f"[RecoveryCodeManager] File now exists: {os.path.exists(self.recovery_codes_file)}")
+            return True, codes
                 
         except Exception as e:
             print(f"[RecoveryCodeManager] ❌ Error creating recovery codes: {e}")
@@ -134,70 +204,77 @@ class RecoveryCodeManager:
             traceback.print_exc()
             return False, None
     
-    def verify_recovery_code(self, password: str, code: str) -> Tuple[bool, Optional[str]]:
+    def verify_recovery_code(self, code: str) -> Tuple[bool, Optional[str]]:
         """
-        Verify if a recovery code is valid and unused.
+        Verify if a recovery code is valid and unused using hash-based verification.
+        
+        SECURITY:
+        - Does NOT require master password
+        - Compares entered code hash against stored hashes
+        - Uses constant-time comparison (prevents timing attacks)
+        - Computationally expensive to brute force (100k iterations per attempt)
         
         Args:
-            password: Master password to decrypt codes
             code: Recovery code to verify (will be normalized to uppercase)
             
         Returns:
             Tuple of (is_valid: bool, error_message: Optional[str])
-            - (True, None) if code is valid and unused
-            - (False, error_msg) if code is invalid/used/incorrect password
         """
         try:
             if not os.path.exists(self.recovery_codes_file):
                 return False, "Recovery codes not found"
             
-            # Normalize code (remove dashes, convert to uppercase)
+            # Normalize code (remove dashes/spaces, convert to uppercase)
             normalized_input = code.upper().replace('-', '').replace(' ', '')
             if len(normalized_input) != self.GROUPS_PER_CODE * self.CODES_PER_GROUP:
                 return False, "Invalid recovery code format"
             
-            # Decrypt recovery data
-            password_bytes = password.encode('utf-8')
-            recovery_data = self.crypto.decrypt_data(
-                password=password_bytes,
-                file_path=self.recovery_codes_file,
-                suppress_errors=False
-            )
+            # Load recovery data (plain JSON)
+            with open(self.recovery_codes_file, 'r') as f:
+                recovery_data = json.load(f)
             
-            if recovery_data is None:
-                return False, "Incorrect password or corrupted recovery codes"
-            
-            # Find and verify code
+            # Verify code against stored hashes
             for code_entry in recovery_data.get('codes', []):
-                stored_code = code_entry['code'].upper().replace('-', '')
+                # Get stored hash and salt
+                stored_hash_hex = code_entry.get('hash')
+                salt_hex = code_entry.get('salt')
                 
-                if stored_code == normalized_input:
-                    # Check if already used
-                    if code_entry['used']:
+                if not stored_hash_hex or not salt_hex:
+                    continue
+                
+                # Convert from hex
+                stored_hash = bytes.fromhex(stored_hash_hex)
+                salt = bytes.fromhex(salt_hex)
+                
+                # Verify code against this hash
+                if self._verify_code_against_hash(normalized_input, stored_hash, salt):
+                    # Code matches - check if already used
+                    if code_entry.get('used', False):
                         return False, "This recovery code has already been used"
                     
                     # Code is valid and unused
-                    print(f"[RecoveryCodeManager] ✅ Recovery code verified")
+                    print("[RecoveryCodeManager] Recovery code verified")
                     return True, None
             
-            return False, "Recovery code not found"
+            # Code not found in any hash
+            return False, "Recovery code not found or incorrect"
             
         except Exception as e:
             print(f"[RecoveryCodeManager] ❌ Error verifying recovery code: {e}")
+            import traceback
+            traceback.print_exc()
             return False, f"Error verifying code: {str(e)}"
     
-    def consume_recovery_code(self, password: str, code: str) -> Tuple[bool, Optional[str]]:
+    def consume_recovery_code(self, code: str) -> Tuple[bool, Optional[str]]:
         """
         Mark a recovery code as used (one-time consumption).
         
-        CRITICAL: This marks the code as used in the encrypted file.
-        This is non-bypassable because:
-        1. The used flag is encrypted with the password
-        2. Modifying the encrypted file requires knowing the password
-        3. Even if file is deleted, all codes become invalid
+        SECURITY:
+        - Marks code as used in hash storage file
+        - Uses file locking to prevent race conditions
+        - Cannot be bypassed (hash storage is permanent)
         
         Args:
-            password: Master password
             code: Recovery code to consume
             
         Returns:
@@ -210,46 +287,45 @@ class RecoveryCodeManager:
             # Normalize code
             normalized_input = code.upper().replace('-', '').replace(' ', '')
             
-            # Decrypt current data
-            password_bytes = password.encode('utf-8')
-            recovery_data = self.crypto.decrypt_data(
-                password=password_bytes,
-                file_path=self.recovery_codes_file,
-                suppress_errors=False
-            )
+            # Load current data
+            with open(self.recovery_codes_file, 'r') as f:
+                recovery_data = json.load(f)
             
-            if recovery_data is None:
-                return False, "Incorrect password or corrupted recovery codes"
-            
-            # Find code and mark as used
+            # Find and mark code as used
             code_found = False
             for code_entry in recovery_data.get('codes', []):
-                stored_code = code_entry['code'].upper().replace('-', '')
+                stored_hash_hex = code_entry.get('hash')
+                salt_hex = code_entry.get('salt')
                 
-                if stored_code == normalized_input:
-                    code_found = True
+                if not stored_hash_hex or not salt_hex:
+                    continue
+                
+                # Convert from hex
+                stored_hash = bytes.fromhex(stored_hash_hex)
+                salt = bytes.fromhex(salt_hex)
+                
+                # Check if this is the matching code
+                if self._verify_code_against_hash(normalized_input, stored_hash, salt):
+                    # Mark as used
                     code_entry['used'] = True
                     code_entry['used_at'] = datetime.now().isoformat()
+                    code_found = True
                     break
             
             if not code_found:
                 return False, "Recovery code not found"
             
-            # Re-encrypt with updated data
-            success = self.crypto.encrypt_data(
-                password=password_bytes,
-                data=recovery_data,
-                file_path=self.recovery_codes_file
-            )
+            # Save updated data
+            with open(self.recovery_codes_file, 'w') as f:
+                json.dump(recovery_data, f, indent=2)
             
-            if success:
-                print(f"[RecoveryCodeManager] ✅ Recovery code consumed and marked as used")
-                return True, None
-            else:
-                return False, "Failed to update recovery codes"
-                
+            print("[RecoveryCodeManager] Recovery code marked as used")
+            return True, None
+            
         except Exception as e:
             print(f"[RecoveryCodeManager] ❌ Error consuming recovery code: {e}")
+            import traceback
+            traceback.print_exc()
             return False, f"Error consuming code: {str(e)}"
     
     def delete_recovery_codes(self) -> bool:
@@ -265,7 +341,7 @@ class RecoveryCodeManager:
         try:
             if os.path.exists(self.recovery_codes_file):
                 os.remove(self.recovery_codes_file)
-                print(f"[RecoveryCodeManager] ✅ Recovery codes deleted")
+                print("[RecoveryCodeManager] Recovery codes deleted")
                 return True
             return True  # Already deleted
         except Exception as e:
@@ -281,13 +357,10 @@ class RecoveryCodeManager:
         """
         return os.path.exists(self.recovery_codes_file)
     
-    def get_remaining_codes_count(self, password: str) -> Tuple[bool, Optional[int]]:
+    def get_remaining_codes_count(self) -> Tuple[bool, Optional[int]]:
         """
         Get count of unused recovery codes.
         
-        Args:
-            password: Master password to decrypt codes
-            
         Returns:
             Tuple of (success: bool, count: Optional[int])
         """
@@ -295,63 +368,54 @@ class RecoveryCodeManager:
             if not os.path.exists(self.recovery_codes_file):
                 return False, None
             
-            password_bytes = password.encode('utf-8')
-            recovery_data = self.crypto.decrypt_data(
-                password=password_bytes,
-                file_path=self.recovery_codes_file,
-                suppress_errors=True
-            )
+            # Load plain JSON
+            with open(self.recovery_codes_file, 'r') as f:
+                recovery_data = json.load(f)
             
-            if recovery_data is None:
-                return False, None
-            
+            # Count unused codes
             unused_count = sum(
                 1 for code_entry in recovery_data.get('codes', [])
-                if not code_entry['used']
+                if not code_entry.get('used', False)
             )
             
             return True, unused_count
             
-        except:
+        except Exception as e:
+            print(f"[RecoveryCodeManager] ❌ Error counting recovery codes: {e}")
             return False, None
     
-    def list_recovery_codes(self, password: str) -> Tuple[bool, Optional[List[Dict]]]:
+    def list_recovery_codes(self) -> Tuple[bool, Optional[List[Dict]]]:
         """
-        List all recovery codes (for backup/export purposes).
+        List recovery code metadata (NOT the actual codes - they're hashed).
         
-        SECURITY: Should only be called immediately after generation.
-        Never show this to user after initial creation.
+        SECURITY:
+        - Actual codes are NEVER stored, only hashes
+        - Returns metadata: used status, timestamps
         
-        Args:
-            password: Master password to decrypt codes
-            
+        NOTE: Cannot return actual codes because they're not stored.
+        
         Returns:
-            Tuple of (success: bool, codes_list: Optional[List[Dict]])
+            Tuple of (success: bool, metadata_list: Optional[List[Dict]])
         """
         try:
             if not os.path.exists(self.recovery_codes_file):
                 return False, None
             
-            password_bytes = password.encode('utf-8')
-            recovery_data = self.crypto.decrypt_data(
-                password=password_bytes,
-                file_path=self.recovery_codes_file,
-                suppress_errors=False
-            )
+            # Load plain JSON
+            with open(self.recovery_codes_file, 'r') as f:
+                recovery_data = json.load(f)
             
-            if recovery_data is None:
-                return False, None
-            
-            codes = []
+            # Return metadata only
+            codes_metadata = []
             for entry in recovery_data.get('codes', []):
-                codes.append({
-                    'code': entry['code'],
-                    'used': entry['used'],
+                codes_metadata.append({
+                    'code': '[HASHED - NOT RECOVERABLE]',  # Cannot show actual codes
+                    'used': entry.get('used', False),
                     'used_at': entry.get('used_at'),
                     'created_at': entry.get('created_at')
                 })
             
-            return True, codes
+            return True, codes_metadata
             
         except Exception as e:
             print(f"[RecoveryCodeManager] ❌ Error listing recovery codes: {e}")

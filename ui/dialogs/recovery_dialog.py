@@ -2,20 +2,26 @@
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QFrame,
-    QTabWidget, QScrollArea
+    QTabWidget, QScrollArea, QCheckBox, QMessageBox, QFileDialog, QProgressBar
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
+import os
 
 
 class RecoveryCodeDialog(QDialog):
     """Dialog for entering recovery code and creating new password"""
     
-    def __init__(self, title, resource_path, parent=None):
+    def __init__(self, title, resource_path, parent=None, verify_callback=None):
         super().__init__(parent)
         self.resource_path = resource_path
         self.recovery_code_value = None
         self.new_password_value = None
+        self.code_verified = False
+        self.tab_widget = None
+        self.strength_label = None
+        self.strength_meter = None
+        self.verify_callback = verify_callback  # Callback to verify recovery code
         
         self.setWindowTitle(title)
         self.init_ui(title)
@@ -30,7 +36,7 @@ class RecoveryCodeDialog(QDialog):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Content frame
+        # Content frame - dynamic size
         content_frame = QFrame()
         content_frame.setStyleSheet("""
             QFrame {
@@ -58,11 +64,12 @@ class RecoveryCodeDialog(QDialog):
         content_layout.addWidget(title_label)
         
         # Tab widget for recovery code and new password
-        tab_widget = QTabWidget()
-        tab_widget.setStyleSheet("""
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
             QTabWidget::pane { border: none; }
             QTabBar::tab { background-color: #2a2a2a; color: #e0e0e0; padding: 8px 15px; }
             QTabBar::tab:selected { background-color: #d32f2f; color: white; }
+            QTabBar::tab:disabled { background-color: #1a1a1a; color: #555555; }
         """)
         
         # Tab 1: Recovery Code
@@ -78,9 +85,10 @@ class RecoveryCodeDialog(QDialog):
         code_help.setWordWrap(True)
         code_help.setStyleSheet("""
             QLabel { 
-                font-size: 10px; 
+                font-size: 12px; 
                 color: #a0a0a0; 
                 padding: 0;
+                line-height: 1.4;
             }
         """)
         code_layout.addWidget(code_help)
@@ -103,7 +111,27 @@ class RecoveryCodeDialog(QDialog):
                 background-color: #2e2e2e;
             }
         """)
+        # Connect Enter key to move to next tab
+        self.recovery_code_input.returnPressed.connect(self.on_code_enter_pressed)
         code_layout.addWidget(self.recovery_code_input)
+        
+        # Next button to proceed to password entry
+        next_button = QPushButton("Next ➡️")
+        next_button.setFixedHeight(36)
+        next_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background-color: #1565c0; }
+            QPushButton:pressed { background-color: #0d47a1; }
+        """)
+        next_button.clicked.connect(self.on_code_enter_pressed)
+        code_layout.addWidget(next_button)
         
         warning_label = QLabel(
             "⚠️ Warning: Each recovery code can only be used ONCE.\n"
@@ -112,19 +140,20 @@ class RecoveryCodeDialog(QDialog):
         warning_label.setWordWrap(True)
         warning_label.setStyleSheet("""
             QLabel { 
-                font-size: 10px; 
+                font-size: 12px; 
                 color: #ff6b6b; 
-                padding: 10px;
+                padding: 12px;
                 background-color: #3a2a2a;
                 border-radius: 4px;
+                line-height: 1.4;
             }
         """)
         code_layout.addWidget(warning_label)
         code_layout.addStretch()
         
-        tab_widget.addTab(code_tab, "Recovery Code")
+        self.tab_widget.addTab(code_tab, "1️⃣ Recovery Code")
         
-        # Tab 2: New Password
+        # Tab 2: New Password (initially disabled)
         pwd_tab = QFrame()
         pwd_layout = QVBoxLayout(pwd_tab)
         pwd_layout.setContentsMargins(15, 15, 15, 15)
@@ -138,15 +167,16 @@ class RecoveryCodeDialog(QDialog):
         pwd_help.setWordWrap(True)
         pwd_help.setStyleSheet("""
             QLabel { 
-                font-size: 10px; 
+                font-size: 12px; 
                 color: #a0a0a0; 
                 padding: 0;
+                line-height: 1.4;
             }
         """)
         pwd_layout.addWidget(pwd_help)
         
         pwd_label = QLabel("New Master Password:")
-        pwd_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 11px; }")
+        pwd_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 12px; }")
         pwd_layout.addWidget(pwd_label)
         
         self.new_password_input = QLineEdit()
@@ -167,10 +197,45 @@ class RecoveryCodeDialog(QDialog):
                 background-color: #2e2e2e;
             }
         """)
+        self.new_password_input.textChanged.connect(self.update_password_strength)
         pwd_layout.addWidget(self.new_password_input)
         
+        # Password strength meter
+        strength_layout = QVBoxLayout()
+        strength_layout.setSpacing(4)
+        strength_layout.setContentsMargins(0, 8, 0, 0)
+        
+        self.strength_label = QLabel("Password Strength: -")
+        self.strength_label.setStyleSheet("""
+            QLabel {
+                font-size: 11px;
+                color: #888888;
+                border: none;
+            }
+        """)
+        strength_layout.addWidget(self.strength_label)
+        
+        self.strength_meter = QProgressBar()
+        self.strength_meter.setFixedHeight(8)
+        self.strength_meter.setTextVisible(False)
+        self.strength_meter.setRange(0, 100)
+        self.strength_meter.setValue(0)
+        self.strength_meter.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                background-color: #2b2b2b;
+                border-radius: 4px;
+            }
+            QProgressBar::chunk {
+                background-color: #666666;
+                border-radius: 4px;
+            }
+        """)
+        strength_layout.addWidget(self.strength_meter)
+        pwd_layout.addLayout(strength_layout)
+        
         confirm_label = QLabel("Confirm Password:")
-        confirm_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 11px; }")
+        confirm_label.setStyleSheet("QLabel { color: #e0e0e0; font-size: 12px; }")
         pwd_layout.addWidget(confirm_label)
         
         self.confirm_password_input = QLineEdit()
@@ -200,19 +265,23 @@ class RecoveryCodeDialog(QDialog):
         pwd_warning.setWordWrap(True)
         pwd_warning.setStyleSheet("""
             QLabel { 
-                font-size: 10px; 
+                font-size: 12px; 
                 color: #ff6b6b; 
-                padding: 10px;
+                padding: 12px;
                 background-color: #3a2a2a;
                 border-radius: 4px;
+                line-height: 1.4;
             }
         """)
         pwd_layout.addWidget(pwd_warning)
         pwd_layout.addStretch()
         
-        tab_widget.addTab(pwd_tab, "New Password")
+        self.tab_widget.addTab(pwd_tab, "2️⃣ New Password")
         
-        content_layout.addWidget(tab_widget)
+        # Disable the new password tab initially
+        self.tab_widget.setTabEnabled(1, False)
+        
+        content_layout.addWidget(self.tab_widget)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -234,9 +303,10 @@ class RecoveryCodeDialog(QDialog):
         """)
         cancel_button.clicked.connect(self.reject)
         
-        recover_button = QPushButton("Recover")
-        recover_button.setFixedSize(120, 36)
-        recover_button.setStyleSheet("""
+        self.recover_button = QPushButton("Recover")
+        self.recover_button.setFixedSize(120, 36)
+        self.recover_button.setEnabled(False)  # Disabled until code verified
+        self.recover_button.setStyleSheet("""
             QPushButton {
                 background-color: #d32f2f;
                 color: white;
@@ -245,14 +315,18 @@ class RecoveryCodeDialog(QDialog):
                 font-size: 13px;
                 font-weight: 600;
             }
-            QPushButton:hover { background-color: #b71c1c; }
-            QPushButton:pressed { background-color: #9a0007; }
+            QPushButton:hover:enabled { background-color: #b71c1c; }
+            QPushButton:pressed:enabled { background-color: #9a0007; }
+            QPushButton:disabled {
+                background-color: #555555;
+                color: #888888;
+            }
         """)
-        recover_button.clicked.connect(self.on_recover)
+        self.recover_button.clicked.connect(self.on_recover)
         
         button_layout.addStretch()
         button_layout.addWidget(cancel_button)
-        button_layout.addWidget(recover_button)
+        button_layout.addWidget(self.recover_button)
         button_layout.addStretch()
         
         content_layout.addLayout(button_layout)
@@ -260,9 +334,9 @@ class RecoveryCodeDialog(QDialog):
         main_layout.addWidget(content_frame)
         self.setLayout(main_layout)
         
-        # Set size
-        self.setMinimumSize(550, 400)
-        self.resize(550, 400)
+        # Set dynamic size
+        self.setMinimumSize(550, 450)
+        self.resize(550, 520)  # Slightly taller for password strength meter
         
         # Center on screen
         self.center_on_screen()
@@ -280,17 +354,126 @@ class RecoveryCodeDialog(QDialog):
             y = (screen_geometry.height() - self.height()) // 2
             self.move(x, y)
     
+    def on_code_enter_pressed(self):
+        """Handle Enter key or Next button in recovery code tab"""
+        code = self.recovery_code_input.text().strip()
+        
+        if not code:
+            self.show_error("Recovery Code Required", "Please enter your recovery code first")
+            return
+        
+        # Verify the recovery code if callback provided
+        if self.verify_callback:
+            is_valid, error_msg = self.verify_callback(code)
+            if not is_valid:
+                self.show_error(
+                    "Invalid Recovery Code",
+                    error_msg or "The recovery code you entered is invalid or has already been used.\n"
+                    "Please check your codes and try again."
+                )
+                return
+        
+        # Code verified - enable new password tab and switch to it
+        self.code_verified = True
+        self.tab_widget.setTabEnabled(1, True)
+        self.tab_widget.setCurrentIndex(1)
+        
+        # Enable recover button
+        self.recover_button.setEnabled(True)
+        
+        # Focus on new password input
+        self.new_password_input.setFocus()
+    
+    def update_password_strength(self):
+        """Update password strength meter based on password input"""
+        password = self.new_password_input.text()
+        
+        # Calculate strength
+        strength, color, text = self.calculate_password_strength(password)
+        
+        # Update meter
+        self.strength_meter.setValue(strength)
+        self.strength_meter.setStyleSheet(f"""
+            QProgressBar {{
+                border: none;
+                background-color: #2b2b2b;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {color};
+                border-radius: 4px;
+            }}
+        """)
+        
+        # Update label
+        self.strength_label.setText(f"Password Strength: {text}")
+        self.strength_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 11px;
+                color: {color};
+                border: none;
+            }}
+        """)
+    
+    def calculate_password_strength(self, password):
+        """
+        Calculate password strength.
+        Returns (strength_percent, color, text)
+        """
+        if not password:
+            return (0, "#666666", "-")
+        
+        strength = 0
+        
+        # Length
+        length = len(password)
+        if length >= 8:
+            strength += 20
+        if length >= 12:
+            strength += 15
+        if length >= 16:
+            strength += 10
+        
+        # Character variety
+        has_lower = any(c.islower() for c in password)
+        has_upper = any(c.isupper() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+        
+        variety = sum([has_lower, has_upper, has_digit, has_special])
+        strength += variety * 10
+        
+        # Bonus for length + variety
+        if length >= 12 and variety >= 3:
+            strength += 15
+        
+        # Cap at 100
+        strength = min(strength, 100)
+        
+        # Determine level and color
+        if strength < 20:
+            return (strength, "#f44336", "Very Weak")  # Red
+        elif strength < 40:
+            return (strength, "#ff9800", "Weak")  # Orange
+        elif strength < 60:
+            return (strength, "#ffeb3b", "Fair")  # Yellow
+        elif strength < 80:
+            return (strength, "#8bc34a", "Good")  # Light Green
+        else:
+            return (strength, "#4caf50", "Strong")  # Green
+    
     def on_recover(self):
-        """Handle recovery button"""
+        """Handle recovery button - validate password and proceed"""
         code = self.recovery_code_input.text().strip()
         pwd1 = self.new_password_input.text()
         pwd2 = self.confirm_password_input.text()
         
-        # Validate inputs
+        # Validate code
         if not code:
-            self.show_error("Recovery Code Required", "Please enter your recovery code")
+            self.show_error("Recovery Code Required", "Please enter your recovery code in the first tab")
             return
         
+        # Validate passwords
         if not pwd1:
             self.show_error("Password Required", "Please enter a new password")
             return
@@ -299,23 +482,33 @@ class RecoveryCodeDialog(QDialog):
             self.show_error("Passwords Don't Match", "The passwords you entered do not match")
             return
         
-        if len(pwd1) < 6:
-            self.show_error("Password Too Short", "Password must be at least 6 characters")
-            return
+        # NO PASSWORD RESTRICTIONS - user can set any password
+        # Just warn if very weak
+        strength, _, strength_text = self.calculate_password_strength(pwd1)
+        if strength < 20:
+            # Warn but allow
+            reply = self.show_confirmation(
+                "Weak Password Warning",
+                f"⚠️ Your password is {strength_text}.\n\n"
+                "Are you sure you want to use this password?\n"
+                "We recommend using a stronger password for better security."
+            )
+            if not reply:
+                return  # User cancelled
         
+        # Store values for parent to use
         self.recovery_code_value = code
         self.new_password_value = pwd1
         self.accept()
     
     def show_error(self, title, message):
         """Show error message"""
-        from PyQt6.QtWidgets import QMessageBox
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle(title)
         msg_box.setText(message)
         msg_box.setStyleSheet("""
             QMessageBox { background-color: #1e1e1e; }
-            QMessageBox QLabel { color: #e0e0e0; }
+            QMessageBox QLabel { color: #e0e0e0; font-size: 12px; }
             QPushButton {
                 background-color: #d32f2f;
                 color: white;
@@ -326,6 +519,47 @@ class RecoveryCodeDialog(QDialog):
             QPushButton:hover { background-color: #b71c1c; }
         """)
         msg_box.exec()
+    
+    def show_success(self, title, message):
+        """Show success message"""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStyleSheet("""
+            QMessageBox { background-color: #1e1e1e; }
+            QMessageBox QLabel { color: #e0e0e0; font-size: 12px; }
+            QPushButton {
+                background-color: #4caf50;
+                color: white;
+                border: none;
+                padding: 5px 20px;
+                border-radius: 3px;
+            }
+            QPushButton:hover { background-color: #388e3c; }
+        """)
+        msg_box.exec()
+    
+    def show_confirmation(self, title, message):
+        """Show confirmation dialog - returns True if user confirms"""
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+        msg_box.setStyleSheet("""
+            QMessageBox { background-color: #1e1e1e; }
+            QMessageBox QLabel { color: #e0e0e0; font-size: 12px; }
+            QPushButton {
+                background-color: #3a3a3a;
+                color: white;
+                border: none;
+                padding: 5px 20px;
+                border-radius: 3px;
+                min-width: 60px;
+            }
+            QPushButton:hover { background-color: #464646; }
+        """)
+        return msg_box.exec() == QMessageBox.StandardButton.Yes
     
     def get_recovery_code(self):
         """Get entered recovery code"""
@@ -350,6 +584,8 @@ class RecoveryCodesDisplayDialog(QDialog):
         super().__init__(parent)
         self.codes = codes
         self.resource_path = resource_path
+        self.saved_checkbox = None
+        self.confirm_button = None
         
         self.setWindowTitle("Recovery Codes - Save These!")
         self.init_ui()
@@ -358,7 +594,7 @@ class RecoveryCodesDisplayDialog(QDialog):
         """Initialize UI"""
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
-        self.setMinimumSize(600, 500)
+        self.setMinimumSize(600, 550)
         
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -436,9 +672,53 @@ class RecoveryCodesDisplayDialog(QDialog):
         scroll.setWidget(codes_container)
         main_layout.addWidget(scroll)
         
+        # Checkbox confirmation
+        self.saved_checkbox = QCheckBox("✓ I have safely saved these codes")
+        self.saved_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #e0e0e0;
+                font-size: 13px;
+                font-weight: 600;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border: 2px solid #555555;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #4caf50;
+                border-color: #4caf50;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #777777;
+            }
+        """)
+        self.saved_checkbox.stateChanged.connect(self.on_checkbox_changed)
+        main_layout.addWidget(self.saved_checkbox)
+        
         # Action buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
+        
+        save_file_button = QPushButton("💾 Save to File")
+        save_file_button.setFixedHeight(36)
+        save_file_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                padding: 0 15px;
+            }
+            QPushButton:hover { background-color: #1565c0; }
+            QPushButton:pressed { background-color: #0d47a1; }
+        """)
+        save_file_button.clicked.connect(self.save_to_file)
+        button_layout.addWidget(save_file_button)
         
         copy_button = QPushButton("📋 Copy All")
         copy_button.setFixedHeight(36)
@@ -455,20 +735,29 @@ class RecoveryCodesDisplayDialog(QDialog):
         copy_button.clicked.connect(self.copy_codes)
         button_layout.addWidget(copy_button)
         
-        close_button = QPushButton("I Have Saved These Codes")
-        close_button.setFixedHeight(36)
-        close_button.setStyleSheet("""
+        button_layout.addStretch()
+        
+        self.confirm_button = QPushButton("I Have Saved These Codes")
+        self.confirm_button.setFixedHeight(36)
+        self.confirm_button.setEnabled(False)  # Disabled until checkbox checked
+        self.confirm_button.setStyleSheet("""
             QPushButton {
                 background-color: #d32f2f;
                 color: white;
                 border: none;
                 border-radius: 6px;
                 font-weight: 600;
+                padding: 0 20px;
             }
-            QPushButton:hover { background-color: #b71c1c; }
+            QPushButton:hover:enabled { background-color: #b71c1c; }
+            QPushButton:pressed:enabled { background-color: #9a0007; }
+            QPushButton:disabled {
+                background-color: #555555;
+                color: #888888;
+            }
         """)
-        close_button.clicked.connect(self.accept)
-        button_layout.addWidget(close_button)
+        self.confirm_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.confirm_button)
         
         main_layout.addLayout(button_layout)
         
@@ -483,9 +772,87 @@ class RecoveryCodesDisplayDialog(QDialog):
             y = (screen_geometry.height() - self.height()) // 2
             self.move(x, y)
     
+    def on_checkbox_changed(self, state):
+        """Enable/disable confirm button based on checkbox state"""
+        self.confirm_button.setEnabled(state == Qt.CheckState.Checked.value)
+    
+    def save_to_file(self):
+        """Save recovery codes to a text file"""
+        # Default filename
+        default_filename = "fadcrypt_recovery_codes.txt"
+        
+        # Open file dialog to choose save location
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Recovery Codes",
+            os.path.expanduser(f"~/{default_filename}"),
+            "Text Files (*.txt);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Format codes for file
+                content = "FadCrypt Password Recovery Codes\n"
+                content += "=" * 50 + "\n\n"
+                content += "⚠️  IMPORTANT: Keep these codes safe!\n"
+                content += "• Each code can only be used ONCE\n"
+                content += "• You need these if you forget your master password\n"
+                content += "• Do NOT share these codes with anyone\n\n"
+                content += "=" * 50 + "\n\n"
+                
+                for i, code in enumerate(self.codes, 1):
+                    content += f"{i:2d}. {code}\n"
+                
+                content += "\n" + "=" * 50 + "\n"
+                content += f"Generated: {self._get_timestamp()}\n"
+                
+                # Write to file
+                with open(file_path, 'w') as f:
+                    f.write(content)
+                
+                # Show success message
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Saved")
+                msg.setText(f"✅ Recovery codes saved to:\n{file_path}")
+                msg.setStyleSheet("""
+                    QMessageBox { background-color: #1e1e1e; }
+                    QMessageBox QLabel { color: #e0e0e0; }
+                    QPushButton { 
+                        background-color: #d32f2f; 
+                        color: white; 
+                        padding: 5px 20px;
+                        border: none;
+                        border-radius: 3px;
+                    }
+                    QPushButton:hover { background-color: #b71c1c; }
+                """)
+                msg.exec()
+                
+            except Exception as e:
+                # Show error message
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Error")
+                msg.setText(f"❌ Failed to save file:\n{str(e)}")
+                msg.setStyleSheet("""
+                    QMessageBox { background-color: #1e1e1e; }
+                    QMessageBox QLabel { color: #e0e0e0; }
+                    QPushButton { 
+                        background-color: #d32f2f; 
+                        color: white; 
+                        padding: 5px 20px;
+                        border: none;
+                        border-radius: 3px;
+                    }
+                """)
+                msg.exec()
+    
+    def _get_timestamp(self):
+        """Get current timestamp for file"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     def copy_codes(self):
         """Copy all codes to clipboard"""
-        from PyQt6.QtGui import QClipboard
         from PyQt6.QtWidgets import QApplication
         
         text = "FadCrypt Recovery Codes:\n\n"
@@ -493,28 +860,41 @@ class RecoveryCodesDisplayDialog(QDialog):
             text += f"{i:2d}. {code}\n"
         
         clipboard = QApplication.clipboard()
-        clipboard.setText(text)
+        if clipboard:
+            clipboard.setText(text)
         
-        from PyQt6.QtWidgets import QMessageBox
         msg = QMessageBox(self)
         msg.setWindowTitle("Copied")
         msg.setText("✅ All recovery codes copied to clipboard!")
         msg.setStyleSheet("""
             QMessageBox { background-color: #1e1e1e; }
             QMessageBox QLabel { color: #e0e0e0; }
-            QPushButton { background-color: #d32f2f; color: white; padding: 5px 20px; }
+            QPushButton { 
+                background-color: #d32f2f; 
+                color: white; 
+                padding: 5px 20px; 
+                border: none;
+                border-radius: 3px;
+            }
+            QPushButton:hover { background-color: #b71c1c; }
         """)
         msg.exec()
 
 
-def ask_recovery_code(resource_path=None, parent=None):
+def ask_recovery_code(resource_path=None, parent=None, verify_callback=None):
     """
     Show recovery code dialog.
+    
+    Args:
+        resource_path: Path to resources
+        parent: Parent widget
+        verify_callback: Callback function to verify recovery code
+                        Should accept (code: str) and return (is_valid: bool, error_msg: Optional[str])
     
     Returns:
         Tuple of (recovery_code: str, new_password: str) or (None, None) if cancelled
     """
-    dialog = RecoveryCodeDialog("Recover Access with Recovery Code", resource_path, parent)
+    dialog = RecoveryCodeDialog("Recover Access with Recovery Code", resource_path, parent, verify_callback)
     
     if dialog.exec() == QDialog.DialogCode.Accepted:
         return dialog.get_recovery_code(), dialog.get_new_password()
