@@ -450,18 +450,18 @@ class EnhancedStatsWindow(QWidget):
         
         row2_layout.addSpacing(15)  # Match grid spacing
         
-        # Avg Lock Duration (live data - how long items stay locked)
+        # Avg Lock Duration (live-updating average of how long items have been locked)
         card6 = self._create_metric_card("⌛ Avg Lock Duration", "0s",
-                                        "Average time locked items remain in locked state (updates in real-time)",
+                                        "Average time items have been in locked state (updates live every second)",
                                         info_callback=self.show_lock_duration_details)
         self.metric_cards['avg_lock_duration'] = card6
         row2_layout.addWidget(card6)
         
         row2_layout.addSpacing(15)  # Match grid spacing
         
-        # Avg Unlock Duration (how long items stay unlocked after being unlocked)
+        # Avg Unlock Duration (live-updating average of how long items have been unlocked)
         card7 = self._create_metric_card("⏱️ Avg Unlock Duration", "0s",
-                                        "Average time items remain in unlocked state after being unlocked",
+                                        "Average time items have been in unlocked state (updates live every second)",
                                         info_callback=self.show_unlock_duration_details)
         self.metric_cards['avg_unlock_duration'] = card7
         row2_layout.addWidget(card7)
@@ -869,7 +869,8 @@ class EnhancedStatsWindow(QWidget):
             
             # Build detailed message
             message = "🔒 Lock Duration Breakdown\n\n"
-            message += "Shows how long each item has been in locked state:\n\n"
+            message += "Shows how long each item has been in locked state.\n"
+            message += "Includes both completed cycles and currently locked items (live).\n\n"
             
             if not by_item:
                 message += "No lock duration data yet.\n"
@@ -933,7 +934,8 @@ class EnhancedStatsWindow(QWidget):
             
             # Build detailed message
             message = "🔓 Unlock Duration Breakdown\n\n"
-            message += "Shows how long each item stayed in unlocked state:\n\n"
+            message += "Shows how long each item has been in unlocked state.\n"
+            message += "Includes both completed cycles and currently unlocked items (live).\n\n"
             
             if not by_item:
                 message += "No unlock duration data yet.\n"

@@ -159,7 +159,8 @@ class MainWindowBase(QMainWindow):
                     self.file_lock_manager,
                     self._handle_file_access_attempt_threadsafe,
                     get_state_func=self.get_monitoring_state,
-                    set_state_func=self.set_monitoring_state
+                    set_state_func=self.set_monitoring_state,
+                    log_activity_func=self.log_activity
                 )
                 # Connect signal for thread-safe dialog invocation
                 self.file_access_requested.connect(self._handle_file_access_attempt)
@@ -2005,12 +2006,22 @@ class MainWindowBase(QMainWindow):
             show_dialog_func=self.show_password_prompt_for_app,
             is_linux=is_linux,
             sleep_interval=1.0,
-            enable_profiling=True
+            enable_profiling=True,
+            log_activity_func=self.log_activity
         )
         
         # Start monitoring
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
+        
+        # Log monitoring start event (needed for duration calculation)
+        self.log_activity(
+            'start_monitoring',
+            None,
+            None,
+            success=True,
+            details=f"Monitoring started for {len(applications)} apps and {locked_count} files/folders"
+        )
         
         # Save monitoring state to disk (for crash recovery)
         self.save_monitoring_state_to_disk()

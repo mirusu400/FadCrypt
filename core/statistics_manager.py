@@ -8,7 +8,7 @@ import json
 import os
 import psutil
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from collections import Counter, defaultdict
 
 
@@ -372,18 +372,35 @@ class StatisticsManager:
                         locked_since = None
                     unlocked_since = session['timestamp']
             
-            # IMPORTANT: Only include current durations if monitoring is ACTIVE
-            # (prevents counting durations from previous sessions when monitoring isn't running)
+            # Include current durations for items still locked/unlocked (LIVE UPDATE)
+            # CRITICAL: Only if monitoring is active AND item is CURRENTLY in that state
             if monitoring_active:
-                if locked_since:
-                    current_lock_duration = (datetime.now() - locked_since).total_seconds()
-                    item_lock_durations.append(current_lock_duration)
-                    lock_durations.append(current_lock_duration)
+                # Get current unlocked lists to verify item is ACTUALLY still unlocked/locked
+                unlocked_apps = self._get_monitoring_state().get('unlocked_apps', [])
+                unlocked_files = self._get_monitoring_state().get('unlocked_files', [])
                 
+                # For locked items: only include if still locked (NOT in unlocked lists)
+                if locked_since:
+                    is_currently_locked = item_name not in unlocked_apps
+                    # For files, check by path in unlocked_files
+                    # (item_name might just be basename, so we can't be 100% sure for files)
+                    # But for apps, this check is reliable
+                    
+                    if is_currently_locked:
+                        current_lock_duration = (datetime.now() - locked_since).total_seconds()
+                        item_lock_durations.append(current_lock_duration)
+                        lock_durations.append(current_lock_duration)
+                
+                # For unlocked items: only include if still unlocked (IN unlocked lists)
                 if unlocked_since:
-                    current_unlock_duration = (datetime.now() - unlocked_since).total_seconds()
-                    item_unlock_durations.append(current_unlock_duration)
-                    unlock_durations.append(current_unlock_duration)
+                    is_currently_unlocked = item_name in unlocked_apps
+                    # For files, would need to check full path against unlocked_files
+                    # But app name matching is reliable
+                    
+                    if is_currently_unlocked:
+                        current_unlock_duration = (datetime.now() - unlocked_since).total_seconds()
+                        item_unlock_durations.append(current_unlock_duration)
+                        unlock_durations.append(current_unlock_duration)
             
             # Store item-specific stats
             avg_lock = sum(item_lock_durations) / len(item_lock_durations) if item_lock_durations else 0
@@ -396,6 +413,62 @@ class StatisticsManager:
                 'total_unlock_sessions': len(item_unlock_durations)
             }
         
+        # IMPORTANT: Check CURRENT state of ALL items (not just those with events)
+        # This captures items that are locked by default when monitoring starts
+        # CRITICAL: Only if monitoring is CURRENTLY ACTIVE (not from previous session)
+        if monitoring_active:
+            monitoring_start_time = self._get_monitoring_start_time()
+            # Verify this is a RECENT monitoring session (within last 24 hours)
+            # This prevents using stale start times from previous sessions
+            if monitoring_start_time and (datetime.now() - monitoring_start_time).total_seconds() < 86400:
+                config = self._get_config()
+                unlocked_apps = self._get_monitoring_state().get('unlocked_apps', [])
+                unlocked_files = self._get_monitoring_state().get('unlocked_files', [])
+                
+                # Check all apps
+                for app in config.get('applications', []):
+                    app_name = app.get('name')
+                    if not app_name:
+                        continue
+                    
+                    # Skip if already processed from events
+                    if app_name in item_sessions:
+                        continue
+                    
+                    # App is currently locked (not in unlocked_apps list)
+                    if app_name not in unlocked_apps:
+                        lock_duration = (datetime.now() - monitoring_start_time).total_seconds()
+                        lock_durations.append(lock_duration)
+                        durations['by_item'][app_name] = {
+                            'avg_lock_duration_seconds': round(lock_duration, 1),
+                            'avg_unlock_duration_seconds': 0,
+                            'total_lock_sessions': 1,
+                            'total_unlock_sessions': 0
+                        }
+                
+                # Check all files/folders
+                for item in config.get('locked_files_and_folders', []):
+                    item_path = item.get('path', '')
+                    if not item_path:
+                        continue
+                    
+                    item_name = os.path.basename(item_path)
+                    
+                    # Skip if already processed from events
+                    if item_name in item_sessions:
+                        continue
+                    
+                    # Item is currently locked (not in unlocked_files list)
+                    if item_path not in unlocked_files:
+                        lock_duration = (datetime.now() - monitoring_start_time).total_seconds()
+                        lock_durations.append(lock_duration)
+                        durations['by_item'][item_name] = {
+                            'avg_lock_duration_seconds': round(lock_duration, 1),
+                            'avg_unlock_duration_seconds': 0,
+                            'total_lock_sessions': 1,
+                            'total_unlock_sessions': 0
+                        }
+        
         # Calculate overall averages
         if lock_durations:
             durations['averages']['avg_lock_duration_seconds'] = round(sum(lock_durations) / len(lock_durations), 1)
@@ -403,6 +476,29 @@ class StatisticsManager:
             durations['averages']['avg_unlock_duration_seconds'] = round(sum(unlock_durations) / len(unlock_durations), 1)
         
         return durations
+    
+    def _get_monitoring_state(self) -> Dict:
+        """Get current monitoring state"""
+        monitoring_state_file = os.path.join(self.config_folder, 'monitoring_state.json')
+        if os.path.exists(monitoring_state_file):
+            try:
+                with open(monitoring_state_file, 'r') as f:
+                    return json.load(f)
+            except:
+                pass
+        return {}
+    
+    def _get_monitoring_start_time(self) -> Optional[datetime]:
+        """Get when monitoring was started for current session"""
+        # Look for most recent 'start_monitoring' event
+        events = self._get_activity_events()
+        for event in reversed(events):  # Most recent first
+            if event.get('event_type') == 'start_monitoring':
+                try:
+                    return datetime.fromisoformat(event.get('timestamp'))
+                except:
+                    pass
+        return None
     
     def get_comprehensive_stats(self) -> Dict:
         """Get all statistics including charts and durations"""

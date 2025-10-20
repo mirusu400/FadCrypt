@@ -41,7 +41,8 @@ class UnifiedMonitor:
         get_exec_from_desktop_func: Optional[Callable[[str], str]] = None,
         is_linux: bool = True,
         sleep_interval: float = 1.0,
-        enable_profiling: bool = False
+        enable_profiling: bool = False,
+        log_activity_func: Optional[Callable[[str, str, str, bool, str], None]] = None
     ):
         """
         Initialize the unified monitor.
@@ -54,6 +55,7 @@ class UnifiedMonitor:
             is_linux: Whether running on Linux (affects desktop file handling)
             sleep_interval: Seconds to sleep between monitoring cycles (default: 1.0 for max efficiency)
             enable_profiling: Whether to log performance metrics
+            log_activity_func: Function to log activity events (takes event_type, item_name, item_type, success, details)
         """
         self.get_state = get_state_func
         self.set_state = set_state_func
@@ -62,6 +64,7 @@ class UnifiedMonitor:
         self.is_linux = is_linux
         self.sleep_interval = sleep_interval
         self.enable_profiling = enable_profiling
+        self.log_activity_func = log_activity_func
         
         self.monitoring = False
         self.monitor_thread = None
@@ -233,9 +236,15 @@ class UnifiedMonitor:
                         if cmdline:
                             cmdline_str = ' '.join(cmdline).lower()
                             
-                            # For Chrome apps: match any chrome process
+                            # For Chrome apps: match chrome processes (but EXCLUDE other browsers)
                             # (PWAs, regular Chrome, etc. all share chrome processes)
                             if is_chrome and 'chrome' in pname:
+                                # CRITICAL: Don't match Brave, Edge, or other Chromium browsers
+                                # Check if process belongs to brave, microsoft-edge, chromium, etc.
+                                cmd = ' '.join(proc.cmdline()) if hasattr(proc, 'cmdline') else ''
+                                if any(browser in cmd.lower() for browser in ['brave', 'edge', 'chromium', 'opera', 'vivaldi']):
+                                    continue  # Skip non-Chrome browsers
+                                
                                 app_processes.extend(procs)
                                 break  # Found chrome processes, no need to continue
                             
@@ -467,6 +476,16 @@ class UnifiedMonitor:
                             unlocked_apps.remove(app_name)
                             self.set_state('unlocked_apps', unlocked_apps)
                             monitor['no_process_count'] = 0
+                            
+                            # Log the auto-lock event for statistics tracking
+                            if self.log_activity_func:
+                                self.log_activity_func(
+                                    'lock',
+                                    app_name,
+                                    'application',
+                                    success=True,
+                                    details='Auto-locked after 10 seconds of inactivity'
+                                )
                     
                     elif app_name in unlocked_apps and app_processes:
                         # Reset counter if processes found

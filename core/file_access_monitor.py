@@ -566,7 +566,7 @@ class FileAccessMonitor:
     Includes auto-lock functionality that re-locks files when no longer in use.
     """
     
-    def __init__(self, file_lock_manager, password_callback: Callable, get_state_func: Callable = None, set_state_func: Callable = None):
+    def __init__(self, file_lock_manager, password_callback: Callable, get_state_func: Callable = None, set_state_func: Callable = None, log_activity_func: Callable = None):
         """
         Initialize the file access monitor
         
@@ -576,11 +576,13 @@ class FileAccessMonitor:
                               Signature: callback(file_path) -> bool (True if access granted)
             get_state_func: Function to get monitoring state (returns dict with 'unlocked_files')
             set_state_func: Function to update monitoring state
+            log_activity_func: Function to log activity events (takes event_type, item_name, item_type, success, details)
         """
         self.file_lock_manager = file_lock_manager
         self.password_callback = password_callback
         self.get_state = get_state_func if get_state_func else lambda: {}
         self.set_state = set_state_func if set_state_func else lambda key, value: None
+        self.log_activity_func = log_activity_func
         self.observer = None
         self.event_handler = None
         self.is_monitoring = False
@@ -758,6 +760,17 @@ class FileAccessMonitor:
                 
                 # Reset counter
                 self.no_process_counts[file_path] = 0
+                
+                # Log the auto-lock event for statistics tracking
+                if self.log_activity_func:
+                    item_type = 'folder' if is_dir else 'file'
+                    self.log_activity_func(
+                        'lock',
+                        filename,
+                        item_type,
+                        success=True,
+                        details='Auto-locked after 10 seconds of inactivity'
+                    )
                 
             except Exception as e:
                 print(f"⚠️  [AUTO-LOCK] Could not re-lock {os.path.basename(file_path)}: {e}")
