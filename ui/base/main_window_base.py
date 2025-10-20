@@ -3057,7 +3057,30 @@ class MainWindowBase(QMainWindow):
                 self.file_lock_manager.relock_config('apps_config.json')
     
     def open_stats_window(self):
-        """Open the enhanced statistics dashboard window"""
+        """Open the enhanced statistics dashboard window - requires password if monitoring active"""
+        
+        # Require password if monitoring is active
+        if self.monitoring_active:
+            from ui.dialogs.password_dialog import ask_password
+            password = ask_password(
+                "Statistics & Activity",
+                "Enter your password to view statistics:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            if not (password and self.password_manager.verify_password(password)):
+                # Incorrect password - deny access
+                if self.system_tray:
+                    self.system_tray.show_message(
+                        "Access Denied",
+                        "Incorrect password. Statistics window access denied.",
+                        QSystemTrayIcon.MessageIcon.Warning
+                    )
+                return
+        
+        # Password verified or monitoring not active - proceed to show stats
         
         # Check if window already exists
         if hasattr(self, 'stats_window') and self.stats_window:
