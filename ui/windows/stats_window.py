@@ -215,6 +215,14 @@ class StatsWindow(QWidget):
             self.top_items_label.setText("No locked items yet")
     
     def closeEvent(self, event):
-        """Clean up on close"""
-        self.refresh_timer.stop()
-        super().closeEvent(event)
+        """Handle window close event - minimize to tray instead of closing"""
+        try:
+            # Don't close the window, minimize it instead
+            event.ignore()
+            self.hide()
+            if self.refresh_timer:
+                self.refresh_timer.stop()
+            print("📊 Stats window close button clicked - minimizing to system tray")
+        except Exception as e:
+            print(f"[Stats Window] Error in closeEvent: {e}")
+            event.accept()

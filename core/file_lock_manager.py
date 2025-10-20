@@ -107,6 +107,12 @@ class FileLockManager(ABC):
             print(f"❌ Path does not exist: {path}")
             return False
         
+        # Check if trying to lock a system path
+        if self._is_system_path(path):
+            print(f"❌ Cannot lock system path: {path}")
+            print(f"   System paths are protected to prevent breaking your system")
+            return False
+        
         # Check if already in list
         if any(item['path'] == path for item in self.locked_items):
             print(f"⚠️  Already in list: {path}")
@@ -262,6 +268,45 @@ class FileLockManager(ABC):
         Must include: name, path, type, original_permissions, filesystem, lock_method
         """
         pass
+    
+    def _is_system_path(self, path: str) -> bool:
+        """
+        Check if path is a critical system path that should not be locked.
+        Returns True if the path is a system path.
+        
+        Note: Allows /tmp, /home, and user directories.
+        Only blocks critical system binary/library directories.
+        """
+        # Normalize path
+        abs_path = os.path.abspath(path).lower()
+        
+        # List of CRITICAL system paths that should NEVER be locked
+        # These would break the entire system if locked
+        critical_system_paths = [
+            '/usr',      # System binaries and libraries
+            '/bin',      # Essential command binaries
+            '/sbin',     # System command binaries
+            '/lib',      # Essential system libraries
+            '/lib64',    # 64-bit system libraries
+            '/boot',     # Boot files
+            '/sys',      # Kernel interfaces
+            '/proc',     # Process info
+            '/dev',      # Device files
+            '/run',      # Runtime data
+            '/etc',      # System configuration (critical)
+            '/var',      # System logs and data (critical)
+            '/opt',      # Optional software (usually system-wide)
+        ]
+        
+        # Check if path is or is inside a critical system path
+        for sys_path in critical_system_paths:
+            sys_abs = os.path.abspath(sys_path).lower()
+            if abs_path == sys_abs or abs_path.startswith(sys_abs + os.sep):
+                return True
+        
+        # Allow /tmp, /home, and user directories
+        # (User can lock their own files at their own risk)
+        return False
     
     @abstractmethod
     def _lock_item(self, item: Dict) -> bool:

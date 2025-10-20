@@ -223,23 +223,32 @@ class StatisticsManager:
         return stats
     
     def get_pie_chart_data(self) -> Dict:
-        """Get data for item type distribution pie chart"""
+        """Get data for item type distribution pie chart with category items"""
         config = self._get_config()
         
-        apps = len(config.get('applications', []))
-        files = 0
-        folders = 0
+        apps = config.get('applications', [])
+        files_list = []
+        folders_list = []
         
         for item in config.get('locked_files_and_folders', []):
             if item.get('type') == 'file':
-                files += 1
+                files_list.append(item)
             elif item.get('type') == 'folder':
-                folders += 1
+                folders_list.append(item)
+        
+        # Build lists of names for each category
+        app_names = [app.get('name', 'Unknown') for app in apps]
+        file_names = [item.get('path', 'Unknown').split('/')[-1] for item in files_list]
+        folder_names = [item.get('path', 'Unknown').split('/')[-1] for item in folders_list]
         
         return {
             'labels': ['Applications', 'Files', 'Folders'],
-            'data': [apps, files, folders],
-            'colors': ['#FF6B6B', '#4ECDC4', '#45B7D1']
+            'data': [len(apps), len(files_list), len(folders_list)],
+            'category_items': {
+                0: app_names,
+                1: file_names,
+                2: folder_names
+            }
         }
     
     def get_lock_unlock_timeline(self, days: int = 7) -> Dict:

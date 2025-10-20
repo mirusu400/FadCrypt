@@ -1931,16 +1931,28 @@ class MainWindowBase(QMainWindow):
         # Check if any apps or locked items are added
         apps_count = len(self.app_list_widget.apps_data) if self.app_list_widget.apps_data else 0
         
-        # Get locked files/folders from config
+        # Get locked files/folders from config - handle locked config file
         locked_items = []
         try:
             config_file = os.path.join(self.get_fadcrypt_folder(), "apps_config.json")
             if os.path.exists(config_file):
-                with open(config_file, 'r') as f:
-                    import json
-                    config = json.load(f)
-                    locked_items = config.get('locked_files_and_folders', [])
-        except:
+                # Temporarily unlock config if it's locked (chmod 000)
+                should_relock = False
+                if self.file_lock_manager and hasattr(self.file_lock_manager, 'temporarily_unlock_config'):
+                    self.file_lock_manager.temporarily_unlock_config('apps_config.json')
+                    should_relock = True
+                
+                try:
+                    with open(config_file, 'r') as f:
+                        import json
+                        config = json.load(f)
+                        locked_items = config.get('locked_files_and_folders', [])
+                finally:
+                    # Re-lock after reading
+                    if should_relock and self.file_lock_manager and hasattr(self.file_lock_manager, 'relock_config'):
+                        self.file_lock_manager.relock_config('apps_config.json')
+        except Exception as e:
+            print(f"⚠️  Warning reading locked items at startup: {e}")
             locked_items = []
         
         locked_count = len(locked_items) if locked_items else 0
@@ -2338,11 +2350,11 @@ class MainWindowBase(QMainWindow):
                 msg = QMessageBox(self)
                 msg.setIcon(QMessageBox.Icon.Information)
                 msg.setWindowTitle("File Unlocked")
-                item_type = "Folder" if is_dir else "File"
-                msg.setText(f"✅ Success! {item_type} unlocked and accessible.")
+                item_type_display = "Folder" if is_dir else "File"
+                msg.setText(f"✅ Success! {item_type_display} unlocked and accessible.")
                 msg.setInformativeText(
-                    f"{item_type}: {filename}\n\n"
-                    f"This {item_type.lower()} will remain unlocked while in use.\n"
+                    f"{item_type_display}: {filename}\n\n"
+                    f"This {item_type_display.lower()} will remain unlocked while in use.\n"
                     f"It will automatically lock after 10 seconds of inactivity."
                 )
                 msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -2959,33 +2971,39 @@ class MainWindowBase(QMainWindow):
         
         config_file = os.path.join(self.get_fadcrypt_folder(), 'apps_config.json')
         
-        # Load existing config to preserve applications
-        existing_config = {"applications": [], "locked_files_and_folders": []}
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    existing_config = json.load(f)
-            except:
-                pass
-        
-        # Build locked items array from file grid
-        items_dict = self.file_grid_widget.cards
-        locked_items = [
-            {
-                'path': card.item_path,
-                'type': card.item_type,
-                'added_at': card.date_added or datetime.now().isoformat()
-            }
-            for card in items_dict.values()
-        ]
-        
-        # Create unified config - preserve applications
-        unified_config = {
-            'applications': existing_config.get('applications', []),
-            'locked_files_and_folders': locked_items
-        }
+        # Temporarily unlock config file for writing
+        should_relock = False
+        if self.file_lock_manager and hasattr(self.file_lock_manager, 'temporarily_unlock_config'):
+            self.file_lock_manager.temporarily_unlock_config('apps_config.json')
+            should_relock = True
         
         try:
+            # Load existing config to preserve applications
+            existing_config = {"applications": [], "locked_files_and_folders": []}
+            if os.path.exists(config_file):
+                try:
+                    with open(config_file, 'r') as f:
+                        existing_config = json.load(f)
+                except:
+                    pass
+            
+            # Build locked items array from file grid
+            items_dict = self.file_grid_widget.cards
+            locked_items = [
+                {
+                    'path': card.item_path,
+                    'type': card.item_type,
+                    'added_at': card.date_added or datetime.now().isoformat()
+                }
+                for card in items_dict.values()
+            ]
+            
+            # Create unified config - preserve applications
+            unified_config = {
+                'applications': existing_config.get('applications', []),
+                'locked_files_and_folders': locked_items
+            }
+            
             with open(config_file, 'w') as f:
                 json.dump(unified_config, f, indent=4)
             print(f"Protected files config saved: {len(locked_items)} items (preserved {len(unified_config.get('applications', []))} apps)")
@@ -2994,13 +3012,18 @@ class MainWindowBase(QMainWindow):
             self.update_config_display()
         except Exception as e:
             print(f"Error saving locked files config: {e}")
+        finally:
+            # Always re-lock after writing
+            if should_relock and self.file_lock_manager and hasattr(self.file_lock_manager, 'relock_config'):
+                self.file_lock_manager.relock_config('apps_config.json')
     
     def open_stats_window(self):
         """Open the enhanced statistics dashboard window"""
         
-        # Check if window already exists and is visible
-        if hasattr(self, 'stats_window') and self.stats_window and self.stats_window.isVisible():
-            # Bring existing window to front
+        # Check if window already exists
+        if hasattr(self, 'stats_window') and self.stats_window:
+            # If it exists, just show it and bring to front
+            self.stats_window.show()
             self.stats_window.raise_()
             self.stats_window.activateWindow()
             return

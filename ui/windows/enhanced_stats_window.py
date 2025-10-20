@@ -12,31 +12,55 @@ import json
 
 
 class PieChartWidget(QWidget):
-    """Custom pie chart widget with integrated labels"""
-    def __init__(self, parent=None):
+    """Enhanced pie chart widget with labels below and hover information"""
+    def __init__(self, title="", parent=None):
         super().__init__(parent)
-        self.setMinimumSize(250, 250)
-        self.setMaximumSize(400, 400)
+        self.setMinimumSize(350, 400)
+        self.title = title
         self.labels = []
         self.data = []
-        self.colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#F7B731', '#5F27CD', '#FF9500', '#00BFA5']
+        self.category_items = {}  # Maps category index to list of items in that category
+        # Material Design colors - calm and pleasant
+        self.colors = [
+            '#9C27B0',  # Material Purple (500)
+            '#00BCD4',  # Material Cyan (500)
+            '#FF9800',  # Material Orange (500)
+            '#4CAF50',  # Material Green (500)
+            '#F44336',  # Material Red (500)
+            '#3F51B5',  # Material Indigo (500)
+            '#FFC107'   # Material Amber (500)
+        ]
         self.hovered_slice = -1
+        self.hover_tooltip = ""
         self.setMouseTracking(True)
+        self.setStyleSheet("background-color: #1e1e1e; border-radius: 4px;")
     
-    def set_data(self, labels, data):
+    def set_data(self, labels, data, category_items=None):
         """Set pie chart data"""
         self.labels = labels
         self.data = data
+        self.category_items = category_items or {}
+        
+        # Build mapping from slice_index to label_index (for category_items lookup)
+        # This is needed because category_items uses label indices, but we use slice indices
+        self.slice_to_label = {}
+        slice_idx = 0
+        for label_idx, value in enumerate(data):
+            if value > 0:
+                self.slice_to_label[slice_idx] = label_idx
+                slice_idx += 1
+        
         self.hovered_slice = -1
+        self.hover_tooltip = ""
         self.update()
     
     def _get_slice_at_position(self, x, y):
         """Get slice index at given position"""
-        width = self.width()
-        height = self.height()
-        size = min(width - 40, height - 40)  # Leave room for labels
-        chart_x = (width - size) // 2
-        chart_y = (height - size) // 2
+        # Chart area dimensions
+        chart_height = 250
+        size = min(self.width() - 40, chart_height - 40)
+        chart_x = (self.width() - size) // 2
+        chart_y = 30  # Below title
         
         center_x = chart_x + size // 2
         center_y = chart_y + size // 2
@@ -47,23 +71,37 @@ class PieChartWidget(QWidget):
         if distance < size // 2:
             # Over the pie - calculate angle
             import math
-            angle = math.atan2(dy, dx)
-            if angle < 0:
-                angle += 2 * math.pi
+            # Calculate angle from center
+            # Qt's drawPie: 0 degrees is at 3 o'clock position, goes counter-clockwise
+            # atan2 gives angle from positive x-axis (3 o'clock), ranges from -pi to pi
+            angle_rad = math.atan2(-dy, dx)  # Negative dy because Qt Y-axis points down
+            
+            # Convert to degrees and normalize to 0-360 range (counter-clockwise from 3 o'clock)
+            angle_deg = math.degrees(angle_rad)
+            if angle_deg < 0:
+                angle_deg += 360
+            
+            # Now angle_deg is 0-360 where 0 is at 3 o'clock, increases counter-clockwise
+            # Our pie slices are drawn starting at 0 (3 o'clock) going counter-clockwise
+            # So we can directly compare
             
             # Map angle to slice
-            total = sum(self.data)
+            total = sum(self.data) if self.data else 0
             if total == 0:
                 return -1
             
-            current_angle = 0
+            current_angle = 0  # Start at 3 o'clock (0 degrees in Qt)
+            slice_index = 0  # Track actual slice number, not enumerate index
             for i, value in enumerate(self.data):
                 if value == 0:
                     continue
-                slice_angle = (value / total) * 2 * math.pi
-                if current_angle <= angle < current_angle + slice_angle:
-                    return i
-                current_angle += slice_angle
+                slice_span = (value / total) * 360
+                # Check if mouse angle falls within this slice's range
+                end_angle = current_angle + slice_span
+                if current_angle <= angle_deg < end_angle:
+                    return slice_index  # Return slice index, not enumerate index
+                current_angle = end_angle
+                slice_index += 1  # Increment only for non-zero slices
         return -1
     
     def mouseMoveEvent(self, event):
@@ -71,84 +109,191 @@ class PieChartWidget(QWidget):
         new_hovered = self._get_slice_at_position(event.pos().x(), event.pos().y())
         if new_hovered != self.hovered_slice:
             self.hovered_slice = new_hovered
-            self.update()
+            # Generate tooltip using slice_to_label mapping
+            if new_hovered >= 0 and new_hovered in self.slice_to_label:
+                label_idx = self.slice_to_label[new_hovered]
+                items_list = self.category_items.get(label_idx, [])
+                if items_list:
+                    self.hover_tooltip = f"{self.labels[label_idx]}:\n" + "\n".join([f"  • {item}" for item in items_list[:5]])
+                    if len(items_list) > 5:
+                        self.hover_tooltip += f"\n  ... and {len(items_list) - 5} more"
+                else:
+                    self.hover_tooltip = self.labels[label_idx]
+            else:
+                self.hover_tooltip = ""
+            # Force immediate repaint for responsive hover
+            self.repaint()
+        super().mouseMoveEvent(event)
+        # Continue processing event
+        super().mouseMoveEvent(event)
     
     def leaveEvent(self, event):
         """Handle mouse leaving widget"""
-        if self.hovered_slice >= 0:
+        if self.hovered_slice >= 0 or self.hover_tooltip:
             self.hovered_slice = -1
-            self.update()
+            self.hover_tooltip = ""
+            # Force immediate repaint
+            self.repaint()
+        # Continue processing event
+        super().leaveEvent(event)
     
     def paintEvent(self, event):
-        """Draw pie chart"""
+        """Draw pie chart with legend below"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Draw background
         painter.fillRect(self.rect(), QColor("#1e1e1e"))
         
+        # Draw title
+        if self.title:
+            title_font = painter.font()
+            title_font.setPointSize(11)
+            title_font.setBold(True)
+            painter.setFont(title_font)
+            painter.setPen(QPen(QColor("#fff")))
+            painter.drawText(0, 5, self.width(), 25, Qt.AlignmentFlag.AlignCenter, self.title)
+        
         if not self.data or sum(self.data) == 0:
             painter.setPen(QPen(QColor("#999")))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No data available")
             return
         
-        # Calculate dimensions - smaller chart to fit labels inside
-        width = self.width()
-        height = self.height()
-        size = min(width - 40, height - 40)
-        x = (width - size) // 2
-        y = (height - size) // 2
+        # Draw pie chart at top
+        size = min(self.width() - 40, 250)
+        chart_x = (self.width() - size) // 2
+        chart_y = 30
         
         # Draw pie slices
         total = sum(self.data)
         angle_start = 0
         
-        for i, (value, label) in enumerate(zip(self.data, self.labels)):
+        import math
+        slice_index = 0  # Track actual slice number for color mapping
+        for i, (label, value) in enumerate(zip(self.labels, self.data)):
             if value == 0:
                 continue
             
-            import math
-            angle_span = (value / total) * 360  # In degrees
-            angle_span_qt = int(angle_span * 16)  # Qt uses 16ths of degrees
+            angle_span = (value / total) * 360
+            angle_span_qt = int(angle_span * 16)
             angle_start_qt = int(angle_start * 16)
             
-            # Draw slice
-            color = QColor(self.colors[i % len(self.colors)])
-            
-            # Highlight hovered slice
-            if i == self.hovered_slice:
+            # Draw slice with hover effect - use slice_index for color, not enumerate index i
+            color_hex = self.colors[slice_index % len(self.colors)]
+            color = QColor(color_hex)
+            if slice_index == self.hovered_slice:
                 color.setAlpha(255)
                 painter.setBrush(QBrush(color))
-                painter.setPen(QPen(QColor("#fff"), 2))
+                painter.setPen(QPen(QColor("#fff"), 3))
             else:
                 painter.setBrush(QBrush(color))
                 painter.setPen(QPen(QColor("#2a2a2a"), 1))
             
-            painter.drawPie(QRect(x, y, size, size), angle_start_qt, angle_span_qt)
-            
-            # Draw label with percentage INSIDE the slice
-            percentage = (value / total) * 100
-            angle_mid = angle_start + angle_span / 2
-            angle_rad = math.radians(angle_mid)
-            
-            # Position text in middle of slice (2/3 radius for readable placement)
-            radius = size // 2 - 15
-            label_x = x + size // 2 + int(radius * 0.65 * math.cos(angle_rad))
-            label_y = y + size // 2 + int(radius * 0.65 * math.sin(angle_rad))
-            
-            # Draw label name + percentage
-            painter.setPen(QPen(QColor("#fff")))
-            font = painter.font()
-            font.setPointSize(8)
-            painter.setFont(font)
-            
-            # Format: "Name\n12.3%"
-            text_lines = [label, f"{percentage:.1f}%"]
-            for j, text_line in enumerate(text_lines):
-                painter.drawText(int(label_x) - 40, int(label_y) - 15 + (j * 12), 80, 12,
-                               Qt.AlignmentFlag.AlignCenter, text_line)
-            
+            painter.drawPie(QRect(chart_x, chart_y, size, size), angle_start_qt, angle_span_qt)
             angle_start += angle_span
+            slice_index += 1  # Increment slice counter
+        
+        # Reset painter state after drawing pie slices
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor("#e0e0e0"), 1))
+        
+        # Draw legend below chart with color swatches
+        legend_y = chart_y + size + 20
+        legend_x_start = 20
+        max_width_per_column = self.width() // 2 - 10
+        
+        row_height = 22
+        legend_items_per_row = 2
+        
+        # Track actual displayed item index (excluding zero-value items)
+        slice_index = 0
+        
+        for i, (label, value) in enumerate(zip(self.labels, self.data)):
+            if value == 0:
+                continue
+            
+            percentage = (value / total) * 100
+            
+            # Calculate row and column based on displayed items, not total items
+            row = slice_index // legend_items_per_row
+            col = slice_index % legend_items_per_row
+            
+            x_pos = legend_x_start + col * max_width_per_column
+            y_pos = legend_y + row * row_height
+            
+            # Draw color swatch with correct color for this slice - explicitly set brush and pen
+            color_hex = self.colors[slice_index % len(self.colors)]
+            color = QColor(color_hex)
+            painter.setBrush(QBrush(color))
+            painter.setPen(QPen(QColor("#555"), 1))
+            painter.drawRect(x_pos, y_pos - 8, 14, 14)
+            
+            # Draw category name and percentage
+            legend_font = painter.font()
+            legend_font.setPointSize(9)
+            painter.setFont(legend_font)
+            painter.setPen(QPen(QColor("#e0e0e0")))
+            
+            text = f"{label} ({percentage:.1f}%)"
+            painter.drawText(x_pos + 20, y_pos - 5, max_width_per_column - 20, 18,
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
+            
+            slice_index += 1
+        
+        # Reset painter state before drawing tooltip
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor("#fff"), 1))
+        
+        # Draw hover tooltip if hovering over a slice - positioned in top-right corner with background
+        if self.hovered_slice >= 0 and self.hover_tooltip:
+            tooltip_lines = self.hover_tooltip.split('\n')
+            max_line_width = max([painter.fontMetrics().horizontalAdvance(line) for line in tooltip_lines])
+            
+            # Tooltip box dimensions
+            padding = 12
+            line_height = 20
+            tooltip_width = min(max_line_width + padding * 2 + 25, 300)  # Extra space for color indicator
+            tooltip_height = len(tooltip_lines) * line_height + padding * 2
+            
+            # Position in top-right corner
+            tooltip_x = self.width() - tooltip_width - 10
+            tooltip_y = 50
+            
+            # Draw DARK GRAY semi-transparent background (not category color) - explicitly set brush
+            painter.setBrush(QBrush(QColor(30, 30, 30, 245)))
+            painter.setPen(QPen(QColor("#555"), 2))
+            painter.drawRect(tooltip_x, tooltip_y, tooltip_width, tooltip_height)
+            
+            # Draw category color indicator bar on the left side of tooltip
+            category_color = QColor(self.colors[self.hovered_slice % len(self.colors)])
+            painter.setBrush(QBrush(category_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(tooltip_x + 2, tooltip_y + 2, 6, tooltip_height - 4)
+            
+            # Draw tooltip text
+            painter.setFont(QFont("sans-serif", 9))
+            
+            current_y = tooltip_y + padding
+            for i, line in enumerate(tooltip_lines):
+                # First line is the category name - make it bold and colored
+                if i == 0:
+                    font = painter.font()
+                    font.setBold(True)
+                    font.setPointSize(10)
+                    painter.setFont(font)
+                    painter.setPen(QPen(QColor("#fff")))  # White for readability
+                    painter.drawText(tooltip_x + padding + 12, current_y, tooltip_width - padding * 2 - 12, line_height,
+                                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
+                    # Reset font
+                    font.setBold(False)
+                    font.setPointSize(9)
+                    painter.setFont(font)
+                else:
+                    # Item lines - light gray for good contrast on dark background
+                    painter.setPen(QPen(QColor("#d0d0d0")))
+                    painter.drawText(tooltip_x + padding + 12, current_y, tooltip_width - padding * 2 - 12, line_height,
+                                   Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, line)
+                current_y += line_height
 
 
 class EnhancedStatsWindow(QWidget):
@@ -233,27 +378,36 @@ class EnhancedStatsWindow(QWidget):
         charts_widget = self._create_charts_tab()
         tabs.addTab(charts_widget, "Charts and Trends")
         
-        # Duration Stats Tab
-        duration_widget = self._create_duration_tab()
-        tabs.addTab(duration_widget, "Duration Statistics")
-        
         main_layout.addWidget(tabs, 1)
     
     def changeEvent(self, event):
         """Handle visibility changes to manage refresh timer"""
-        from PyQt6.QtCore import QEvent
-        if event.type() == QEvent.Type.WindowDeactivate:
-            self.refresh_timer.stop()
-        elif event.type() == QEvent.Type.WindowActivate:
-            self.refresh_timer.start()
-        super().changeEvent(event)
+        try:
+            from PyQt6.QtCore import QEvent
+            if event.type() == QEvent.Type.WindowDeactivate:
+                if self.refresh_timer:
+                    self.refresh_timer.stop()
+            elif event.type() == QEvent.Type.WindowActivate:
+                if self.refresh_timer:
+                    self.refresh_timer.start()
+            super().changeEvent(event)
+        except Exception as e:
+            print(f"[Stats Window] Error in changeEvent: {e}")
+            import traceback
+            traceback.print_exc()
     
     def closeEvent(self, event):
-        """Handle window close event"""
-        # Stop the timer to prevent memory leaks and ensure clean shutdown
-        if self.refresh_timer:
-            self.refresh_timer.stop()
-        event.accept()
+        """Handle window close event - minimize to tray instead of closing"""
+        try:
+            # Don't close the window, minimize it instead
+            event.ignore()
+            self.hide()
+            print("📊 Stats window close button clicked - minimizing to system tray")
+        except Exception as e:
+            print(f"[Stats Window] Error in closeEvent: {e}")
+            import traceback
+            traceback.print_exc()
+            event.accept()
     
     def _create_overview_tab(self) -> QWidget:
         """Create overview tab with key metrics"""
@@ -274,43 +428,62 @@ class EnhancedStatsWindow(QWidget):
         # Top metrics row
         self.metric_cards = {}
         
+        # Row 1: 4 cards (Total Items, Lock Events, Unlock Events, Failed Attempts)
         # Total items
-        card2 = self._create_metric_card("📦 Total Items", "0",
+        card1 = self._create_metric_card("📦 Total Items", "0",
                                         "Total count of all applications and locked files/folders")
-        self.metric_cards['total_items'] = card2
-        grid.addWidget(card2, 0, 0)
+        self.metric_cards['total_items'] = card1
+        grid.addWidget(card1, 0, 0)
         
         # Lock Events
-        card3 = self._create_metric_card("🔒 Lock Events", "0",
+        card2 = self._create_metric_card("🔒 Lock Events", "0",
                                         "Total number of lock operations performed")
-        self.metric_cards['lock_events'] = card3
-        grid.addWidget(card3, 0, 1)
+        self.metric_cards['lock_events'] = card2
+        grid.addWidget(card2, 0, 1)
         
         # Unlock Events
-        card4 = self._create_metric_card("🔓 Unlock Events", "0",
+        card3 = self._create_metric_card("🔓 Unlock Events", "0",
                                         "Total number of unlock operations performed")
-        self.metric_cards['unlock_events'] = card4
-        grid.addWidget(card4, 0, 2)
+        self.metric_cards['unlock_events'] = card3
+        grid.addWidget(card3, 0, 2)
+        
+        # Failed Attempts (moved to first row)
+        card4 = self._create_metric_card("⚠️ Failed Attempts", "0",
+                                        "Number of failed unlock attempts")
+        self.metric_cards['failed_attempts'] = card4
+        grid.addWidget(card4, 0, 3)
+        
+        content_layout.addLayout(grid)
+        
+        # Row 2: 3 cards centered using HBoxLayout with stretches
+        row2_layout = QHBoxLayout()
+        row2_layout.addStretch(1)  # Left stretch
         
         # Uptime
         card5 = self._create_metric_card("⏱️ FadCrypt Uptime", "0h 0m",
                                         "How long FadCrypt has been running since first startup")
         self.metric_cards['uptime'] = card5
-        grid.addWidget(card5, 1, 0)
+        row2_layout.addWidget(card5)
         
-        # Avg Lock Duration
+        row2_layout.addSpacing(15)  # Match grid spacing
+        
+        # Avg Lock Duration (live data)
         card6 = self._create_metric_card("⌛ Avg Lock Duration", "0s",
                                         "Average amount of time items spend in locked state")
         self.metric_cards['avg_lock_duration'] = card6
-        grid.addWidget(card6, 1, 1)
+        row2_layout.addWidget(card6)
         
-        # Failed Attempts
-        card7 = self._create_metric_card("⚠️ Failed Attempts", "0",
-                                        "Number of failed unlock attempts")
-        self.metric_cards['failed_attempts'] = card7
-        grid.addWidget(card7, 1, 2)
+        row2_layout.addSpacing(15)  # Match grid spacing
         
-        content_layout.addLayout(grid)
+        # Avg Unlock Duration
+        card7 = self._create_metric_card("⏱️ Avg Unlock Duration", "0s",
+                                        "Average amount of time to unlock items")
+        self.metric_cards['avg_unlock_duration'] = card7
+        row2_layout.addWidget(card7)
+        
+        row2_layout.addStretch(1)  # Right stretch
+        
+        content_layout.addLayout(row2_layout)
         
         # Most locked items section
         content_layout.addSpacing(20)
@@ -361,11 +534,12 @@ class EnhancedStatsWindow(QWidget):
         pie_font.setBold(True)
         pie_label.setFont(pie_font)
         
-        self.pie_chart = PieChartWidget()
+        self.pie_chart = PieChartWidget(title="Item Distribution (Apps & Locked Files)")
         self.pie_chart.setMinimumHeight(300)
         
         pie_container = QVBoxLayout()
-        pie_container.setContentsMargins(0, 0, 0, 0)
+        pie_container.setContentsMargins(0, 15, 0, 0)  # Added 15px top margin for spacing from heading
+        pie_container.setSpacing(8)  # Add spacing between label and chart
         pie_container.addWidget(pie_label)
         pie_container.addWidget(self.pie_chart, 1)
         pie_container_widget = QWidget()
@@ -387,7 +561,8 @@ class EnhancedStatsWindow(QWidget):
         self.line_chart.setMinimumHeight(300)
         
         timeline_container = QVBoxLayout()
-        timeline_container.setContentsMargins(0, 0, 0, 0)
+        timeline_container.setContentsMargins(0, 15, 0, 0)  # Added 15px top margin for consistency
+        timeline_container.setSpacing(8)  # Add spacing between label and chart
         timeline_container.addWidget(timeline_label)
         timeline_container.addWidget(self.line_chart, 1)
         timeline_container_widget = QWidget()
@@ -396,88 +571,6 @@ class EnhancedStatsWindow(QWidget):
         
         layout.addLayout(charts_layout, 1)
         return widget
-    
-    def _create_duration_tab(self) -> QWidget:
-        """Create duration statistics tab"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        
-        # Info text
-        info_text = QLabel("ℹ️ Duration Statistics\nThis tab shows timing information about how long items are locked or unlocked")
-        info_text.setStyleSheet("color: #999; padding: 10px; background-color: #2a2a2a; border-radius: 4px;")
-        content_layout.addWidget(info_text)
-        content_layout.addSpacing(10)
-        
-        # Duration summary
-        summary_label = QLabel("⏳ Duration Summary")
-        summary_font = QFont()
-        summary_font.setPointSize(14)
-        summary_font.setBold(True)
-        summary_label.setFont(summary_font)
-        content_layout.addWidget(summary_label)
-        
-        # Duration cards
-        grid = QGridLayout()
-        grid.setSpacing(15)
-        
-        self.duration_cards = {}
-        
-        card1 = self._create_metric_card("⌛ Avg Lock Duration", "N/A",
-                                        "Average time items remain in locked state")
-        self.duration_cards['avg_lock'] = card1
-        grid.addWidget(card1, 0, 0)
-        
-        card2 = self._create_metric_card("🔓 Avg Unlock Duration", "N/A",
-                                        "Average time between locks (time items stay unlocked)")
-        self.duration_cards['avg_unlock'] = card2
-        grid.addWidget(card2, 0, 1)
-        
-        card3 = self._create_metric_card("🕐 Total Locked Time", "N/A",
-                                        "Cumulative time all items have been locked")
-        self.duration_cards['total_locked'] = card3
-        grid.addWidget(card3, 0, 2)
-        
-        card4 = self._create_metric_card("🕑 Total Unlocked Time", "N/A",
-                                        "Cumulative time all items have been unlocked")
-        self.duration_cards['total_unlocked'] = card4
-        grid.addWidget(card4, 0, 3)
-        
-        content_layout.addLayout(grid)
-        
-        # Per-item durations
-        content_layout.addSpacing(20)
-        items_label = QLabel("📋 Per-Item Duration Stats")
-        items_font = QFont()
-        items_font.setPointSize(12)
-        items_font.setBold(True)
-        items_label.setFont(items_font)
-        content_layout.addWidget(items_label)
-        
-        self.duration_items_widget = QLabel("Loading...")
-        self.duration_items_widget.setStyleSheet("""
-            QLabel {
-                background-color: #2a2a2a;
-                padding: 15px;
-                border-radius: 4px;
-                color: #b0b0b0;
-                font-family: monospace;
-            }
-        """)
-        self.duration_items_widget.setWordWrap(True)
-        content_layout.addWidget(self.duration_items_widget)
-        
-        content_layout.addStretch()
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        
-        return widget
-    
     
     def _create_metric_card(self, title: str, value: str, tooltip: str = "") -> QFrame:
         """Create a metric display card"""
@@ -489,28 +582,33 @@ class EnhancedStatsWindow(QWidget):
                 border: 1px solid #3a3a3a;
             }
         """)
-        card.setMinimumHeight(100)
+        card.setMinimumHeight(120)  # Increased from 100 to 120
+        card.setMaximumHeight(120)  # Fixed height to prevent expanding
         
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(10)
+        layout.setContentsMargins(25, 20, 25, 20)  # Increased inner padding for more space from borders
+        layout.setSpacing(12)  # Increased space between title and value
+        layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)  # Vertically center content
         
         title_label = QLabel(title)
         title_font = QFont()
         title_font.setPointSize(10)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #999;")
+        title_label.setStyleSheet("color: #999; padding: 4px 8px;")  # Added inner padding to label
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center text horizontally
         
         value_label = QLabel(value)
         value_font = QFont()
-        value_font.setPointSize(18)
+        value_font.setPointSize(20)  # Increased from 18 to 20
         value_font.setBold(True)
         value_label.setFont(value_font)
-        value_label.setStyleSheet("color: #FF6B6B;")
+        value_label.setStyleSheet("color: #FF6B6B; padding: 4px 8px;")  # Added inner padding to label
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center text horizontally
         
+        layout.addStretch()  # Top stretch
         layout.addWidget(title_label)
         layout.addWidget(value_label)
-        layout.addStretch()
+        layout.addStretch()  # Bottom stretch
         
         # Add tooltip if provided
         if tooltip:
@@ -523,6 +621,10 @@ class EnhancedStatsWindow(QWidget):
     
     def refresh_stats(self):
         """Refresh all statistics"""
+        # Don't refresh if window is not visible (minimized/hidden)
+        if not self.isVisible():
+            return
+        
         if not self.statistics_manager:
             return
         
@@ -530,7 +632,6 @@ class EnhancedStatsWindow(QWidget):
             stats = self.statistics_manager.get_comprehensive_stats()
             self._update_overview(stats)
             self._update_charts(stats)
-            self._update_duration_stats(stats)
         except Exception as e:
             print(f"Error refreshing stats: {e}")
     
@@ -550,6 +651,11 @@ class EnhancedStatsWindow(QWidget):
                 str(activity.get('total_unlock_events', 0))
             )
             
+            # Failed attempts (show live data)
+            self.metric_cards['failed_attempts'].value_label.setText(
+                str(activity.get('failed_unlock_attempts', 0))
+            )
+            
             uptime = stats.get('session_uptime', {})
             uptime_str = uptime.get('uptime_formatted', 'N/A')
             self.metric_cards['uptime'].value_label.setText(uptime_str)
@@ -558,9 +664,9 @@ class EnhancedStatsWindow(QWidget):
             avg_lock = durations.get('averages', {}).get('avg_lock_duration_seconds', 0)
             self._format_duration_card(self.metric_cards['avg_lock_duration'], avg_lock)
             
-            self.metric_cards['failed_attempts'].value_label.setText(
-                str(activity.get('failed_unlock_attempts', 0))
-            )
+            # Average unlock duration (show live data)
+            avg_unlock = durations.get('averages', {}).get('avg_unlock_duration_seconds', 0)
+            self._format_duration_card(self.metric_cards['avg_unlock_duration'], avg_unlock)
             
             # Most locked items
             items = stats.get('items', {}).get('most_locked', [])
@@ -602,7 +708,17 @@ class EnhancedStatsWindow(QWidget):
                 self.pie_chart.set_data([], [])
                 return
             
-            self.pie_chart.set_data(labels, numeric_data)
+            # Get category items from config for hover tooltip
+            category_items = {}
+            try:
+                # Try to get from pie_chart stats (newer format)
+                if hasattr(self, 'statistics_manager') and self.statistics_manager:
+                    pie_stats = self.statistics_manager.get_pie_chart_data()
+                    category_items = pie_stats.get('category_items', {})
+            except:
+                pass
+            
+            self.pie_chart.set_data(labels, numeric_data, category_items)
             
         except Exception as e:
             print(f"Error drawing pie chart: {e}")
@@ -633,34 +749,6 @@ class EnhancedStatsWindow(QWidget):
             ax.setTicks([ticks])
         except Exception as e:
             print(f"Error drawing line chart: {e}")
-    
-    def _update_duration_stats(self, stats: dict):
-        """Update duration statistics"""
-        try:
-            durations = stats.get('durations', {})
-            averages = durations.get('averages', {})
-            
-            avg_lock = averages.get('avg_lock_duration_seconds', 0)
-            avg_unlock = averages.get('avg_unlock_duration_seconds', 0)
-            
-            self._format_duration_card(self.duration_cards['avg_lock'], avg_lock)
-            self._format_duration_card(self.duration_cards['avg_unlock'], avg_unlock)
-            
-            # Per-item stats
-            by_item = durations.get('by_item', {})
-            items_info = []
-            
-            for item_name, item_stats in list(by_item.items())[:10]:
-                lock_sec = item_stats.get('avg_lock_duration_seconds', 0)
-                unlock_sec = item_stats.get('avg_unlock_duration_seconds', 0)
-                items_info.append(
-                    f"{item_name}: Lock={self._format_seconds(lock_sec)}, Unlock={self._format_seconds(unlock_sec)}"
-                )
-            
-            items_text = "\n".join(items_info) if items_info else "No duration data yet"
-            self.duration_items_widget.setText(items_text)
-        except Exception as e:
-            print(f"Error updating duration stats: {e}")
     
     @staticmethod
     def _format_timestamp(timestamp_str: str) -> str:
