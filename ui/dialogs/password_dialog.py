@@ -148,6 +148,31 @@ class PasswordDialog(QDialog):
         # Spacer before buttons
         content_layout.addSpacing(10)
         
+        # "Forgot Password?" link
+        forgot_link = QPushButton("🔑 Forgot Password?")
+        forgot_link.setFlat(True)
+        forgot_link.setCursor(self.cursor())
+        forgot_link.setStyleSheet("""
+            QPushButton {
+                color: #00bfff;
+                border: none;
+                padding: 0;
+                font-size: 12px;
+                text-decoration: underline;
+            }
+            QPushButton:hover {
+                color: #1e90ff;
+            }
+        """)
+        forgot_link.clicked.connect(self.on_forgot_password)
+        forgot_layout = QHBoxLayout()
+        forgot_layout.addStretch()
+        forgot_layout.addWidget(forgot_link)
+        forgot_layout.addStretch()
+        content_layout.addLayout(forgot_layout)
+        
+        content_layout.addSpacing(10)
+        
         # Buttons - compact design
         button_layout = QHBoxLayout()
         button_layout.setSpacing(10)
@@ -302,6 +327,11 @@ class PasswordDialog(QDialog):
         self.password_value = self.password_input.text()
         if self.password_value:
             self.accept()
+    
+    def on_forgot_password(self):
+        """Handle forgot password - user needs to recover with code"""
+        self.password_value = "RECOVER"  # Special marker for recovery flow
+        self.accept()
     
     def get_password(self):
         """Get the entered password"""

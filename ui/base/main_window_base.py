@@ -145,7 +145,13 @@ class MainWindowBase(QMainWindow):
         # Password file path - use platform-specific folder
         fadcrypt_folder = self.get_fadcrypt_folder()
         password_file = os.path.join(fadcrypt_folder, "encrypted_password.bin")
-        self.password_manager = PasswordManager(password_file, self.crypto_manager)
+        recovery_codes_file = os.path.join(fadcrypt_folder, "recovery_codes.json")
+        
+        self.password_manager = PasswordManager(
+            password_file,
+            self.crypto_manager,
+            recovery_codes_file
+        )
         
         # Initialize file lock manager (platform-specific)
         self.file_lock_manager = self.get_file_lock_manager(fadcrypt_folder)
@@ -376,17 +382,11 @@ class MainWindowBase(QMainWindow):
     def show_window_from_tray(self):
         """Show window from system tray - requires password if monitoring is active"""
         if self.monitoring_active:
-            # Ask for password when monitoring is active (same as legacy)
-            from ui.dialogs.password_dialog import ask_password
-            password = ask_password(
+            # Ask for password with recovery option
+            if self.verify_password_with_recovery(
                 "Show Window",
-                "Enter your password to show the window:",
-                self.resource_path,
-                style=self.password_dialog_style,
-                wallpaper=self.wallpaper_choice,
-                parent=self
-            )
-            if password and self.password_manager.verify_password(password):
+                "Enter your password to show the window:"
+            ):
                 self.show()
                 self.activateWindow()
                 self.raise_()
@@ -394,7 +394,7 @@ class MainWindowBase(QMainWindow):
                 if self.system_tray:
                     self.system_tray.show_message(
                         "Access Denied",
-                        "Incorrect password. Window remains hidden.",
+                        "Window remains hidden.",
                         QSystemTrayIcon.MessageIcon.Warning
                     )
         else:
@@ -1332,6 +1332,136 @@ class MainWindowBase(QMainWindow):
         else:
             print("[MainWindow] ⚠️  No screen found, cannot center")
     
+    def verify_password_with_recovery(self, title: str, prompt: str) -> bool:
+        """
+        Verify password with recovery code fallback.
+        Handles "Forgot Password?" flow.
+        
+        Returns:
+            True if password verified, False if cancelled or recovery attempted
+        """
+        from ui.dialogs.password_dialog import ask_password
+        from ui.dialogs.recovery_dialog import ask_recovery_code, show_recovery_codes
+        
+        while True:
+            # Ask for password
+            password = ask_password(
+                title,
+                prompt,
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            
+            # User cancelled
+            if not password:
+                return False
+            
+            # User clicked "Forgot Password?"
+            if password == "RECOVER":
+                if not self.password_manager.has_recovery_codes():
+                    self.show_message(
+                        "No Recovery Codes",
+                        "No recovery codes found. You cannot recover your password.\n"
+                        "Your password cannot be reset without backup codes.",
+                        "error"
+                    )
+                    continue
+                
+                # Show recovery code dialog
+                code, new_pwd = ask_recovery_code(self.resource_path, self)
+                
+                if not code or not new_pwd:
+                    continue  # User cancelled recovery
+                
+                # Attempt password recovery
+                success, error = self.password_manager.recover_password_with_code(
+                    code,
+                    new_pwd,
+                    cleanup_callback=self._password_recovery_cleanup
+                )
+                
+                if success:
+                    # Display new recovery codes
+                    success2, codes = self.password_manager.create_recovery_codes(new_pwd)
+                    if success2 and codes:
+                        show_recovery_codes(codes, self.resource_path, self)
+                    
+                    self.show_message(
+                        "Password Recovered",
+                        "✅ Your password has been reset successfully!\n"
+                        "Save your new recovery codes in a safe place.",
+                        "success"
+                    )
+                    return True
+                else:
+                    self.show_message(
+                        "Recovery Failed",
+                        f"❌ Password recovery failed:\n{error}",
+                        "error"
+                    )
+                    continue
+            
+            # Verify password
+            if self.password_manager.verify_password(password):
+                return True
+            else:
+                # Invalid password - ask again
+                self.show_message(
+                    "Invalid Password",
+                    "❌ Incorrect password. Please try again.\n"
+                    "You can click 'Forgot Password?' if you don't remember your password.",
+                    "error"
+                )
+                continue
+    
+    def _password_recovery_cleanup(self, new_password: str) -> bool:
+        """
+        Cleanup callback for password recovery.
+        Stops monitoring, unlocks files, resets state.
+        
+        Args:
+            new_password: New master password (for re-encryption if needed)
+        
+        Returns:
+            True if cleanup successful
+        """
+        try:
+            print("[Recovery] Starting cleanup callback...")
+            
+            # Stop monitoring if active
+            if self.monitoring_active:
+                print("[Recovery] Stopping monitoring...")
+                if self.unified_monitor:
+                    self.unified_monitor.stop_monitoring()
+                if self.file_access_monitor:
+                    self.file_access_monitor.stop_monitoring()
+                self.monitoring_active = False
+            
+            # Unlock all files
+            if self.file_lock_manager:
+                print("[Recovery] Unlocking all files...")
+                if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
+                    self.file_lock_manager.unlock_all_with_configs()
+                else:
+                    self.file_lock_manager.unlock_all()
+                self.file_lock_manager.unlock_fadcrypt_configs()
+            
+            # Reset monitoring state
+            self.monitoring_state = {
+                'unlocked_apps': [],
+                'unlocked_files': []
+            }
+            self.save_monitoring_state_to_disk()
+            
+            print("[Recovery] ✅ Cleanup complete")
+            return True
+            
+        except Exception as e:
+            print(f"[Recovery] ❌ Error during cleanup: {e}")
+            return False
+    
     def show_message(self, title, message, msg_type="info"):
         """Show a message dialog"""
         if msg_type == "info":
@@ -2120,18 +2250,11 @@ class MainWindowBase(QMainWindow):
             self.show_message("Info", "Monitoring is not running.", "info")
             return
         
-        # Ask for password
-        from ui.dialogs.password_dialog import ask_password
-        password = ask_password(
+        # Ask for password with recovery option
+        if self.verify_password_with_recovery(
             "Stop Monitoring",
-            "Enter your password to stop monitoring:",
-            self.resource_path,
-            style=self.password_dialog_style,
-            wallpaper=self.wallpaper_choice,
-            parent=self
-        )
-        
-        if password and self.password_manager.verify_password(password):
+            "Enter your password to stop monitoring:"
+        ):
             # Stop monitoring
             if self.unified_monitor:
                 self.unified_monitor.stop_monitoring()
