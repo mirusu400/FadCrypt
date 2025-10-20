@@ -54,7 +54,7 @@ class StatisticsManager:
         
         days = uptime.days
         hours, remainder = divmod(uptime.seconds, 3600)
-        minutes = remainder // 60
+        minutes, seconds = divmod(remainder, 60)
         
         total_hours = uptime.total_seconds() / 3600
         total_minutes = uptime.total_seconds() / 60
@@ -63,7 +63,7 @@ class StatisticsManager:
             'uptime_seconds': int(uptime.total_seconds()),
             'uptime_minutes': int(total_minutes),
             'uptime_hours': round(total_hours, 2),
-            'uptime_formatted': f"{days}d {hours}h {minutes}m",
+            'uptime_formatted': f"{days}d {hours}h {minutes}m {seconds}s",
             'first_startup': startup_time.isoformat(),
             'current_time': datetime.now().isoformat()
         }

@@ -33,17 +33,14 @@ class FileAccessHandler(FileSystemEventHandler):
         self.on_access_callback = on_access_callback
         self.get_state = get_state_func if get_state_func else lambda: {}
         self.last_event_time = {}  # Debounce events
-        self.debounce_seconds = 5.0  # Ignore events within 5 seconds (increased to reduce spam)
-        self.start_time = time.time()  # Track when monitoring started
-        self.initial_grace_period = 3.0  # Ignore events for first 3 seconds after start
+        self.debounce_seconds = 2.0  # Ignore events within 2 seconds (reduced for faster detection)
+
         
     def _should_process_event(self, path: str) -> bool:
-        """Check if we should process this event (debouncing + grace period)"""
+        """Check if we should process this event (debouncing only - NO grace period)"""
         now = time.time()
         
-        # Ignore events during initial grace period (prevents spurious events on startup)
-        if now - self.start_time < self.initial_grace_period:
-            return False
+
         
         last_time = self.last_event_time.get(path, 0)
         

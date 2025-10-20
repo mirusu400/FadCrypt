@@ -56,19 +56,18 @@ class PieChartWidget(QWidget):
     
     def _get_slice_at_position(self, x, y):
         """Get slice index at given position"""
-        # Chart area dimensions
-        chart_height = 250
-        size = min(self.width() - 40, chart_height - 40)
-        chart_x = (self.width() - size) // 2
-        chart_y = 30  # Below title
+        # Chart area dimensions (matching paintEvent layout)
+        pie_size = min(self.width() // 2 - 40, 250)
+        chart_x = 30
+        chart_y = 40
         
-        center_x = chart_x + size // 2
-        center_y = chart_y + size // 2
+        center_x = chart_x + pie_size // 2
+        center_y = chart_y + pie_size // 2
         dx = x - center_x
         dy = y - center_y
         distance = (dx * dx + dy * dy) ** 0.5
         
-        if distance < size // 2:
+        if distance < pie_size // 2:
             # Over the pie - calculate angle
             import math
             # Calculate angle from center
@@ -107,23 +106,22 @@ class PieChartWidget(QWidget):
     def mouseMoveEvent(self, event):
         """Handle mouse hover for slice highlighting"""
         new_hovered = self._get_slice_at_position(event.pos().x(), event.pos().y())
-        if new_hovered != self.hovered_slice:
-            self.hovered_slice = new_hovered
-            # Generate tooltip using slice_to_label mapping
-            if new_hovered >= 0 and new_hovered in self.slice_to_label:
-                label_idx = self.slice_to_label[new_hovered]
-                items_list = self.category_items.get(label_idx, [])
-                if items_list:
-                    self.hover_tooltip = f"{self.labels[label_idx]}:\n" + "\n".join([f"  • {item}" for item in items_list[:5]])
-                    if len(items_list) > 5:
-                        self.hover_tooltip += f"\n  ... and {len(items_list) - 5} more"
-                else:
-                    self.hover_tooltip = self.labels[label_idx]
+        # Always update state and repaint, even if same slice (maintains hover visual)
+        self.hovered_slice = new_hovered
+        # Generate tooltip using slice_to_label mapping
+        if new_hovered >= 0 and new_hovered in self.slice_to_label:
+            label_idx = self.slice_to_label[new_hovered]
+            items_list = self.category_items.get(label_idx, [])
+            if items_list:
+                self.hover_tooltip = f"{self.labels[label_idx]}:\n" + "\n".join([f"  • {item}" for item in items_list[:5]])
+                if len(items_list) > 5:
+                    self.hover_tooltip += f"\n  ... and {len(items_list) - 5} more"
             else:
-                self.hover_tooltip = ""
-            # Force immediate repaint for responsive hover
-            self.repaint()
-        super().mouseMoveEvent(event)
+                self.hover_tooltip = self.labels[label_idx]
+        else:
+            self.hover_tooltip = ""
+        # Always repaint to maintain hover state
+        self.repaint()
         # Continue processing event
         super().mouseMoveEvent(event)
     
@@ -159,10 +157,15 @@ class PieChartWidget(QWidget):
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No data available")
             return
         
-        # Draw pie chart at top
-        size = min(self.width() - 40, 250)
-        chart_x = (self.width() - size) // 2
-        chart_y = 30
+        # Layout: Pie chart on LEFT, Legend on RIGHT
+        # Pie chart dimensions (left side)
+        pie_size = min(self.width() // 2 - 40, 250)
+        chart_x = 30
+        chart_y = 40
+        
+        # Legend starts on right side
+        legend_x = self.width() // 2 + 20
+        legend_y_start = chart_y
         
         # Draw pie slices
         total = sum(self.data)
@@ -189,7 +192,7 @@ class PieChartWidget(QWidget):
                 painter.setBrush(QBrush(color))
                 painter.setPen(QPen(QColor("#2a2a2a"), 1))
             
-            painter.drawPie(QRect(chart_x, chart_y, size, size), angle_start_qt, angle_span_qt)
+            painter.drawPie(QRect(chart_x, chart_y, pie_size, pie_size), angle_start_qt, angle_span_qt)
             angle_start += angle_span
             slice_index += 1  # Increment slice counter
         
@@ -197,16 +200,10 @@ class PieChartWidget(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor("#e0e0e0"), 1))
         
-        # Draw legend below chart with color swatches
-        legend_y = chart_y + size + 20
-        legend_x_start = 20
-        max_width_per_column = self.width() // 2 - 10
-        
-        row_height = 22
-        legend_items_per_row = 2
-        
-        # Track actual displayed item index (excluding zero-value items)
+        # Draw legend on RIGHT side in vertical column
+        row_height = 30
         slice_index = 0
+        current_y = legend_y_start
         
         for i, (label, value) in enumerate(zip(self.labels, self.data)):
             if value == 0:
@@ -214,30 +211,25 @@ class PieChartWidget(QWidget):
             
             percentage = (value / total) * 100
             
-            # Calculate row and column based on displayed items, not total items
-            row = slice_index // legend_items_per_row
-            col = slice_index % legend_items_per_row
-            
-            x_pos = legend_x_start + col * max_width_per_column
-            y_pos = legend_y + row * row_height
-            
             # Draw color swatch with correct color for this slice - explicitly set brush and pen
             color_hex = self.colors[slice_index % len(self.colors)]
             color = QColor(color_hex)
             painter.setBrush(QBrush(color))
             painter.setPen(QPen(QColor("#555"), 1))
-            painter.drawRect(x_pos, y_pos - 8, 14, 14)
+            painter.drawRect(legend_x, current_y - 8, 14, 14)
             
-            # Draw category name and percentage
+            # Draw category name and percentage to the right of swatch
             legend_font = painter.font()
-            legend_font.setPointSize(9)
+            legend_font.setPointSize(10)
             painter.setFont(legend_font)
             painter.setPen(QPen(QColor("#e0e0e0")))
             
             text = f"{label} ({percentage:.1f}%)"
-            painter.drawText(x_pos + 20, y_pos - 5, max_width_per_column - 20, 18,
+            max_text_width = self.width() - legend_x - 35
+            painter.drawText(legend_x + 20, current_y - 8, max_text_width, 18,
                            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, text)
             
+            current_y += row_height
             slice_index += 1
         
         # Reset painter state before drawing tooltip
@@ -367,18 +359,9 @@ class EnhancedStatsWindow(QWidget):
         sep.setStyleSheet("color: #444;")
         main_layout.addWidget(sep)
         
-        # Tab widget for different views
-        tabs = QTabWidget()
-        
-        # Overview Tab
+        # Overview content directly (no tabs)
         overview_widget = self._create_overview_tab()
-        tabs.addTab(overview_widget, "Overview")
-        
-        # Charts Tab
-        charts_widget = self._create_charts_tab()
-        tabs.addTab(charts_widget, "Charts and Trends")
-        
-        main_layout.addWidget(tabs, 1)
+        main_layout.addWidget(overview_widget, 1)
     
     def changeEvent(self, event):
         """Handle visibility changes to manage refresh timer"""
@@ -485,25 +468,61 @@ class EnhancedStatsWindow(QWidget):
         
         content_layout.addLayout(row2_layout)
         
-        # Most locked items section
-        content_layout.addSpacing(20)
-        most_locked_label = QLabel("📊 Most Locked Items")
-        font = QFont()
-        font.setPointSize(14)
-        font.setBold(True)
-        most_locked_label.setFont(font)
-        content_layout.addWidget(most_locked_label)
+        # Pie chart and statistics section at bottom
+        content_layout.addSpacing(30)
+        stats_section_label = QLabel("📊 Distribution & Statistics")
+        stats_font = QFont()
+        stats_font.setPointSize(14)
+        stats_font.setBold(True)
+        stats_section_label.setFont(stats_font)
+        content_layout.addWidget(stats_section_label)
+        
+        # Horizontal layout: Pie chart on left, statistics on right
+        pie_stats_layout = QHBoxLayout()
+        pie_stats_layout.setSpacing(20)
+        
+        # LEFT: Pie chart
+        self.pie_chart = PieChartWidget(title="Item Type Distribution")
+        self.pie_chart.setMinimumHeight(320)
+        self.pie_chart.setMaximumHeight(400)
+        pie_stats_layout.addWidget(self.pie_chart, 1)  # Takes 1 proportion
+        
+        # RIGHT: Statistics panel
+        stats_panel = QWidget()
+        stats_panel.setStyleSheet("""
+            QWidget {
+                background-color: #2a2a2a;
+                border-radius: 8px;
+                border: 1px solid #3a3a3a;
+            }
+        """)
+        stats_panel_layout = QVBoxLayout(stats_panel)
+        stats_panel_layout.setContentsMargins(20, 20, 20, 20)
+        stats_panel_layout.setSpacing(15)
+        
+        # Most locked items
+        most_locked_label = QLabel("🔒 Most Locked Items")
+        most_locked_font = QFont()
+        most_locked_font.setPointSize(12)
+        most_locked_font.setBold(True)
+        most_locked_label.setFont(most_locked_font)
+        stats_panel_layout.addWidget(most_locked_label)
         
         self.most_locked_widget = QLabel("Loading...")
         self.most_locked_widget.setStyleSheet("""
             QLabel {
-                background-color: #2a2a2a;
+                background-color: #1e1e1e;
                 padding: 15px;
                 border-radius: 4px;
                 color: #b0b0b0;
             }
         """)
-        content_layout.addWidget(self.most_locked_widget)
+        stats_panel_layout.addWidget(self.most_locked_widget)
+        
+        stats_panel_layout.addStretch()
+        pie_stats_layout.addWidget(stats_panel, 1)  # Takes 1 proportion (equal with pie chart)
+        
+        content_layout.addLayout(pie_stats_layout)
         
         content_layout.addStretch()
         scroll.setWidget(content)
@@ -685,15 +704,6 @@ class EnhancedStatsWindow(QWidget):
             
             if data and sum(data) > 0:
                 self._draw_pie_chart(labels, data)
-            
-            # Line chart - timeline
-            timeline = stats.get('timeline', {})
-            dates = timeline.get('dates', [])
-            locks = timeline.get('locks', [])
-            unlocks = timeline.get('unlocks', [])
-            
-            if dates and (locks or unlocks):
-                self._draw_line_chart(dates, locks, unlocks)
         except Exception as e:
             print(f"Error updating charts: {e}")
     
@@ -722,33 +732,6 @@ class EnhancedStatsWindow(QWidget):
             
         except Exception as e:
             print(f"Error drawing pie chart: {e}")
-    
-    def _draw_line_chart(self, dates: list, locks: list, unlocks: list):
-        """Draw line chart for lock/unlock timeline"""
-        try:
-            self.line_chart.clear()
-            
-            x = list(range(len(dates)))
-            
-            # Plot lock events
-            lock_line = self.line_chart.plot(x, locks, pen=pg.mkPen('#FF6B6B', width=2), 
-                                            name='Locks', symbol='o', symbolSize=8)
-            
-            # Plot unlock events
-            unlock_line = self.line_chart.plot(x, unlocks, pen=pg.mkPen('#4ECDC4', width=2),
-                                              name='Unlocks', symbol='s', symbolSize=8)
-            
-            # Add legend
-            self.line_chart.addLegend()
-            
-            # Set x-axis labels (show every other date to avoid crowding)
-            ax = self.line_chart.getAxis('bottom')
-            ticks = []
-            for i in range(0, len(dates), max(1, len(dates) // 4)):
-                ticks.append((i, dates[i][-5:]))  # Show last 5 chars of date
-            ax.setTicks([ticks])
-        except Exception as e:
-            print(f"Error drawing line chart: {e}")
     
     @staticmethod
     def _format_timestamp(timestamp_str: str) -> str:

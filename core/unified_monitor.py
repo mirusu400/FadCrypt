@@ -117,6 +117,15 @@ class UnifiedMonitor:
         """
         app_monitors = []
         
+        # CRITICAL: Generic commands that should never be monitored
+        # These are too common and will match system processes
+        dangerous_paths = {
+            'env', 'sh', 'bash', 'zsh', 'python', 'python3', 
+            'node', 'java', 'perl', 'ruby', 'php',
+            'systemd', 'init', 'dbus', 'gdm', 'lightdm',
+            'x11', 'xorg', 'wayland', 'gnome', 'kde', 'plasma'
+        }
+        
         for app in applications:
             app_name = app["name"]
             app_path = app.get("path", "")
@@ -127,6 +136,12 @@ class UnifiedMonitor:
             # Cache process name
             process_name = os.path.basename(app_path) if app_path else app_name
             
+            # CRITICAL: Skip dangerous/generic paths
+            if process_name.lower() in dangerous_paths or app_path.lower() in dangerous_paths:
+                print(f"   [WARNING] Skipping app '{app_name}' - path '{app_path}' is too generic and unsafe")
+                print(f"             This prevents accidentally killing system processes!")
+                continue
+            
             # Handle .desktop files (Linux)
             if self.is_linux and app_path.endswith('.desktop'):
                 if self.get_exec_from_desktop:
@@ -136,11 +151,20 @@ class UnifiedMonitor:
             if not self.is_linux and process_name.endswith('.exe'):
                 process_name = process_name[:-4]
             
+            # Detect Chrome apps (but NOT Brave, Edge, or other Chromium-based browsers)
+            # Only actual Google Chrome should share processes
+            is_chrome_app = False
+            if 'google-chrome' in app_path.lower() or process_name.lower() == 'chrome':
+                is_chrome_app = True
+            # Don't treat Brave, Edge, Chromium, etc. as Chrome - they have separate processes
+            elif any(x in app_path.lower() for x in ['brave', 'edge', 'chromium', 'opera', 'vivaldi']):
+                is_chrome_app = False
+            
             app_monitors.append({
                 'name': app_name,
                 'path': app_path,
                 'process_name': process_name.lower(),
-                'is_chrome': 'chrome' in process_name.lower() or 'chrome' in app_path.lower(),
+                'is_chrome': is_chrome_app,
                 'no_process_count': 0
             })
         
@@ -214,9 +238,22 @@ class UnifiedMonitor:
                             if is_chrome and 'chrome' in pname:
                                 app_processes.extend(procs)
                                 break  # Found chrome processes, no need to continue
-                            # For non-Chrome apps: match by process_name or app_path
-                            elif process_name in cmdline_str or (app_path and app_path in cmdline_str):
-                                app_processes.append(proc)
+                            
+                            # For non-Chrome apps: STRICT matching to avoid false positives
+                            # CRITICAL: Don't match if app_path is too short (< 4 chars) - it's too generic
+                            elif app_path and len(app_path) >= 4:
+                                # Match full path (more reliable than substring matching)
+                                if app_path in cmdline_str:
+                                    app_processes.append(proc)
+                            # Fallback: match process_name only if it's specific enough (>= 5 chars)
+                            elif len(process_name) >= 5 and process_name in cmdline_str:
+                                # Additional check: ensure it's not a substring of another word
+                                # e.g., "env" shouldn't match "gnome-session-binary"
+                                import re
+                                # Use word boundary matching
+                                pattern = r'\b' + re.escape(process_name) + r'\b'
+                                if re.search(pattern, cmdline_str):
+                                    app_processes.append(proc)
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
                 
@@ -224,6 +261,78 @@ class UnifiedMonitor:
                     break  # Already found chrome processes
         
         return app_processes
+    
+    def _is_critical_system_process(self, proc: psutil.Process) -> bool:
+        """
+        Check if process is critical to system operation and should NEVER be killed.
+        
+        Args:
+            proc: Process object to check
+            
+        Returns:
+            True if process is critical and must not be killed
+        """
+        try:
+            proc_name = proc.name().lower()
+            
+            # CRITICAL: Desktop session and display managers (ALL major Linux DEs)
+            critical_processes = {
+                # GNOME
+                'gnome-session', 'gnome-session-binary', 'gnome-session-b', 'gnome-shell',
+                # GDM (GNOME Display Manager)
+                'gdm', 'gdm-wayland-session', 'gdm-x-session', 'gdm-session-worker',
+                # KDE Plasma
+                'plasma-session', 'plasmashell', 'kwin', 'kwin_x11', 'kwin_wayland',
+                # XFCE
+                'xfce4-session', 'xfwm4', 'xfdesktop',
+                # Cinnamon
+                'cinnamon-session', 'cinnamon',
+                # MATE
+                'mate-session', 'marco',
+                # Budgie
+                'budgie-daemon', 'budgie-panel', 'budgie-wm',
+                # LXQt
+                'lxqt-session', 'openbox',
+                # LXDE
+                'lxsession', 'lxpanel',
+                # Enlightenment
+                'enlightenment', 'enlightenment_start',
+                # Display Managers
+                'lightdm', 'sddm', 'xdm', 'lxdm', 'slim',
+                # Init systems
+                'systemd', 'init', 'upstart', 'runit', 'openrc',
+                # Display servers
+                'xorg', 'x11', 'wayland', 'weston', 'mutter',
+                # Core services
+                'dbus-daemon', 'dbus-launch', 'dbus-broker',
+                'pulseaudio', 'pipewire', 'pipewire-pulse', 'wireplumber',
+                'networkmanager', 'network-manager', 'nm-applet',
+                'bluetoothd', 'bluetooth', 'blueman',
+                # Compositors
+                'compton', 'picom', 'compiz',
+                # Window managers (standalone)
+                'i3', 'awesome', 'bspwm', 'dwm', 'qtile', 'herbstluftwm',
+                'icewm', 'fluxbox', 'blackbox', 'jwm',
+                # Panel/bars
+                'polybar', 'tint2', 'lemonbar', 'waybar',
+                # File managers that are part of DE
+                'nautilus-desktop', 'nemo-desktop', 'pcmanfm-desktop',
+            }
+            
+            # Check if process name matches any critical process
+            for critical in critical_processes:
+                if critical in proc_name:
+                    print(f"   [PROTECTED] Skipping critical system process: {proc_name} (PID: {proc.pid})")
+                    return True
+            
+            # Check if process is owned by root/system (PID < 1000 is usually system)
+            if proc.pid < 1000 and proc.pid > 1:  # Skip PID 0 and 1 (kernel/init)
+                return True
+            
+            return False
+            
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return True  # If we can't check it, treat it as critical to be safe
     
     def _block_processes(self, app_processes: List[psutil.Process], app_name: str):
         """
@@ -234,14 +343,25 @@ class UnifiedMonitor:
             app_name: Name of the app (for logging)
         """
         killed_count = 0
+        skipped_count = 0
+        
         for proc in app_processes:
             try:
                 proc_pid = proc.pid
                 proc_name = proc.name()
                 
+                # CRITICAL: Never kill system processes
+                if self._is_critical_system_process(proc):
+                    skipped_count += 1
+                    continue
+                
                 # Kill direct children first (non-recursive for performance)
                 for child in proc.children(recursive=False):
                     try:
+                        # CRITICAL: Check child too
+                        if self._is_critical_system_process(child):
+                            continue
+                        
                         print(f"   [KILL] Terminating child process: {child.name()} (PID: {child.pid})")
                         child.kill()
                     except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
@@ -255,6 +375,8 @@ class UnifiedMonitor:
                 print(f"   [SKIP] Could not kill process: {e}")
                 pass
         
+        if skipped_count > 0:
+            print(f"   [PROTECTED] Skipped {skipped_count} critical system process(es)")
         print(f"   [SUMMARY] Terminated {killed_count}/{len(app_processes)} processes for {app_name}")
     
     def _unified_monitor_loop(self, applications: List[Dict[str, str]]):

@@ -2366,6 +2366,17 @@ class MainWindowBase(QMainWindow):
                 return False
         else:
             print(f"❌ Incorrect password - access denied to {filename}")
+            
+            # Log failed unlock attempt for statistics
+            item_type = 'folder' if os.path.isdir(file_path) else 'file'
+            self.log_activity(
+                'failed_unlock',
+                filename,
+                item_type,
+                success=False,
+                details='Wrong password entered'
+            )
+            
             return False
     
     def save_monitoring_state_to_disk(self):
@@ -2613,6 +2624,15 @@ class MainWindowBase(QMainWindow):
                     self.app_list_widget.apps_data[app_name].get('unlock_count', 0) + 1
                 self.save_applications_config()
             
+            # Log successful unlock
+            self.log_activity(
+                'unlock',
+                app_name,
+                'application',
+                success=True,
+                details=f"Unlocked and launched {app_name}"
+            )
+            
             # Launch the app after successful unlock
             self._launch_app_after_unlock(app_name, app_path)
             
@@ -2620,6 +2640,15 @@ class MainWindowBase(QMainWindow):
             self.unified_monitor.remove_from_showing_dialog(app_name)
         else:
             print(f"❌ Password incorrect - Keeping {app_name} locked")
+            
+            # Log failed unlock attempt
+            self.log_activity(
+                'failed_unlock',
+                app_name,
+                'application',
+                success=False,
+                details="Wrong password entered"
+            )
             
             # Show error message for wrong password
             if password:  # Only show error if password was entered (not cancelled)
