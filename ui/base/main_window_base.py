@@ -2345,6 +2345,16 @@ class MainWindowBase(QMainWindow):
                     self.file_lock_manager.increment_unlock_count(abs_path)
                     print(f"📊 Incremented unlock count for {filename}")
                 
+                # Log successful unlock activity
+                item_type = 'folder' if is_dir else 'file'
+                self.log_activity(
+                    'unlock',
+                    filename,
+                    item_type,
+                    success=True,
+                    details=f"Temporarily unlocked {item_type}"
+                )
+                
                 # Show success dialog
                 from PyQt6.QtWidgets import QMessageBox
                 msg = QMessageBox(self)

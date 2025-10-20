@@ -59,11 +59,23 @@ class StatisticsManager:
         total_hours = uptime.total_seconds() / 3600
         total_minutes = uptime.total_seconds() / 60
         
+        # Format uptime showing only non-zero values (e.g., "30s", then "1m 30s", then "1h 5m 30s")
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if seconds > 0 or len(parts) == 0:  # Always show seconds if nothing else to show
+            parts.append(f"{seconds}s")
+        uptime_formatted = " ".join(parts)
+        
         return {
             'uptime_seconds': int(uptime.total_seconds()),
             'uptime_minutes': int(total_minutes),
             'uptime_hours': round(total_hours, 2),
-            'uptime_formatted': f"{days}d {hours}h {minutes}m {seconds}s",
+            'uptime_formatted': uptime_formatted,
             'first_startup': startup_time.isoformat(),
             'current_time': datetime.now().isoformat()
         }
@@ -120,7 +132,7 @@ class StatisticsManager:
         
         # Event statistics
         lock_events = len([e for e in events if 'lock' in e.get('event_type', '')])
-        unlock_events = len([e for e in events if 'unlock' in e.get('event_type', '')])
+        unlock_events = len([e for e in events if e.get('event_type') == 'unlock'])  # Only successful unlocks
         failed_attempts = len([e for e in events if e.get('event_type') == 'failed_unlock'])
         
         # Peak lock hour
@@ -288,8 +300,13 @@ class StatisticsManager:
             'unlocks': [timeline[d]['unlocks'] for d in all_dates]
         }
     
-    def get_duration_stats(self) -> Dict:
-        """Calculate duration statistics from activity logs"""
+    def get_duration_stats(self, monitoring_active: bool = False) -> Dict:
+        """
+        Calculate duration statistics from activity logs
+        
+        Args:
+            monitoring_active: If True, includes current durations for locked/unlocked items
+        """
         events = self._get_activity_events()
         
         # Find lock/unlock pairs to calculate durations
@@ -299,6 +316,10 @@ class StatisticsManager:
             item_name = event.get('item_name', 'Unknown')
             event_type = event.get('event_type', '').lower()
             timestamp = event.get('timestamp')
+            
+            # Skip generic "all_items" events - they don't represent specific item durations
+            if item_name == 'all_items':
+                continue
             
             if item_name and timestamp:
                 if 'lock' in event_type and 'unlock' not in event_type:
@@ -351,6 +372,19 @@ class StatisticsManager:
                         locked_since = None
                     unlocked_since = session['timestamp']
             
+            # IMPORTANT: Only include current durations if monitoring is ACTIVE
+            # (prevents counting durations from previous sessions when monitoring isn't running)
+            if monitoring_active:
+                if locked_since:
+                    current_lock_duration = (datetime.now() - locked_since).total_seconds()
+                    item_lock_durations.append(current_lock_duration)
+                    lock_durations.append(current_lock_duration)
+                
+                if unlocked_since:
+                    current_unlock_duration = (datetime.now() - unlocked_since).total_seconds()
+                    item_unlock_durations.append(current_unlock_duration)
+                    unlock_durations.append(current_unlock_duration)
+            
             # Store item-specific stats
             avg_lock = sum(item_lock_durations) / len(item_lock_durations) if item_lock_durations else 0
             avg_unlock = sum(item_unlock_durations) / len(item_unlock_durations) if item_unlock_durations else 0
@@ -374,6 +408,9 @@ class StatisticsManager:
         """Get all statistics including charts and durations"""
         base_stats = self.get_stats(use_cache=False)
         
+        # Check if monitoring is currently active
+        monitoring_active = self._is_monitoring_active()
+        
         return {
             'generated_at': datetime.now().isoformat(),
             'summary': base_stats.get('summary', {}),
@@ -381,6 +418,18 @@ class StatisticsManager:
             'items': base_stats.get('items', {}),
             'pie_chart': self.get_pie_chart_data(),
             'timeline': self.get_lock_unlock_timeline(days=7),
-            'durations': self.get_duration_stats(),
+            'durations': self.get_duration_stats(monitoring_active=monitoring_active),
             'session_uptime': self.get_session_uptime()
         }
+    
+    def _is_monitoring_active(self) -> bool:
+        """Check if monitoring is currently active"""
+        monitoring_state_file = os.path.join(self.config_folder, 'monitoring_state.json')
+        if os.path.exists(monitoring_state_file):
+            try:
+                with open(monitoring_state_file, 'r') as f:
+                    state = json.load(f)
+                return state.get('monitoring_active', False)
+            except:
+                pass
+        return False

@@ -450,17 +450,19 @@ class EnhancedStatsWindow(QWidget):
         
         row2_layout.addSpacing(15)  # Match grid spacing
         
-        # Avg Lock Duration (live data)
+        # Avg Lock Duration (live data - how long items stay locked)
         card6 = self._create_metric_card("⌛ Avg Lock Duration", "0s",
-                                        "Average amount of time items spend in locked state")
+                                        "Average time locked items remain in locked state (updates in real-time)",
+                                        info_callback=self.show_lock_duration_details)
         self.metric_cards['avg_lock_duration'] = card6
         row2_layout.addWidget(card6)
         
         row2_layout.addSpacing(15)  # Match grid spacing
         
-        # Avg Unlock Duration
+        # Avg Unlock Duration (how long items stay unlocked after being unlocked)
         card7 = self._create_metric_card("⏱️ Avg Unlock Duration", "0s",
-                                        "Average amount of time to unlock items")
+                                        "Average time items remain in unlocked state after being unlocked",
+                                        info_callback=self.show_unlock_duration_details)
         self.metric_cards['avg_unlock_duration'] = card7
         row2_layout.addWidget(card7)
         
@@ -506,6 +508,12 @@ class EnhancedStatsWindow(QWidget):
         most_locked_font.setPointSize(12)
         most_locked_font.setBold(True)
         most_locked_label.setFont(most_locked_font)
+        most_locked_label.setStyleSheet("""
+            QLabel {
+                padding: 10px 15px;
+                background-color: transparent;
+            }
+        """)
         stats_panel_layout.addWidget(most_locked_label)
         
         self.most_locked_widget = QLabel("Loading...")
@@ -591,8 +599,8 @@ class EnhancedStatsWindow(QWidget):
         layout.addLayout(charts_layout, 1)
         return widget
     
-    def _create_metric_card(self, title: str, value: str, tooltip: str = "") -> QFrame:
-        """Create a metric display card"""
+    def _create_metric_card(self, title: str, value: str, tooltip: str = "", info_callback=None) -> QFrame:
+        """Create a metric display card with optional info button"""
         card = QFrame()
         card.setStyleSheet("""
             QFrame {
@@ -609,12 +617,48 @@ class EnhancedStatsWindow(QWidget):
         layout.setSpacing(12)  # Increased space between title and value
         layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)  # Vertically center content
         
+        # Title with optional info button
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        title_row.setContentsMargins(0, 0, 0, 0)
+        
         title_label = QLabel(title)
         title_font = QFont()
         title_font.setPointSize(10)
         title_label.setFont(title_font)
         title_label.setStyleSheet("color: #999; padding: 4px 8px;")  # Added inner padding to label
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center text horizontally
+        
+        title_row.addStretch()
+        title_row.addWidget(title_label)
+        
+        # Add info button if callback provided
+        if info_callback:
+            info_btn = QPushButton("ℹ️")
+            info_btn.setFixedSize(24, 24)
+            info_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3a3a3a;
+                    border: 1px solid #4a4a4a;
+                    border-radius: 12px;
+                    color: #9C27B0;
+                    font-size: 14px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #4a4a4a;
+                    border-color: #9C27B0;
+                }
+                QPushButton:pressed {
+                    background-color: #5a5a5a;
+                }
+            """)
+            info_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            info_btn.clicked.connect(info_callback)
+            info_btn.setToolTip("Click for detailed breakdown")
+            title_row.addWidget(info_btn)
+        
+        title_row.addStretch()
         
         value_label = QLabel(value)
         value_font = QFont()
@@ -625,7 +669,7 @@ class EnhancedStatsWindow(QWidget):
         value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Center text horizontally
         
         layout.addStretch()  # Top stretch
-        layout.addWidget(title_label)
+        layout.addLayout(title_row)
         layout.addWidget(value_label)
         layout.addStretch()  # Bottom stretch
         
@@ -771,19 +815,173 @@ class EnhancedStatsWindow(QWidget):
     
     @staticmethod
     def _format_seconds(seconds: float) -> str:
-        """Convert seconds to human readable format"""
+        """Convert seconds to human readable format - only show non-zero values"""
         seconds = int(seconds)
         
         if seconds < 60:
             return f"{seconds}s"
         elif seconds < 3600:
             minutes = seconds // 60
+            secs = seconds % 60
+            # Only show seconds if non-zero
+            if secs > 0:
+                return f"{minutes}m {secs}s"
             return f"{minutes}m"
         elif seconds < 86400:
             hours = seconds // 3600
             minutes = (seconds % 3600) // 60
-            return f"{hours}h {minutes}m"
+            secs = seconds % 60
+            # Build result with non-zero values only
+            parts = []
+            if hours > 0:
+                parts.append(f"{hours}h")
+            if minutes > 0:
+                parts.append(f"{minutes}m")
+            if secs > 0:
+                parts.append(f"{secs}s")
+            return " ".join(parts) if parts else "0s"
         else:
             days = seconds // 86400
             hours = (seconds % 86400) // 3600
-            return f"{days}d {hours}h"
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            # Build result with non-zero values only
+            parts = []
+            if days > 0:
+                parts.append(f"{days}d")
+            if hours > 0:
+                parts.append(f"{hours}h")
+            if minutes > 0:
+                parts.append(f"{minutes}m")
+            if secs > 0:
+                parts.append(f"{secs}s")
+            return " ".join(parts) if parts else "0s"
+    
+    def show_lock_duration_details(self):
+        """Show detailed breakdown of lock durations per item"""
+        if not self.statistics_manager:
+            return
+        
+        try:
+            stats = self.statistics_manager.get_comprehensive_stats()
+            durations = stats.get('durations', {})
+            by_item = durations.get('by_item', {})
+            
+            # Build detailed message
+            message = "🔒 Lock Duration Breakdown\n\n"
+            message += "Shows how long each item has been in locked state:\n\n"
+            
+            if not by_item:
+                message += "No lock duration data yet.\n"
+                message += "Items will appear here once they've been locked."
+            else:
+                # Sort by lock duration (descending)
+                sorted_items = sorted(
+                    by_item.items(),
+                    key=lambda x: x[1].get('avg_lock_duration_seconds', 0),
+                    reverse=True
+                )
+                
+                for item_name, data in sorted_items[:10]:  # Top 10 items
+                    lock_dur = data.get('avg_lock_duration_seconds', 0)
+                    lock_sessions = data.get('total_lock_sessions', 0)
+                    if lock_dur > 0:
+                        dur_str = self._format_seconds(lock_dur)
+                        message += f"• {item_name}\n"
+                        message += f"  Avg locked: {dur_str} ({lock_sessions} sessions)\n\n"
+            
+            # Show in message box
+            from PyQt6.QtWidgets import QMessageBox
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Lock Duration Details")
+            msg.setText(message)
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: #2a2a2a;
+                }
+                QMessageBox QLabel {
+                    color: #e0e0e0;
+                    font-size: 11pt;
+                    background-color: transparent;
+                }
+                QMessageBox QPushButton {
+                    background-color: #9C27B0;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    min-width: 80px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #7B1FA2;
+                }
+            """)
+            msg.exec()
+        except Exception as e:
+            print(f"Error showing lock duration details: {e}")
+    
+    def show_unlock_duration_details(self):
+        """Show detailed breakdown of unlock durations per item"""
+        if not self.statistics_manager:
+            return
+        
+        try:
+            stats = self.statistics_manager.get_comprehensive_stats()
+            durations = stats.get('durations', {})
+            by_item = durations.get('by_item', {})
+            
+            # Build detailed message
+            message = "🔓 Unlock Duration Breakdown\n\n"
+            message += "Shows how long each item stayed in unlocked state:\n\n"
+            
+            if not by_item:
+                message += "No unlock duration data yet.\n"
+                message += "Items will appear here once they've been unlocked."
+            else:
+                # Sort by unlock duration (descending)
+                sorted_items = sorted(
+                    by_item.items(),
+                    key=lambda x: x[1].get('avg_unlock_duration_seconds', 0),
+                    reverse=True
+                )
+                
+                for item_name, data in sorted_items[:10]:  # Top 10 items
+                    unlock_dur = data.get('avg_unlock_duration_seconds', 0)
+                    unlock_sessions = data.get('total_unlock_sessions', 0)
+                    if unlock_dur > 0:
+                        dur_str = self._format_seconds(unlock_dur)
+                        message += f"• {item_name}\n"
+                        message += f"  Avg unlocked: {dur_str} ({unlock_sessions} sessions)\n\n"
+            
+            # Show in message box
+            from PyQt6.QtWidgets import QMessageBox
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Unlock Duration Details")
+            msg.setText(message)
+            msg.setIcon(QMessageBox.Icon.Information)
+            msg.setStyleSheet("""
+                QMessageBox {
+                    background-color: #2a2a2a;
+                }
+                QMessageBox QLabel {
+                    color: #e0e0e0;
+                    font-size: 11pt;
+                    background-color: transparent;
+                }
+                QMessageBox QPushButton {
+                    background-color: #9C27B0;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    min-width: 80px;
+                }
+                QMessageBox QPushButton:hover {
+                    background-color: #7B1FA2;
+                }
+            """)
+            msg.exec()
+        except Exception as e:
+            print(f"Error showing unlock duration details: {e}")
+
