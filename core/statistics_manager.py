@@ -403,15 +403,19 @@ class StatisticsManager:
                         unlock_durations.append(current_unlock_duration)
             
             # Store item-specific stats
-            avg_lock = sum(item_lock_durations) / len(item_lock_durations) if item_lock_durations else 0
-            avg_unlock = sum(item_unlock_durations) / len(item_unlock_durations) if item_unlock_durations else 0
-            
-            durations['by_item'][item_name] = {
-                'avg_lock_duration_seconds': round(avg_lock, 1),
-                'avg_unlock_duration_seconds': round(avg_unlock, 1),
-                'total_lock_sessions': len(item_lock_durations),
-                'total_unlock_sessions': len(item_unlock_durations)
-            }
+            # CRITICAL FIX: Only store stats if we have actual completed sessions
+            # OR if monitoring is active (live sessions count)
+            # This prevents showing stale "1 sessions" data when monitoring is stopped
+            if item_lock_durations or item_unlock_durations:
+                avg_lock = sum(item_lock_durations) / len(item_lock_durations) if item_lock_durations else 0
+                avg_unlock = sum(item_unlock_durations) / len(item_unlock_durations) if item_unlock_durations else 0
+                
+                durations['by_item'][item_name] = {
+                    'avg_lock_duration_seconds': round(avg_lock, 1),
+                    'avg_unlock_duration_seconds': round(avg_unlock, 1),
+                    'total_lock_sessions': len(item_lock_durations),
+                    'total_unlock_sessions': len(item_unlock_durations)
+                }
         
         # IMPORTANT: Check CURRENT state of ALL items (not just those with events)
         # This captures items that are locked by default when monitoring starts
