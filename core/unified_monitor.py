@@ -122,8 +122,8 @@ class UnifiedMonitor:
         
         # CRITICAL: Generic commands that should never be monitored
         # These are too common and will match system processes
-        dangerous_paths = {
-            'env', 'sh', 'bash', 'zsh', 'python', 'python3', 
+        dangerous_process_names = {
+            'sh', 'bash', 'zsh', 'python', 'python3', 
             'node', 'java', 'perl', 'ruby', 'php',
             'systemd', 'init', 'dbus', 'gdm', 'lightdm',
             'x11', 'xorg', 'wayland', 'gnome', 'kde', 'plasma'
@@ -136,12 +136,22 @@ class UnifiedMonitor:
             # Clean the path (remove quotes that might be in config)
             app_path = app_path.strip().strip('"').strip("'")
             
-            # Cache process name
-            process_name = os.path.basename(app_path) if app_path else app_name
+            # Handle "env" path specially - it means "find in PATH"
+            # We should use app_name as process_name for these apps
+            if app_path.lower() == "env":
+                process_name = app_name.lower()
+                # Convert app name to likely process name (e.g., "Android Studio" -> "studio")
+                # Take the last word as process name (more likely to match)
+                words = process_name.split()
+                if len(words) > 1:
+                    process_name = words[-1]  # e.g., "studio" from "android studio"
+            else:
+                # Cache process name from path
+                process_name = os.path.basename(app_path) if app_path else app_name
             
-            # CRITICAL: Skip dangerous/generic paths
-            if process_name.lower() in dangerous_paths or app_path.lower() in dangerous_paths:
-                print(f"   [WARNING] Skipping app '{app_name}' - path '{app_path}' is too generic and unsafe")
+            # CRITICAL: Skip dangerous/generic process names (but NOT "env" path marker)
+            if process_name.lower() in dangerous_process_names:
+                print(f"   [WARNING] Skipping app '{app_name}' - process name '{process_name}' is too generic and unsafe")
                 print(f"             This prevents accidentally killing system processes!")
                 continue
             
@@ -249,7 +259,14 @@ class UnifiedMonitor:
                                 break  # Found chrome processes, no need to continue
                             
                             # For non-Chrome apps: STRICT matching to avoid false positives
-                            # CRITICAL: Don't match if app_path is too short (< 4 chars) - it's too generic
+                            # Special handling for "env" path apps - match by process_name only
+                            elif app_path and app_path.lower() == "env":
+                                # "env" means find in PATH - match by process_name using word boundaries
+                                import re
+                                pattern = r'\b' + re.escape(process_name) + r'\b'
+                                if re.search(pattern, cmdline_str):
+                                    app_processes.append(proc)
+                            # For apps with real paths: STRICT path matching
                             elif app_path and len(app_path) >= 4:
                                 # Match full path (more reliable than substring matching)
                                 if app_path in cmdline_str:
@@ -257,7 +274,6 @@ class UnifiedMonitor:
                             # Fallback: match process_name only if it's specific enough (>= 5 chars)
                             elif len(process_name) >= 5 and process_name in cmdline_str:
                                 # Additional check: ensure it's not a substring of another word
-                                # e.g., "env" shouldn't match "gnome-session-binary"
                                 import re
                                 # Use word boundary matching
                                 pattern = r'\b' + re.escape(process_name) + r'\b'
