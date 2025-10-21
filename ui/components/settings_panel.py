@@ -56,8 +56,8 @@ class SettingsPanel(QWidget):
         left_frame.setSpacing(10)
         
         # Password Dialog Style
-        dialog_style_label = QLabel("Password Dialog Style:")
-        dialog_style_label.setStyleSheet("font-weight: bold;")
+        dialog_style_label = QLabel("🎨 Password Dialog Style")
+        dialog_style_label.setStyleSheet("font-size: 11px; font-weight: bold;")
         left_frame.addWidget(dialog_style_label)
         
         self.dialog_style_group = QButtonGroup()
@@ -113,8 +113,8 @@ class SettingsPanel(QWidget):
         left_frame.addSpacing(20)
         
         # Wallpaper Choice
-        wallpaper_label = QLabel("Full Screen Wallpaper:")
-        wallpaper_label.setStyleSheet("font-weight: bold;")
+        wallpaper_label = QLabel("🖼️  Full Screen Wallpaper")
+        wallpaper_label.setStyleSheet("font-size: 11px; font-weight: bold;")
         left_frame.addWidget(wallpaper_label)
         
         self.wallpaper_group = QButtonGroup()
@@ -168,8 +168,8 @@ class SettingsPanel(QWidget):
         right_frame = QVBoxLayout()
         right_frame.setSpacing(10)
         
-        preview_label = QLabel("Dialog Preview:")
-        preview_label.setStyleSheet("font-weight: bold;")
+        preview_label = QLabel("👁️  Dialog Preview")
+        preview_label.setStyleSheet("font-size: 11px; font-weight: bold;")
         right_frame.addWidget(preview_label)
         
         # Preview frame - no border, just dark background
@@ -205,8 +205,8 @@ class SettingsPanel(QWidget):
         bottom_frame.setSpacing(10)
         
         # Disable Main Loopholes
-        loopholes_title = QLabel("Disable Main loopholes")
-        loopholes_title.setStyleSheet("font-weight: bold;")
+        loopholes_title = QLabel("🔒 Disable Main Loopholes")
+        loopholes_title.setStyleSheet("font-size: 11px; font-weight: bold;")
         bottom_frame.addWidget(loopholes_title)
         
         self.lock_tools_checkbox = QCheckBox(
@@ -241,6 +241,51 @@ class SettingsPanel(QWidget):
         lock_tools_info.setStyleSheet("color: #666666; font-size: 11px; padding-left: 26px;")
         lock_tools_info.setWordWrap(True)
         bottom_frame.addWidget(lock_tools_info)
+        
+        # File Protection Section
+        separator_file_protection = QFrame()
+        separator_file_protection.setFrameShape(QFrame.Shape.HLine)
+        separator_file_protection.setFrameShadow(QFrame.Shadow.Sunken)
+        bottom_frame.addWidget(separator_file_protection)
+        
+        file_protection_title = QLabel("🛡️  Critical File Protection")
+        file_protection_title.setStyleSheet("font-size: 11px; font-weight: bold;")
+        bottom_frame.addWidget(file_protection_title)
+        
+        self.file_protection_checkbox = QCheckBox(
+            "Enable file protection during monitoring (Recommended)"
+        )
+        self.file_protection_checkbox.setChecked(True)  # Default: Enabled
+        self.file_protection_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #e0e0e0;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #666666;
+                border-radius: 3px;
+                background-color: #2a2a2a;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #d32f2f;
+                background-color: #d32f2f;
+                image: url(none);
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #888888;
+            }
+        """)
+        bottom_frame.addWidget(self.file_protection_checkbox)
+        
+        # Info text below checkbox
+        file_protection_info = QLabel(
+            self._get_file_protection_info_text()
+        )
+        file_protection_info.setStyleSheet("color: #666666; font-size: 11px; padding-left: 26px;")
+        file_protection_info.setWordWrap(True)
+        bottom_frame.addWidget(file_protection_info)
         
         # Uninstall Cleanup
         separator3 = QFrame()
@@ -322,6 +367,7 @@ class SettingsPanel(QWidget):
         self.dialog_style_group.buttonClicked.connect(self.on_settings_changed)
         self.wallpaper_group.buttonClicked.connect(self.on_settings_changed)
         self.lock_tools_checkbox.stateChanged.connect(self.on_settings_changed)
+        self.file_protection_checkbox.stateChanged.connect(self.on_settings_changed)
         
         # Initial preview update
         self.update_preview()
@@ -376,7 +422,8 @@ class SettingsPanel(QWidget):
         return {
             'dialog_style': 'simple' if self.simple_dialog_radio.isChecked() else 'fullscreen',
             'wallpaper': self.get_wallpaper_choice(),
-            'lock_tools': self.lock_tools_checkbox.isChecked()
+            'lock_tools': self.lock_tools_checkbox.isChecked(),
+            'file_protection_enabled': self.file_protection_checkbox.isChecked()
         }
         
     def get_wallpaper_choice(self):
@@ -410,6 +457,7 @@ class SettingsPanel(QWidget):
             self.lab_wallpaper_radio.setChecked(True)
             
         self.lock_tools_checkbox.setChecked(settings.get('lock_tools', False))  # Default: False for safety
+        self.file_protection_checkbox.setChecked(settings.get('file_protection_enabled', True))  # Default: True (enabled)
         
         self.on_settings_changed()
     
@@ -437,4 +485,21 @@ class SettingsPanel(QWidget):
                 "Enable this to COMPLETELY LOCK OUT these tools (no access at all). "
                 "For password-protected access instead, keep this DISABLED and add terminals to the Application tab. "
                 "(Tools: gnome-terminal, konsole, xterm, gnome-system-monitor, htop, top)"
+            )
+    
+    def _get_file_protection_info_text(self):
+        """Get platform-specific info text for file protection"""
+        if self.platform_name == "Windows":
+            return (
+                "Protects critical files (config, password, recovery codes) from deletion/modification during monitoring. "
+                "Files are made Hidden + System + ReadOnly. "
+                "When you stop monitoring, files will be automatically unlocked. "
+                "⚠️  Note: Requires administrator permission to protect and unprotect files."
+            )
+        else:  # Linux
+            return (
+                "Protects critical files (config, password, recovery codes) from deletion/modification during monitoring. "
+                "Files are made immutable (chattr +i) - even root cannot delete them! "
+                "When you stop monitoring, you'll be prompted to authorize file unlocking. "
+                "⚠️  Note: Requires authorization (pkexec/sudo) to protect and unprotect files."
             )

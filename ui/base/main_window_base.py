@@ -2237,27 +2237,57 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
-        # Protect critical files from deletion/tampering
-        print("🛡️  Protecting critical files...")
-        file_protection = get_file_protection_manager()
-        fadcrypt_folder = self.get_fadcrypt_folder()
+        # Protect critical files from deletion/tampering (if enabled in settings)
+        settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
+        file_protection_enabled = True  # Default: enabled
         
-        # List of critical files to protect
-        critical_files = [
-            os.path.join(fadcrypt_folder, "recovery_codes.json"),
-            os.path.join(fadcrypt_folder, "encrypted_password.bin"),
-            os.path.join(fadcrypt_folder, "apps_config.json"),
-        ]
+        try:
+            if os.path.exists(settings_file):
+                import json
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+                    file_protection_enabled = settings.get('file_protection_enabled', True)
+        except Exception as e:
+            print(f"[FileProtection] Could not read settings, using default: {e}")
         
-        # Filter to only existing files
-        existing_files = [f for f in critical_files if os.path.exists(f)]
-        
-        if existing_files:
-            success_count, errors = file_protection.protect_multiple_files(existing_files)
-            print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
-            if errors:
-                for error in errors:
-                    print(f"   ⚠️  {error}")
+        if file_protection_enabled:
+            # Show authorization dialog before requesting permissions
+            from ui.dialogs.file_protection_auth_dialog import FileProtectionAuthDialog
+            
+            platform_name = "Windows" if sys.platform == 'win32' else "Linux"
+            auth_dialog = FileProtectionAuthDialog(
+                parent=self,
+                platform_name=platform_name,
+                file_count=3
+            )
+            
+            dialog_result = auth_dialog.exec()
+            
+            if dialog_result == FileProtectionAuthDialog.DialogCode.Accepted:
+                print("🛡️  Protecting critical files...")
+                file_protection = get_file_protection_manager()
+                fadcrypt_folder = self.get_fadcrypt_folder()
+                
+                # List of critical files to protect
+                critical_files = [
+                    os.path.join(fadcrypt_folder, "recovery_codes.json"),
+                    os.path.join(fadcrypt_folder, "encrypted_password.bin"),
+                    os.path.join(fadcrypt_folder, "apps_config.json"),
+                ]
+                
+                # Filter to only existing files
+                existing_files = [f for f in critical_files if os.path.exists(f)]
+                
+                if existing_files:
+                    success_count, errors = file_protection.protect_multiple_files(existing_files)
+                    print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
+                    if errors:
+                        for error in errors:
+                            print(f"   ⚠️  {error}")
+            else:
+                print("⏭️  User skipped file protection")
+        else:
+            print("⏭️  File protection disabled in settings")
         
         # Log monitoring start event (needed for duration calculation)
         self.log_activity(

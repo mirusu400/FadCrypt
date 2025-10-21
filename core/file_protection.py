@@ -136,9 +136,11 @@ class FileProtectionManager:
         if IS_LINUX:
             return self._protect_multiple_files_linux_batch(existing_files)
         
-        # Windows: Protect each file individually
+        # Windows: Protect all files quickly (no UAC needed for attributes)
         success_count = 0
         errors = []
+        
+        print(f"[FileProtection] Protecting {len(existing_files)} files...")
         
         for file_path in existing_files:
             success, error = self.protect_file(file_path)
@@ -149,6 +151,9 @@ class FileProtectionManager:
             else:
                 errors.append(f"{os.path.basename(file_path)}: {error}")
                 print(f"[FileProtection] ❌ Failed to protect: {os.path.basename(file_path)} - {error}")
+        
+        if success_count > 0:
+            print(f"[FileProtection] 🔒 {success_count} files protected (HIDDEN + SYSTEM + READONLY)")
         
         return success_count, errors
     
