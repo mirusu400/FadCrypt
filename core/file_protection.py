@@ -113,16 +113,34 @@ class FileProtectionManager:
         """
         Protect multiple files at once.
         
+        On Linux: Uses batch chattr +i with single pkexec prompt for all files.
+        On Windows: Protects each file individually.
+        
         Args:
             file_paths: List of file paths to protect
             
         Returns:
             Tuple of (success_count: int, errors: List[str])
         """
+        # Filter existing files
+        existing_files = [f for f in file_paths if os.path.exists(f)]
+        
+        if not existing_files:
+            return 0, ["No files found to protect"]
+        
+        # Store original attributes for all files
+        for file_path in existing_files:
+            self._store_original_attributes(file_path)
+        
+        # Linux: Use batch protection with single pkexec prompt
+        if IS_LINUX:
+            return self._protect_multiple_files_linux_batch(existing_files)
+        
+        # Windows: Protect each file individually
         success_count = 0
         errors = []
         
-        for file_path in file_paths:
+        for file_path in existing_files:
             success, error = self.protect_file(file_path)
             if success:
                 success_count += 1
@@ -138,13 +156,52 @@ class FileProtectionManager:
         """
         Remove protection from all previously protected files.
         
+        On Linux: Uses batch chattr -i with single authorization for all files.
+        On Windows: Unprotects each file individually.
+        
         Returns:
             Tuple of (success_count: int, errors: List[str])
         """
+        if not self.protected_files:
+            return 0, []
+        
         success_count = 0
         errors = []
         
-        for file_path in self.protected_files[:]:  # Copy list to avoid modification during iteration
+        # Linux: Use batch unprotection with single authorization
+        if IS_LINUX and len(self.protected_files) > 1:
+            batch_success = self._try_batch_chattr_with_pkexec(self.protected_files, set_immutable=False)
+            
+            if not batch_success:
+                batch_success = self._try_batch_chattr_with_sudo(self.protected_files, set_immutable=False)
+            
+            if batch_success:
+                # Verify and remove from protected list
+                for file_path in self.protected_files[:]:
+                    filename = os.path.basename(file_path)
+                    if not self._verify_immutable_flag(file_path):
+                        success_count += 1
+                        self.protected_files.remove(file_path)
+                        print(f"[FileProtection] ✅ Unprotected: {filename}")
+                        
+                        # Restore permissions
+                        try:
+                            if file_path in self.original_attributes:
+                                mode = self.original_attributes[file_path]
+                                del self.original_attributes[file_path]
+                            else:
+                                mode = stat.S_IRUSR | stat.S_IWUSR  # 600
+                            os.chmod(file_path, mode)
+                        except Exception as e:
+                            print(f"[FileProtection] ⚠️  chmod failed for {filename}: {e}")
+                    else:
+                        errors.append(f"{filename}: Still immutable")
+                
+                print(f"[FileProtection] 🔓 Batch unprotected {success_count} files")
+                return success_count, errors
+        
+        # Fallback or Windows: Unprotect each file individually
+        for file_path in self.protected_files[:]:
             success, error = self.unprotect_file(file_path)
             if success:
                 success_count += 1
@@ -361,6 +418,194 @@ class FileProtectionManager:
                 return True, None
             else:
                 return False, f"Unprotection failed: {e}"
+    
+    def _protect_multiple_files_linux_batch(self, file_paths: List[str]) -> Tuple[int, List[str]]:
+        """
+        Protect multiple files with single pkexec authorization prompt (Linux only).
+        
+        Uses batch chattr +i command to set immutable flag on all files at once.
+        This provides much better UX - single authorization instead of 3+ prompts.
+        
+        Args:
+            file_paths: List of file paths to protect
+            
+        Returns:
+            Tuple of (success_count: int, errors: List[str])
+        """
+        if not file_paths:
+            return 0, ["No files to protect"]
+        
+        success_count = 0
+        errors = []
+        
+        # Try batch protection with pkexec (single GUI prompt for all files)
+        batch_success = self._try_batch_chattr_with_pkexec(file_paths, set_immutable=True)
+        
+        if batch_success:
+            # Verify all files got immutable flag
+            for file_path in file_paths:
+                filename = os.path.basename(file_path)
+                if self._verify_immutable_flag(file_path):
+                    success_count += 1
+                    self.protected_files.append(file_path)
+                    print(f"[FileProtection] ✅ IMMUTABLE: {filename} (batch chattr +i)")
+                else:
+                    errors.append(f"{filename}: Immutable flag not set")
+                    print(f"[FileProtection] ❌ Failed verification: {filename}")
+            
+            if success_count > 0:
+                print(f"[FileProtection] 🔒 {success_count} files CANNOT be deleted, even by root")
+                return success_count, errors
+        
+        # Fallback: Try batch with sudo
+        print(f"[FileProtection] ⚠️  pkexec batch failed, trying sudo...")
+        batch_success = self._try_batch_chattr_with_sudo(file_paths, set_immutable=True)
+        
+        if batch_success:
+            for file_path in file_paths:
+                filename = os.path.basename(file_path)
+                if self._verify_immutable_flag(file_path):
+                    success_count += 1
+                    self.protected_files.append(file_path)
+                    print(f"[FileProtection] ✅ IMMUTABLE: {filename} (batch sudo)")
+                else:
+                    errors.append(f"{filename}: Immutable flag not set")
+            
+            if success_count > 0:
+                print(f"[FileProtection] 🔒 {success_count} files CANNOT be deleted, even by root")
+                return success_count, errors
+        
+        # Last resort: Protect each file individually with fallback methods
+        print(f"[FileProtection] ⚠️  Batch protection failed, falling back to individual protection...")
+        
+        for file_path in file_paths:
+            success, error = self._protect_file_linux(file_path)
+            if success:
+                success_count += 1
+                self.protected_files.append(file_path)
+            else:
+                errors.append(f"{os.path.basename(file_path)}: {error}")
+        
+        return success_count, errors
+    
+    def _try_batch_chattr_with_pkexec(self, file_paths: List[str], set_immutable: bool) -> bool:
+        """
+        Try to set/unset immutable flag on multiple files with single pkexec prompt.
+        
+        Args:
+            file_paths: List of file paths
+            set_immutable: True to set +i, False to set -i
+            
+        Returns:
+            True if command succeeded, False otherwise
+        """
+        try:
+            import subprocess
+            
+            flag = "+i" if set_immutable else "-i"
+            
+            # Build command: pkexec chattr +i file1 file2 file3...
+            cmd = ['pkexec', 'chattr', flag] + file_paths
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                action = "protected" if set_immutable else "unprotected"
+                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files with single authorization")
+                return True
+            else:
+                stderr = result.stderr.strip()
+                if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
+                    print(f"[FileProtection] ⚠️  User cancelled batch authorization")
+                else:
+                    print(f"[FileProtection] ⚠️  Batch pkexec failed: {stderr}")
+                return False
+                
+        except FileNotFoundError:
+            print(f"[FileProtection] ⚠️  pkexec not found")
+            return False
+        except subprocess.TimeoutExpired:
+            print(f"[FileProtection] ⚠️  pkexec timeout")
+            return False
+        except Exception as e:
+            print(f"[FileProtection] ⚠️  Batch pkexec exception: {e}")
+            return False
+    
+    def _try_batch_chattr_with_sudo(self, file_paths: List[str], set_immutable: bool) -> bool:
+        """
+        Try to set/unset immutable flag on multiple files with sudo.
+        
+        Args:
+            file_paths: List of file paths
+            set_immutable: True to set +i, False to set -i
+            
+        Returns:
+            True if command succeeded, False otherwise
+        """
+        try:
+            import subprocess
+            
+            flag = "+i" if set_immutable else "-i"
+            
+            # Build command: sudo -n chattr +i file1 file2 file3...
+            cmd = ['sudo', '-n', 'chattr', flag] + file_paths
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if result.returncode == 0:
+                action = "protected" if set_immutable else "unprotected"
+                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files with sudo")
+                return True
+            else:
+                stderr = result.stderr.strip()
+                print(f"[FileProtection] ⚠️  Batch sudo failed: {stderr}")
+                return False
+                
+        except Exception as e:
+            print(f"[FileProtection] ⚠️  Batch sudo exception: {e}")
+            return False
+    
+    def _verify_immutable_flag(self, file_path: str) -> bool:
+        """
+        Verify that a file has the immutable flag set.
+        
+        Args:
+            file_path: Path to file to check
+            
+        Returns:
+            True if immutable flag is set, False otherwise
+        """
+        try:
+            import subprocess
+            
+            result = subprocess.run(
+                ['lsattr', file_path],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            
+            if result.returncode == 0:
+                # lsattr output format: "----i--------- /path/to/file"
+                # Check if 'i' flag is present in first column
+                output = result.stdout.strip()
+                if output and 'i' in output.split()[0]:
+                    return True
+            
+            return False
+            
+        except Exception:
+            return False
     
     def _try_chattr_with_pkexec(self, file_path: str, set_immutable: bool) -> Tuple[bool, Optional[str]]:
         """
