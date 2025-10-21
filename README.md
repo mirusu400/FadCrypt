@@ -110,29 +110,45 @@ Download the latest `windows setup installer` file directly from the [releases p
 
 ## Features:
 
-- **Application Locking:** Secure apps with an encrypted password; it can't be recovered if lost nor the tool can be stopped.
-- **Real-time Monitoring:** Detects and auto-recovers critical files if deleted.
-- **Auto-Startup:** Automatically enabled for every session after starting monitoring.
-- **Aesthetic UI:** Choose custom wallpapers or a minimal style with smooth animations.
+- **Application Locking:** Secure apps with encrypted password protection; password cannot be recovered if lost and tool cannot be stopped without it.
+- **Real-time File Protection:** Detects and auto-recovers critical files/folders if deleted or modified.
+- **Recovery Codes:** Generate and use recovery codes to reset forgotten password securely (non-bypassable, one-time use).
+- **Auto-Startup Monitoring:** Automatically starts monitoring on system boot with seamless initialization.
+- **Statistics & Activity Logging:** Detailed monitoring statistics with activity history and duration tracking.
+- **Customizable UI:** Choose password dialog styles, UI themes, and system tray integration.
+- **Cross-Platform:** Works on both Windows and Linux with platform-specific features.
 
-**Security:**
+**Security (Windows & Linux):**
 
-- **System Tools Disabled:** Disables Command Prompt, Task Manager, msconfig, Control Panel, and Registry Editor; a nightmare for a layman to bypass. (Manual PowerShell disabling is recommended for maximum security.)
-- **Encrypted Storage:** Password and config data are encrypted and backed up somewhere in `C://` drive.
-
-**Testing:**
-
-- **Testing Blocked Tools:** Confirm effectiveness by searching for Control Panel or Task Manager and try to open it during monitoring.
+- **System Tools Disabled During Monitoring:**
+  - **Windows:** Task Manager, Registry Editor, Command Prompt, Control Panel, msconfig
+  - **Linux:** Terminal emulators (gnome-terminal, konsole, xterm), system monitors (htop, top, gnome-system-monitor)
+- **Encrypted Storage:** All passwords and configuration data encrypted using industry-standard cryptography.
+- **File Immutability (Linux):** Uses PolicyKit with persistent authorization for seamless file protection via chattr.
+- **Single Instance Enforcement:** Only one FadCrypt instance can run at a time to prevent bypass attempts.
+- **Polkit Integration (Linux):** Professional-grade persistent authorization - authenticate once, works forever.
 
 **Extras:**
 
-- **Snake Game:** Enjoy the classic Snake game on the main tab or from the tray icon! :)
+- **Snake Game:** Classic arcade Snake game available on home tab for entertainment.
+- **System Tray Integration:** Quick access from system tray with minimize/restore functionality.
+- **Auto-Recovery:** Crashes are detected and monitored files are recovered automatically on next startup.
 
-**Upcoming Features:**
+**Implemented Features:**
 
-- **Password Recovery:** Recover forgotten passwords with ease.
-- **Logging and Alerts:** Includes screenshots, email alerts on wrong password attempts, and detailed logs.
-- **Community Input:** Integrates feedback for improved security and usability.
+✅ Password-protected app locking & monitoring
+✅ Real-time file/folder protection from deletion
+✅ Auto-recovery if files are deleted
+✅ Recovery codes for password reset
+✅ Auto-startup after system reboot (silent with --auto-monitor)
+✅ Single-instance enforcement
+✅ Detailed statistics & activity monitoring
+✅ Customizable dialog styles & preferences
+✅ Encrypted password & config storage
+✅ Critical files protected from tampering
+✅ Password-secured monitoring control
+✅ PolicyKit persistent authorization (Linux)
+✅ Cross-platform (Windows + Linux)
 
 ## Featured On
 

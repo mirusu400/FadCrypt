@@ -201,6 +201,7 @@ class MainWindowBase(QMainWindow):
         self.monitoring_active = False
         self.unified_monitor = None
         self.pending_password_result = None
+        self.auto_monitor_mode = False  # Set to True when launched with --auto-monitor flag
         
         # System tray (will be initialized after UI)
         self.system_tray = None
@@ -2440,6 +2441,9 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
+        # Update button state to reflect monitoring is active
+        self.update_monitoring_button_state(True)
+        
         # Protect critical files from deletion/tampering (if enabled in settings)
         settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
         file_protection_enabled = True  # Default: enabled
@@ -2453,7 +2457,8 @@ class MainWindowBase(QMainWindow):
         except Exception as e:
             print(f"[FileProtection] Could not read settings, using default: {e}")
         
-        if file_protection_enabled:
+        # Skip file protection dialog in auto-monitor mode (silent startup)
+        if file_protection_enabled and not self.auto_monitor_mode:
             # Show authorization dialog before requesting permissions
             from ui.dialogs.file_protection_auth_dialog import FileProtectionAuthDialog
             
@@ -2489,6 +2494,26 @@ class MainWindowBase(QMainWindow):
                             print(f"   ⚠️  {error}")
             else:
                 print("⏭️  User skipped file protection")
+        elif file_protection_enabled and self.auto_monitor_mode:
+            # Auto-monitor mode: silently protect files without user prompt
+            print("🛡️  Auto-protecting critical files (silent startup)...")
+            file_protection = get_file_protection_manager()
+            fadcrypt_folder = self.get_fadcrypt_folder()
+            
+            critical_files = [
+                os.path.join(fadcrypt_folder, "recovery_codes.json"),
+                os.path.join(fadcrypt_folder, "encrypted_password.bin"),
+                os.path.join(fadcrypt_folder, "apps_config.json"),
+            ]
+            
+            existing_files = [f for f in critical_files if os.path.exists(f)]
+            
+            if existing_files:
+                success_count, errors = file_protection.protect_multiple_files(existing_files)
+                print(f"✅ Protected {success_count}/{len(existing_files)} critical files (auto-startup)")
+                if errors:
+                    for error in errors:
+                        print(f"   ⚠️  {error}")
         else:
             print("⏭️  File protection disabled in settings")
         
@@ -2907,7 +2932,14 @@ class MainWindowBase(QMainWindow):
         """
         Check if monitoring was active during last session (crash/power loss).
         If so, prompt user to unlock files since they're still locked.
+        
+        SKIP in auto-monitor mode - it's intentional startup, not a crash.
         """
+        # Skip crash recovery in auto-monitor mode (intentional startup with monitoring)
+        if self.auto_monitor_mode:
+            print("⏭️  Skipping crash recovery check (auto-monitor startup)")
+            return
+        
         state_file = os.path.join(self.get_fadcrypt_folder(), 'monitoring_state.json')
         
         # Check if state file exists and indicates monitoring was active

@@ -19,6 +19,19 @@ case "$1" in
         else
             echo "FadCrypt binary not found, skipping cleanup"
         fi
+        
+        # Remove polkit policy (only on full removal, not upgrade)
+        if [ "$1" = "remove" ]; then
+            echo "Removing polkit policy..."
+            if [ -f /usr/share/polkit-1/actions/com.fadsec.fadcrypt.policy ]; then
+                rm -f /usr/share/polkit-1/actions/com.fadsec.fadcrypt.policy
+                # Reload polkit to remove policy
+                if command -v systemctl >/dev/null 2>&1; then
+                    systemctl try-restart polkit.service 2>/dev/null || true
+                fi
+                echo "✅ Polkit policy removed"
+            fi
+        fi
         ;;
         
     failed-upgrade)

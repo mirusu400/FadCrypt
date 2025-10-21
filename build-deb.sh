@@ -42,6 +42,8 @@ mkdir -p fadcrypt-deb/usr/bin
 mkdir -p fadcrypt-deb/usr/share/applications
 mkdir -p fadcrypt-deb/usr/share/pixmaps
 mkdir -p fadcrypt-deb/usr/share/doc/fadcrypt
+mkdir -p fadcrypt-deb/usr/share/polkit-1/actions
+mkdir -p fadcrypt-deb/usr/libexec/fadcrypt
 
 # Copy files
 echo "Copying files..."
@@ -51,11 +53,25 @@ cp img/1.png fadcrypt-deb/usr/share/pixmaps/fadcrypt.png
 cp LICENSE fadcrypt-deb/usr/share/doc/fadcrypt/
 cp README.md fadcrypt-deb/usr/share/doc/fadcrypt/
 
+# Copy polkit policy and helper script
+echo "Installing polkit policy for persistent elevated privileges..."
+cp polkit/dev.faded.fadcrypt.policy fadcrypt-deb/usr/share/polkit-1/actions/
+cp polkit/fadcrypt-file-protection-helper.sh fadcrypt-deb/usr/libexec/fadcrypt/
+chmod 755 fadcrypt-deb/usr/libexec/fadcrypt/fadcrypt-file-protection-helper.sh
+chmod 644 fadcrypt-deb/usr/share/polkit-1/actions/dev.faded.fadcrypt.policy
+
 # Copy prerm script for cleanup on uninstall
 if [ -f debian/prerm ]; then
     cp debian/prerm fadcrypt-deb/DEBIAN/
     chmod 755 fadcrypt-deb/DEBIAN/prerm
     echo "Added prerm script for automatic cleanup on uninstall"
+fi
+
+# Copy postinst script for polkit setup
+if [ -f debian/postinst ]; then
+    cp debian/postinst fadcrypt-deb/DEBIAN/
+    chmod 755 fadcrypt-deb/DEBIAN/postinst
+    echo "Added postinst script for polkit policy setup"
 fi
 
 # Set permissions

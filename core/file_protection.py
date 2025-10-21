@@ -496,6 +496,7 @@ class FileProtectionManager:
     def _try_batch_chattr_with_pkexec(self, file_paths: List[str], set_immutable: bool) -> bool:
         """
         Try to set/unset immutable flag on multiple files with single pkexec prompt.
+        Uses polkit policy for persistent authorization - no repeated prompts after first grant.
         
         Args:
             file_paths: List of file paths
@@ -507,9 +508,37 @@ class FileProtectionManager:
         try:
             import subprocess
             
-            flag = "+i" if set_immutable else "-i"
+            # Try helper script first (uses polkit policy for persistence)
+            helper_script = "/usr/libexec/fadcrypt/fadcrypt-file-protection-helper.sh"
+            if os.path.exists(helper_script):
+                action = "protect" if set_immutable else "unprotect"
+                cmd = ['pkexec', helper_script, action] + file_paths
+                
+                print(f"[FileProtection] Using polkit policy helper for persistent authorization...")
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0:
+                    action_text = "protected" if set_immutable else "unprotected"
+                    print(f"[FileProtection] ✅ Batch {action_text} {len(file_paths)} files (polkit)")
+                    print(f"[FileProtection] ℹ️  Authorization persists - no more prompts needed!")
+                    return True
+                else:
+                    stderr = result.stderr.strip()
+                    if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
+                        print(f"[FileProtection] ⚠️  User cancelled authorization")
+                    else:
+                        print(f"[FileProtection] ⚠️  Helper script failed: {stderr}")
+                    return False
             
-            # Build command: pkexec chattr +i file1 file2 file3...
+            # Fallback: direct chattr with pkexec (standard method)
+            print(f"[FileProtection] Helper script not found, using direct pkexec...")
+            flag = "+i" if set_immutable else "-i"
             cmd = ['pkexec', 'chattr', flag] + file_paths
             
             result = subprocess.run(
@@ -521,7 +550,7 @@ class FileProtectionManager:
             
             if result.returncode == 0:
                 action = "protected" if set_immutable else "unprotected"
-                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files with single authorization")
+                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files")
                 return True
             else:
                 stderr = result.stderr.strip()

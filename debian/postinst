@@ -1,0 +1,31 @@
+#!/bin/bash
+#
+# FadCrypt postinst script
+# Runs after package installation to set up polkit policy
+#
+
+set -e
+
+case "$1" in
+    configure)
+        echo "Configuring FadCrypt polkit policy..."
+        
+        # Reload polkit rules to recognize new policy
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl try-restart polkit.service 2>/dev/null || true
+        fi
+        
+        echo "✅ FadCrypt polkit policy installed"
+        echo "   File protection will now work seamlessly without repeated sudo prompts"
+        ;;
+    
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

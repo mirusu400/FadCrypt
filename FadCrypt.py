@@ -281,7 +281,11 @@ def main():
     auto_monitor_mode = '--auto-monitor' in sys.argv
     
     if auto_monitor_mode:
-        print("🚀 Auto-monitor mode detected - will start monitoring automatically")
+        print("🚀 Auto-monitor mode detected - will start monitoring automatically (silent mode)")
+        # Pass flag to window so it knows to skip dialogs
+        window.auto_monitor_mode = True
+    else:
+        window.auto_monitor_mode = False
     
     # Show window after splash closes
     def show_window():

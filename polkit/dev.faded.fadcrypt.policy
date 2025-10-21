@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+
+<!--
+FadCrypt Polkit Policy
+Grants FadCrypt persistent elevated privileges for file protection without repeated prompts.
+This allows seamless auto-startup with monitoring enabled.
+-->
+
+<policyconfig>
+  <vendor>FadSec Lab</vendor>
+  <vendor_url>https://github.com/fadsec-lab</vendor_url>
+  <icon_name>fadcrypt</icon_name>
+
+  <!-- Policy for chattr file protection -->
+  <action id="dev.faded.fadcrypt.protect-files">
+    <description>Protect FadCrypt critical files</description>
+    <message>FadCrypt needs authorization to protect critical files using chattr</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/chattr</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <!-- Policy for FadCrypt auto-monitor startup -->
+  <action id="dev.faded.fadcrypt.auto-monitor">
+    <description>Start FadCrypt monitoring automatically</description>
+    <message>FadCrypt needs authorization to start monitoring on system boot</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/fadcrypt</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <!-- Policy for file locking operations -->
+  <action id="dev.faded.fadcrypt.lock-files">
+    <description>Lock/unlock files and folders</description>
+    <message>FadCrypt needs authorization to lock or unlock protected files</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/bin/chmod</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>
