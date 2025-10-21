@@ -124,9 +124,13 @@ Download the latest `windows setup installer` file directly from the [releases p
   - **Windows:** Task Manager, Registry Editor, Command Prompt, Control Panel, msconfig
   - **Linux:** Terminal emulators (gnome-terminal, konsole, xterm), system monitors (htop, top, gnome-system-monitor)
 - **Encrypted Storage:** All passwords and configuration data encrypted using industry-standard cryptography.
-- **File Immutability (Linux):** Uses PolicyKit with persistent authorization for seamless file protection via chattr.
+- **File Immutability & Elevation:**
+  - **Windows:** Task Scheduler-based privilege elevation with persistent session authorization (equivalent to PolicyKit)
+  - **Linux:** PolicyKit with persistent authorization for seamless file protection via chattr
 - **Single Instance Enforcement:** Only one FadCrypt instance can run at a time to prevent bypass attempts.
-- **Polkit Integration (Linux):** Professional-grade persistent authorization - authenticate once, works forever.
+- **Professional Authorization (Both Platforms):**
+  - **Windows:** Single UAC prompt cached per session via Task Scheduler
+  - **Linux:** Single authentication cached per session via PolicyKit (allow_active=yes)
 
 **Extras:**
 
@@ -147,7 +151,8 @@ Download the latest `windows setup installer` file directly from the [releases p
 ✅ Encrypted password & config storage
 ✅ Critical files protected from tampering
 ✅ Password-secured monitoring control
-✅ PolicyKit persistent authorization (Linux)
+✅ Windows: Task Scheduler-based privilege elevation (UAC caching)
+✅ Linux: PolicyKit persistent authorization (polkit integration)
 ✅ Cross-platform (Windows + Linux)
 
 ## Featured On
