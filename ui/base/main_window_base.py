@@ -218,8 +218,8 @@ class MainWindowBase(QMainWindow):
         
         self.init_ui()
         
-        # Check for crash recovery (orphaned locks from previous session)
-        self.check_crash_recovery()
+        # NOTE: Crash recovery check is called LATER after auto_monitor_mode flag is set
+        # See: FadCrypt.py - it sets window.auto_monitor_mode = True before calling check_crash_recovery()
         
         # Initialize system tray after UI
         self.init_system_tray()

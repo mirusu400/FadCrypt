@@ -329,6 +329,9 @@ def main():
     else:
         window.auto_monitor_mode = False
     
+    # NOW check for crash recovery (after auto_monitor_mode flag is set)
+    window.check_crash_recovery()
+    
     # Show window after splash closes
     def show_window():
         window.show()

@@ -422,9 +422,18 @@ class StatisticsManager:
         # CRITICAL: Only if monitoring is CURRENTLY ACTIVE (not from previous session)
         if monitoring_active:
             monitoring_start_time = self._get_monitoring_start_time()
-            # Verify this is a RECENT monitoring session (within last 24 hours)
-            # This prevents using stale start times from previous sessions
-            if monitoring_start_time and (datetime.now() - monitoring_start_time).total_seconds() < 86400:
+            # If no start time found, use current time (monitoring just started)
+            # This handles cases where stats are viewed immediately after monitoring starts
+            if not monitoring_start_time:
+                monitoring_start_time = datetime.now()
+            
+            # Verify this is a RECENT monitoring session
+            # Allow flexibility: if start time is in future (clock skew) or within reasonable range
+            # If more than 24 hours, skip this (prevents stale data from previous sessions)
+            time_diff = (datetime.now() - monitoring_start_time).total_seconds()
+            is_recent_session = time_diff >= -60 and time_diff < 86400  # -60 allows for clock skew
+            
+            if is_recent_session:
                 config = self._get_config()
                 unlocked_apps = self._get_monitoring_state().get('unlocked_apps', [])
                 unlocked_files = self._get_monitoring_state().get('unlocked_files', [])
