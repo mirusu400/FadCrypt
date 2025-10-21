@@ -26,6 +26,7 @@ from core.config_manager import ConfigManager
 from core.application_manager import ApplicationManager
 from core.activity_manager import ActivityManager
 from core.statistics_manager import StatisticsManager
+from core.file_protection import get_file_protection_manager
 
 # Import version info
 from version import __version__, __version_code__
@@ -452,6 +453,10 @@ class MainWindowBase(QMainWindow):
                 # Stop monitoring first
                 if self.unified_monitor:
                     self.unified_monitor.stop_monitoring()
+                # Unprotect critical files
+                print("🔓 Unprotecting critical files on exit...")
+                file_protection = get_file_protection_manager()
+                file_protection.unprotect_all_files()
                 # Really exit the application
                 from PyQt6.QtWidgets import QApplication
                 # Cleanup logs widget
@@ -469,6 +474,10 @@ class MainWindowBase(QMainWindow):
         else:
             # Not monitoring, exit without password
             print("✅ Exiting FadCrypt (no monitoring active)")
+            # Unprotect critical files (in case they were left protected)
+            print("🔓 Unprotecting critical files on exit...")
+            file_protection = get_file_protection_manager()
+            file_protection.unprotect_all_files()
             from PyQt6.QtWidgets import QApplication
             # Cleanup logs widget
             if hasattr(self, 'logs_tab_widget'):
@@ -2228,6 +2237,28 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
+        # Protect critical files from deletion/tampering
+        print("🛡️  Protecting critical files...")
+        file_protection = get_file_protection_manager()
+        fadcrypt_folder = self.get_fadcrypt_folder()
+        
+        # List of critical files to protect
+        critical_files = [
+            os.path.join(fadcrypt_folder, "recovery_codes.json"),
+            os.path.join(fadcrypt_folder, "encrypted_password.bin"),
+            os.path.join(fadcrypt_folder, "apps_config.json"),
+        ]
+        
+        # Filter to only existing files
+        existing_files = [f for f in critical_files if os.path.exists(f)]
+        
+        if existing_files:
+            success_count, errors = file_protection.protect_multiple_files(existing_files)
+            print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
+            if errors:
+                for error in errors:
+                    print(f"   ⚠️  {error}")
+        
         # Log monitoring start event (needed for duration calculation)
         self.log_activity(
             'start_monitoring',
@@ -2343,6 +2374,16 @@ class MainWindowBase(QMainWindow):
             if self.unified_monitor:
                 self.unified_monitor.stop_monitoring()
                 print("🛑 Monitoring stopped successfully")
+            
+            # Unprotect critical files
+            print("🔓 Unprotecting critical files...")
+            file_protection = get_file_protection_manager()
+            success_count, errors = file_protection.unprotect_all_files()
+            if success_count > 0:
+                print(f"✅ Unprotected {success_count} critical files")
+            if errors:
+                for error in errors:
+                    print(f"   ⚠️  {error}")
             
             # Stop file access monitoring
             if self.file_access_monitor:
