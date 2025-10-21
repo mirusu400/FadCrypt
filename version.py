@@ -3,8 +3,8 @@ FadCrypt Version Information
 Single source of truth for version across the application and build system.
 """
 
-__version__ = "1.0.0"
-__version_code__ = 4  # Increment this for each release
+__version__ = "2.0.0"
+__version_code__ = 5  # Increment this for each release
 
 # Package metadata
 PACKAGE_NAME = "fadcrypt"

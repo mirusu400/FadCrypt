@@ -129,6 +129,22 @@ class SingleInstanceLinux(SingleInstanceBase):
         """
         try:
             import fcntl
+            import psutil
+            
+            # Check if lock file exists and contains a stale PID
+            if os.path.exists(self.lock_file):
+                try:
+                    with open(self.lock_file, 'r') as f:
+                        pid_str = f.read().strip()
+                        if pid_str:
+                            pid = int(pid_str)
+                            # Check if process with this PID exists
+                            if not psutil.pid_exists(pid):
+                                # Stale lock file - remove it
+                                print(f"🧹 Removing stale lock file (process {pid} no longer exists)")
+                                os.remove(self.lock_file)
+                except Exception as e:
+                    print(f"Warning: Could not check stale lock: {e}")
             
             # Open lock file
             self.lock_fd = open(self.lock_file, 'w')

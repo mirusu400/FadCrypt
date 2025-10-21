@@ -6,8 +6,142 @@ Modern application locker with PyQt6 UI
 Detects platform and loads appropriate platform-specific main window.
 """
 
+# CRITICAL: Handle --cleanup flag FIRST, before any GUI imports
+# This is called by the uninstaller to restore disabled tools
 import sys
 import os
+
+if '--cleanup' in sys.argv:
+    import subprocess
+    import platform
+    print("[CLEANUP] Starting FadCrypt cleanup...", flush=True)
+    
+    try:
+        system = platform.system()
+        
+        if system == "Linux":
+            # Get user's home directory (handle sudo context)
+            if 'SUDO_USER' in os.environ:
+                import pwd
+                user_home = pwd.getpwnam(os.environ['SUDO_USER']).pw_dir
+                print(f"[CLEANUP] Running as sudo, user home: {user_home}", flush=True)
+            else:
+                user_home = os.path.expanduser('~')
+                print(f"[CLEANUP] User home: {user_home}", flush=True)
+            
+            fadcrypt_folder = os.path.join(user_home, '.config', 'FadCrypt')
+            
+            # List of common system tools that might have been disabled
+            all_tools = [
+                '/usr/bin/gnome-terminal',
+                '/usr/bin/konsole',
+                '/usr/bin/xterm',
+                '/usr/bin/gnome-system-monitor',
+                '/usr/bin/htop',
+                '/usr/bin/top',
+                '/usr/bin/gnome-control-center'
+            ]
+            
+            print(f"[CLEANUP] Checking {len(all_tools)} common system tools...", flush=True)
+            
+            # Find tools that need restoring
+            tools_to_restore = []
+            for tool in all_tools:
+                if os.path.exists(tool):
+                    try:
+                        stat_info = os.stat(tool)
+                        # Check if execute permission is missing (was disabled)
+                        if not (stat_info.st_mode & 0o111):
+                            tools_to_restore.append(tool)
+                            print(f"[CLEANUP] Will restore: {tool}", flush=True)
+                    except Exception as e:
+                        print(f"[CLEANUP] Error checking {tool}: {e}", flush=True)
+            
+            # Restore permissions for disabled tools
+            if tools_to_restore:
+                print(f"[CLEANUP] Restoring {len(tools_to_restore)} disabled tools...", flush=True)
+                chmod_commands = [f'chmod 755 "{tool}"' for tool in tools_to_restore]
+                full_command = ' && '.join(chmod_commands)
+                
+                # Direct chmod (prerm script runs with root)
+                result = subprocess.run(['bash', '-c', full_command], 
+                                      capture_output=True, 
+                                      text=True,
+                                      check=False)
+                
+                if result.returncode == 0:
+                    print(f"[CLEANUP] ✅ Restored {len(tools_to_restore)} tools", flush=True)
+                else:
+                    print(f"[CLEANUP] ⚠️ Warning: {result.stderr}", flush=True)
+            else:
+                print("[CLEANUP] No disabled tools found", flush=True)
+            
+            # Remove lock file if it exists
+            lock_file = '/tmp/fadcrypt.lock'
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    print(f"[CLEANUP] ✅ Removed lock file: {lock_file}", flush=True)
+                except PermissionError:
+                    # Lock file might be owned by different user - cleanup script runs as root
+                    try:
+                        subprocess.run(['rm', '-f', lock_file], check=True)
+                        print(f"[CLEANUP] ✅ Removed lock file: {lock_file}", flush=True)
+                    except Exception as e:
+                        print(f"[CLEANUP] Warning: Could not remove lock file: {e}", flush=True)
+                except Exception as e:
+                    print(f"[CLEANUP] Warning: Could not remove lock file: {e}", flush=True)
+        
+        elif system == "Windows":
+            print("[CLEANUP] Windows cleanup - restoring system tools...", flush=True)
+            import winreg
+            
+            # Registry keys that FadCrypt may have disabled
+            keys_to_restore = [
+                (r'Software\Policies\Microsoft\Windows\System', 'DisableCMD'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableTaskMgr'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\Explorer', 'NoControlPanel'),
+                (r'Software\Microsoft\Windows\CurrentVersion\Policies\System', 'DisableRegistryTools')
+            ]
+            
+            restored_count = 0
+            for reg_path, value_name in keys_to_restore:
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_SET_VALUE)
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_DWORD, 0)  # 0 = enabled
+                    winreg.CloseKey(key)
+                    restored_count += 1
+                    print(f"[CLEANUP] Restored: {value_name}", flush=True)
+                except FileNotFoundError:
+                    pass  # Key doesn't exist
+                except Exception as e:
+                    print(f"[CLEANUP] Warning: Could not restore {value_name}: {e}", flush=True)
+            
+            # Remove from Windows startup
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                   r"Software\Microsoft\Windows\CurrentVersion\Run",
+                                   0, winreg.KEY_SET_VALUE)
+                winreg.DeleteValue(key, "FadCrypt")
+                winreg.CloseKey(key)
+                print("[CLEANUP] Removed from Windows startup", flush=True)
+            except FileNotFoundError:
+                pass  # Not in startup
+            except Exception as e:
+                print(f"[CLEANUP] Warning: Could not remove startup entry: {e}", flush=True)
+            
+            print(f"[CLEANUP] ✅ Restored {restored_count} Windows settings", flush=True)
+        
+        print("[CLEANUP] ✅ Cleanup completed successfully", flush=True)
+        sys.exit(0)
+        
+    except Exception as e:
+        print(f"[CLEANUP] ❌ Error during cleanup: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+# Normal startup continues below
 import platform
 import signal
 from pathlib import Path

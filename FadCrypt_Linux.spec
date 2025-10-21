@@ -1,36 +1,90 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
-import tkinterdnd2
-
-# Get tkdnd library path
-tkdnd_path = os.path.join(os.path.dirname(tkinterdnd2.__file__), 'tkdnd')
 
 block_cipher = None
 
 a = Analysis(
-    ['FadCrypt_Linux.py'],
+    ['FadCrypt.py'],
     pathex=[],
     binaries=[],
     datas=[
-        ('img', 'img'),
-        (tkdnd_path, 'tkinterdnd2/tkdnd'),
-        ('ttkbootstrap', 'ttkbootstrap'),  # Include ttkbootstrap themes
+        ('img', 'img'),  # All image assets
+        ('core', 'core'),  # Include all core modules
+        ('ui', 'ui'),  # Include all UI modules
+        ('core/fonts', 'core/fonts'),  # Include fonts for snake game
+        ('version.py', '.'),  # Version info
+        ('win_compat.py', '.'),  # Windows compatibility layer
+        ('win_mock.py', '.'),  # Mock Windows on Linux for testing
     ],
     hiddenimports=[
-        'tkinterdnd2',
-        'ttkbootstrap',
-        'ttkbootstrap.themes',
+        # Version module
+        'version',
+        # Core modules
+        'core',
+        'core.application_manager',
+        'core.autostart_manager',
+        'core.config_manager',
+        'core.crypto_manager',
+        'core.password_manager',
+        'core.snake_game',
+        'core.unified_monitor',
+        'core.file_access_monitor',
+        'core.file_lock_manager',
+        'core.file_monitor',
+        'core.file_protection',
+        'core.activity_manager',
+        'core.duration_tracker',
+        'core.recovery_manager',
+        'core.single_instance_manager',
+        'core.statistics_manager',
+        'core.linux',
+        'core.linux.file_lock_manager_linux',
+        # UI modules
+        'ui',
+        'ui.base',
+        'ui.base.main_window_base',
+        'ui.components',
+        'ui.components.about_panel',
+        'ui.components.app_grid_widget',
+        'ui.components.app_list_widget',
+        'ui.components.button_panel',
+        'ui.components.settings_panel',
+        'ui.components.splash_screen',
+        'ui.components.system_tray',
+        'ui.dialogs',
+        'ui.dialogs.add_application_dialog',
+        'ui.dialogs.app_scanner_dialog',
+        'ui.dialogs.edit_application_dialog',
+        'ui.dialogs.file_protection_auth_dialog',
+        'ui.dialogs.password_dialog',
+        'ui.dialogs.readme_dialog',
+        'ui.dialogs.recovery_dialog',
+        'ui.linux',
+        'ui.linux.main_window_linux',
+        # External dependencies - PyQt6
+        'PyQt6',
+        'PyQt6.QtWidgets',
+        'PyQt6.QtCore',
+        'PyQt6.QtGui',
+        'PyQt6.sip',
+        # External dependencies - Other
         'PIL',
-        'PIL._imagingtk',
-        'PIL._tkinter_finder',
+        'PIL.Image',
+        'PIL.ImageTk',
         'pystray',
         'pystray._xorg',
         'pygame',
-        'tkinterdnd2.TkinterDnD',
+        'pygame.mixer',
         'cryptography',
+        'cryptography.fernet',
+        'cryptography.hazmat',
+        'cryptography.hazmat.primitives',
+        'cryptography.hazmat.backends',
         'psutil',
         'watchdog',
+        'watchdog.observers',
+        'watchdog.events',
     ],
     hookspath=[],
     hooksconfig={},
