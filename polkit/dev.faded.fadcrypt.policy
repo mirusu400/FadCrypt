@@ -17,7 +17,7 @@ This allows seamless auto-startup with monitoring enabled.
   <!-- Policy for chattr file protection -->
   <action id="dev.faded.fadcrypt.protect-files">
     <description>Protect FadCrypt critical files</description>
-    <message>FadCrypt needs authorization to protect critical files using chattr</message>
+    <message>FadCrypt needs authorization to protect critical files. Your authentication will be cached for this session and will work automatically after system reboot. You will only be asked once.</message>
     <defaults>
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>

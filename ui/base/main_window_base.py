@@ -2457,47 +2457,44 @@ class MainWindowBase(QMainWindow):
         except Exception as e:
             print(f"[FileProtection] Could not read settings, using default: {e}")
         
-        # Skip file protection dialog in auto-monitor mode (silent startup)
-        if file_protection_enabled and not self.auto_monitor_mode:
-            # Show authorization dialog before requesting permissions
-            from ui.dialogs.file_protection_auth_dialog import FileProtectionAuthDialog
-            
-            platform_name = "Windows" if sys.platform == 'win32' else "Linux"
-            auth_dialog = FileProtectionAuthDialog(
-                parent=self,
-                platform_name=platform_name,
-                file_count=3
-            )
-            
-            dialog_result = auth_dialog.exec()
-            
-            if dialog_result == FileProtectionAuthDialog.DialogCode.Accepted:
-                print("🛡️  Protecting critical files...")
-                file_protection = get_file_protection_manager()
-                fadcrypt_folder = self.get_fadcrypt_folder()
-                
-                # List of critical files to protect
-                critical_files = [
-                    os.path.join(fadcrypt_folder, "recovery_codes.json"),
-                    os.path.join(fadcrypt_folder, "encrypted_password.bin"),
-                    os.path.join(fadcrypt_folder, "apps_config.json"),
-                ]
-                
-                # Filter to only existing files
-                existing_files = [f for f in critical_files if os.path.exists(f)]
-                
-                if existing_files:
-                    success_count, errors = file_protection.protect_multiple_files(existing_files)
-                    print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
-                    if errors:
-                        for error in errors:
-                            print(f"   ⚠️  {error}")
-            else:
-                print("⏭️  User skipped file protection")
-        elif file_protection_enabled and self.auto_monitor_mode:
-            # Auto-monitor mode: silently protect files without user prompt
-            print("🛡️  Auto-protecting critical files (silent startup)...")
+        # POLKIT-ONLY: No info dialog, go straight to polkit authorization
+        if file_protection_enabled:
+            print("🛡️  Requesting authorization to protect critical files via polkit...")
             file_protection = get_file_protection_manager()
+            fadcrypt_folder = self.get_fadcrypt_folder()
+            
+            # List of critical files to protect
+            critical_files = [
+                os.path.join(fadcrypt_folder, "recovery_codes.json"),
+                os.path.join(fadcrypt_folder, "encrypted_password.bin"),
+                os.path.join(fadcrypt_folder, "apps_config.json"),
+            ]
+            
+            # Filter to only existing files
+            existing_files = [f for f in critical_files if os.path.exists(f)]
+            
+            if existing_files:
+                success_count, errors = file_protection.protect_multiple_files(existing_files)
+                if success_count > 0:
+                    print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
+                    print(f"✅ Authorization cached for this session (works after reboot too!)")
+                else:
+                    error_msg = "❌ File protection failed - polkit authorization required to start monitoring"
+                    print(f"[ERROR] {error_msg}")
+                    self.show_message(
+                        "Authorization Required",
+                        "FadCrypt requires polkit authorization to protect critical files.\n\n"
+                        "Your password was either:\n"
+                        "  • Not entered correctly\n"
+                        "  • Authorization was cancelled\n"
+                        "  • Your system doesn't have polkit installed\n\n"
+                        "Monitoring cannot start without file protection."
+                    )
+                    # Stop monitoring since protection failed
+                    self.unified_monitor.stop_monitoring()
+                    self.monitoring_active = False
+                    self.update_monitoring_button_state(False)
+                    return
             fadcrypt_folder = self.get_fadcrypt_folder()
             
             critical_files = [

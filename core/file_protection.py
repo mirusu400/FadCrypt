@@ -299,65 +299,28 @@ class FileProtectionManager:
         """
         Protect file on Linux using immutable flag (chattr +i).
         
-        Protection hierarchy:
-        1. chattr +i with pkexec (PolicyKit GUI prompt - BEST)
-        2. chattr +i with sudo (terminal prompt - GOOD)
-        3. chattr +i without elevation (will likely fail - WEAK)
-        4. chmod 400 + fcntl lock (detectable but bypassable - LAST RESORT)
+        POLKIT-ONLY APPROACH: No fallbacks.
+        Requires PolicyKit authorization via pkexec - this is the ONLY supported method.
+        If polkit fails, file protection fails completely.
         
         Returns:
             Tuple of (success: bool, error_message: Optional[str])
         """
         filename = os.path.basename(file_path)
         
-        # Primary method: chattr +i with pkexec (GUI prompt)
+        # ENFORCE: Use ONLY pkexec (NO FALLBACKS)
+        print(f"[FileProtection] � Requesting polkit authorization for {filename}...")
         success, error = self._try_chattr_with_pkexec(file_path, set_immutable=True)
+        
         if success:
-            print(f"[FileProtection] ✅ IMMUTABLE: {filename} (chattr +i via pkexec)")
+            print(f"[FileProtection] ✅ IMMUTABLE: {filename}")
             print(f"[FileProtection] 🔒 File CANNOT be deleted, even by root")
             return True, None
         else:
-            print(f"[FileProtection] ⚠️  pkexec chattr failed: {error}")
-        
-        # Fallback 1: chattr +i with sudo (terminal prompt)
-        success, error = self._try_chattr_with_sudo(file_path, set_immutable=True)
-        if success:
-            print(f"[FileProtection] ✅ IMMUTABLE: {filename} (chattr +i via sudo)")
-            print(f"[FileProtection] 🔒 File CANNOT be deleted, even by root")
-            return True, None
-        else:
-            print(f"[FileProtection] ⚠️  sudo chattr failed: {error}")
-        
-        # Fallback 2: chattr +i without elevation (will likely fail)
-        success, error = self._try_chattr_immutable(file_path, set_immutable=True)
-        if success:
-            print(f"[FileProtection] ✅ IMMUTABLE: {filename} (chattr +i)")
-            print(f"[FileProtection] 🔒 File CANNOT be deleted, even by root")
-            return True, None
-        else:
-            print(f"[FileProtection] ⚠️  chattr without elevation failed: {error}")
-        
-        # Last resort: chmod 400 + fcntl lock (WEAK - only detectable by file monitor)
-        print(f"[FileProtection] ⚠️  CRITICAL: Could not set immutable flag!")
-        print(f"[FileProtection] ⚠️  Falling back to chmod 400 + file lock (WEAK protection)")
-        
-        try:
-            # Set restrictive permissions
-            os.chmod(file_path, stat.S_IRUSR)  # 400 - read-only for owner
-            print(f"[FileProtection] 📝 Permissions: 400 (read-only) on {filename}")
-        except Exception as e:
-            print(f"[FileProtection] ❌ chmod 400 failed: {e}")
-        
-        # Keep file descriptor open with lock (advisory only)
-        try:
-            import fcntl
-            fd = open(file_path, 'r')
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            self.file_locks[file_path] = fd
-            print(f"[FileProtection] 🔓 Advisory lock acquired on {filename}")
-        except Exception as e:
-            print(f"[FileProtection] ⚠️  File lock failed: {e}")
-        
+            # HARD FAIL - no fallbacks allowed
+            error_msg = f"❌ Polkit authorization failed: {error}"
+            print(f"[FileProtection] {error_msg}")
+            return False, error_msg
         print(f"[FileProtection] ⚠️  File CAN be deleted with rm/sudo - monitor will auto-restore")
         return True, None  # Still return success to not block monitoring
     
@@ -365,44 +328,21 @@ class FileProtectionManager:
         """
         Remove protection from file on Linux.
         
-        Removes immutable flag and restores permissions.
+        POLKIT-ONLY APPROACH: No fallbacks.
+        Removes immutable flag and restores permissions via pkexec only.
         """
         filename = os.path.basename(file_path)
         
-        # Release file lock if held (advisory lock from fallback)
-        if file_path in self.file_locks:
-            try:
-                import fcntl
-                fd = self.file_locks[file_path]
-                fcntl.flock(fd, fcntl.LOCK_UN)
-                fd.close()
-                del self.file_locks[file_path]
-                print(f"[FileProtection] 🔓 Released advisory lock on {filename}")
-            except Exception as e:
-                print(f"[FileProtection] ⚠️  Failed to release lock: {e}")
-        
-        # Remove immutable flag (try all methods)
-        immutable_removed = False
-        
-        # Try pkexec first (GUI prompt)
+        # ENFORCE: Use ONLY pkexec (NO FALLBACKS)
+        print(f"[FileProtection] � Requesting polkit authorization to unprotect {filename}...")
         success, error = self._try_chattr_with_pkexec(file_path, set_immutable=False)
-        if success:
-            print(f"[FileProtection] ✅ Immutable flag removed: {filename} (pkexec)")
-            immutable_removed = True
-        else:
-            # Try sudo (terminal prompt)
-            success, error = self._try_chattr_with_sudo(file_path, set_immutable=False)
-            if success:
-                print(f"[FileProtection] ✅ Immutable flag removed: {filename} (sudo)")
-                immutable_removed = True
-            else:
-                # Try without elevation
-                success, error = self._try_chattr_immutable(file_path, set_immutable=False)
-                if success:
-                    print(f"[FileProtection] ✅ Immutable flag removed: {filename}")
-                    immutable_removed = True
-                else:
-                    print(f"[FileProtection] ⚠️  Could not remove immutable flag: {error}")
+        
+        if not success:
+            error_msg = f"❌ Polkit authorization failed: {error}"
+            print(f"[FileProtection] {error_msg}")
+            return False, error_msg
+        
+        print(f"[FileProtection] ✅ Immutable flag removed: {filename}")
         
         # Restore original permissions
         try:
@@ -417,19 +357,16 @@ class FileProtectionManager:
             return True, None
             
         except Exception as e:
-            if immutable_removed:
-                # Immutable flag removed but chmod failed - still partially successful
-                print(f"[FileProtection] ⚠️  Immutable removed but chmod failed: {e}")
-                return True, None
-            else:
-                return False, f"Unprotection failed: {e}"
+            error_msg = f"Unprotection failed: {e}"
+            print(f"[FileProtection] ❌ {error_msg}")
+            return False, error_msg
     
     def _protect_multiple_files_linux_batch(self, file_paths: List[str]) -> Tuple[int, List[str]]:
         """
-        Protect multiple files with single pkexec authorization prompt (Linux only).
+        Protect multiple files with single pkexec authorization (Linux only).
         
+        POLKIT-ONLY APPROACH: No fallbacks. User must authenticate via polkit.
         Uses batch chattr +i command to set immutable flag on all files at once.
-        This provides much better UX - single authorization instead of 3+ prompts.
         
         Args:
             file_paths: List of file paths to protect
@@ -443,55 +380,35 @@ class FileProtectionManager:
         success_count = 0
         errors = []
         
-        # Try batch protection with pkexec (single GUI prompt for all files)
+        # ENFORCE: Use ONLY polkit (no fallbacks)
+        print(f"[FileProtection] 🔐 Requesting polkit authorization to protect {len(file_paths)} files...")
         batch_success = self._try_batch_chattr_with_pkexec(file_paths, set_immutable=True)
         
-        if batch_success:
-            # Verify all files got immutable flag
-            for file_path in file_paths:
-                filename = os.path.basename(file_path)
-                if self._verify_immutable_flag(file_path):
-                    success_count += 1
-                    self.protected_files.append(file_path)
-                    print(f"[FileProtection] ✅ IMMUTABLE: {filename} (batch chattr +i)")
-                else:
-                    errors.append(f"{filename}: Immutable flag not set")
-                    print(f"[FileProtection] ❌ Failed verification: {filename}")
-            
-            if success_count > 0:
-                print(f"[FileProtection] 🔒 {success_count} files CANNOT be deleted, even by root")
-                return success_count, errors
+        if not batch_success:
+            # Polkit failed - NO FALLBACK, HARD FAIL
+            error_msg = "❌ Polkit authorization required. File protection failed - monitoring cannot start."
+            print(f"[FileProtection] {error_msg}")
+            return 0, [error_msg]
         
-        # Fallback: Try batch with sudo
-        print(f"[FileProtection] ⚠️  pkexec batch failed, trying sudo...")
-        batch_success = self._try_batch_chattr_with_sudo(file_paths, set_immutable=True)
-        
-        if batch_success:
-            for file_path in file_paths:
-                filename = os.path.basename(file_path)
-                if self._verify_immutable_flag(file_path):
-                    success_count += 1
-                    self.protected_files.append(file_path)
-                    print(f"[FileProtection] ✅ IMMUTABLE: {filename} (batch sudo)")
-                else:
-                    errors.append(f"{filename}: Immutable flag not set")
-            
-            if success_count > 0:
-                print(f"[FileProtection] 🔒 {success_count} files CANNOT be deleted, even by root")
-                return success_count, errors
-        
-        # Last resort: Protect each file individually with fallback methods
-        print(f"[FileProtection] ⚠️  Batch protection failed, falling back to individual protection...")
-        
+        # Verify all files got immutable flag
         for file_path in file_paths:
-            success, error = self._protect_file_linux(file_path)
-            if success:
+            filename = os.path.basename(file_path)
+            if self._verify_immutable_flag(file_path):
                 success_count += 1
                 self.protected_files.append(file_path)
+                print(f"[FileProtection] ✅ IMMUTABLE: {filename}")
             else:
-                errors.append(f"{os.path.basename(file_path)}: {error}")
+                errors.append(f"{filename}: Immutable flag not set")
+                print(f"[FileProtection] ⚠️  Failed verification: {filename}")
         
-        return success_count, errors
+        if success_count > 0:
+            print(f"[FileProtection] 🔒 {success_count}/{len(file_paths)} files CANNOT be deleted, even by root")
+            print(f"[FileProtection] ℹ️  Authorization cached for this session - works after reboot too!")
+            return success_count, errors
+        else:
+            error_msg = "❌ File protection verification failed - all files. Monitoring cannot start."
+            print(f"[FileProtection] {error_msg}")
+            return 0, [error_msg]
     
     def _try_batch_chattr_with_pkexec(self, file_paths: List[str], set_immutable: bool) -> bool:
         """
