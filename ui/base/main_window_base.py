@@ -508,49 +508,30 @@ class MainWindowBase(QMainWindow):
         centered_buttons_layout = QHBoxLayout()
         centered_buttons_layout.addStretch()
         
-        self.start_button = QPushButton("Start Monitoring")
-        self.start_button.setFixedWidth(180)
-        self.start_button.setStyleSheet("""
+        # Dynamic Monitoring Button (replaces separate Start/Stop buttons)
+        self.monitoring_button = QPushButton("▶ Start Monitoring")
+        self.monitoring_button.setFixedSize(180, 44)  # Consistent size
+        self.monitoring_button.setStyleSheet("""
             QPushButton {
-                background-color: #d32f2f;
+                background-color: #2e7d32;
                 color: white;
                 font-size: 13px;
                 font-weight: bold;
-                padding: 10px 20px;
-                border-radius: 5px;
+                padding: 12px 20px;
+                border-radius: 6px;
                 border: none;
+                text-align: center;
             }
             QPushButton:hover {
-                background-color: #b71c1c;
+                background-color: #388e3c;
             }
             QPushButton:disabled {
-                background-color: #9e9e9e;
-                color: #616161;
+                background-color: #2a2a2a;
+                color: #666666;
             }
         """)
-        self.start_button.clicked.connect(self.on_start_monitoring)
-        centered_buttons_layout.addWidget(self.start_button)
-        
-        centered_buttons_layout.addSpacing(15)
-        
-        readme_button = QPushButton("Read Me")
-        readme_button.setFixedWidth(180)
-        readme_button.setStyleSheet("""
-            QPushButton {
-                background-color: #424242;
-                color: white;
-                font-size: 13px;
-                font-weight: bold;
-                padding: 10px 20px;
-                border-radius: 5px;
-                border: none;
-            }
-            QPushButton:hover {
-                background-color: #616161;
-            }
-        """)
-        readme_button.clicked.connect(self.on_readme_clicked)
-        centered_buttons_layout.addWidget(readme_button)
+        self.monitoring_button.clicked.connect(self.toggle_monitoring)
+        centered_buttons_layout.addWidget(self.monitoring_button)
         
         centered_buttons_layout.addStretch()
         main_layout.addLayout(centered_buttons_layout)
@@ -566,56 +547,103 @@ class MainWindowBase(QMainWindow):
         
         button_style = """
             QPushButton {
-                background-color: #424242;
+                background-color: #2a2a2a;
                 color: white;
                 font-weight: bold;
-                padding: 10px 15px;
+                padding: 8px 12px;
                 border-radius: 5px;
-                text-align: left;
+                text-align: center;
                 border: none;
             }
             QPushButton:hover {
-                background-color: #616161;
+                background-color: #3a3a3a;
             }
             QPushButton:disabled {
-                background-color: #2a2a2a;
-                color: #666666;
+                background-color: #1a1a1a;
+                color: #555555;
             }
         """
         
-        self.stop_button = QPushButton("Stop Monitoring")
-        self.stop_button.setFixedWidth(180)
-        self.stop_button.setStyleSheet(button_style)
-        self.stop_button.clicked.connect(self.on_stop_monitoring)
-        self.stop_button.setEnabled(False)  # Disabled by default
-        sidebar_layout.addWidget(self.stop_button)
+        # DOCUMENTATION SECTION
+        docs_label = QLabel("📖 Documentation")
+        docs_label.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 0px 0 6px 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+        """)
+        sidebar_layout.addWidget(docs_label)
         
-        create_pass_button = QPushButton("Create Password")
-        create_pass_button.setFixedWidth(180)
-        create_pass_button.setStyleSheet(button_style)
-        create_pass_button.clicked.connect(self.on_create_password)
-        sidebar_layout.addWidget(create_pass_button)
+        readme_button = QPushButton("📄 Read Me")
+        readme_button.setFixedWidth(180)
+        readme_button.setStyleSheet(button_style)
+        readme_button.clicked.connect(self.on_readme_clicked)
+        sidebar_layout.addWidget(readme_button)
         
-        change_pass_button = QPushButton("Change Password")
-        change_pass_button.setFixedWidth(180)
-        change_pass_button.setStyleSheet(button_style)
-        change_pass_button.clicked.connect(self.on_change_password)
-        sidebar_layout.addWidget(change_pass_button)
+        sidebar_layout.addSpacing(10)
         
-        snake_button = QPushButton("Snake 🪱")
+        # SECURITY SECTION
+        security_label = QLabel("🔐 Security")
+        security_label.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 0px 0 6px 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+        """)
+        sidebar_layout.addWidget(security_label)
+        
+        # Create Password button - only shown if no password exists
+        self.create_pass_button = QPushButton("Create Password")
+        self.create_pass_button.setFixedWidth(180)
+        self.create_pass_button.setStyleSheet(button_style)
+        self.create_pass_button.clicked.connect(self.on_create_password)
+        sidebar_layout.addWidget(self.create_pass_button)
+        
+        # Change Password button - always visible
+        self.change_pass_button = QPushButton("Change Password")
+        self.change_pass_button.setFixedWidth(180)
+        self.change_pass_button.setStyleSheet(button_style)
+        self.change_pass_button.clicked.connect(self.on_change_password)
+        sidebar_layout.addWidget(self.change_pass_button)
+        
+        sidebar_layout.addSpacing(10)
+        
+        # EXTRAS SECTION
+        extras_label = QLabel("🎮 Extras")
+        extras_label.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 11px;
+                font-weight: bold;
+                padding: 0px 0 6px 0;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+        """)
+        sidebar_layout.addWidget(extras_label)
+        
+        snake_button = QPushButton("Snake Game 🪱")
         snake_button.setFixedWidth(180)
         snake_button.setStyleSheet("""
             QPushButton {
-                background-color: #424242;
+                background-color: #512da8;
                 color: white;
                 font-weight: bold;
-                padding: 10px 15px;
+                padding: 8px 12px;
                 border-radius: 5px;
-                text-align: left;
+                text-align: center;
                 border: none;
             }
             QPushButton:hover {
-                background-color: #616161;
+                background-color: #6a3ab2;
             }
         """)
         snake_button.clicked.connect(self.on_snake_game)
@@ -625,22 +653,25 @@ class MainWindowBase(QMainWindow):
         stats_button.setFixedWidth(180)
         stats_button.setStyleSheet("""
             QPushButton {
-                background-color: #424242;
+                background-color: #1976d2;
                 color: white;
                 font-weight: bold;
-                padding: 10px 15px;
+                padding: 8px 12px;
                 border-radius: 5px;
-                text-align: left;
+                text-align: center;
                 border: none;
             }
             QPushButton:hover {
-                background-color: #616161;
+                background-color: #1565c0;
             }
         """)
         stats_button.clicked.connect(self.open_stats_window)
         sidebar_layout.addWidget(stats_button)
         
         sidebar_layout.addStretch()
+        
+        # Update password button visibility based on password existence
+        self.update_password_buttons_visibility()
         
         content_layout.addLayout(sidebar_layout)
         
@@ -1400,6 +1431,8 @@ class MainWindowBase(QMainWindow):
                 )
                 
                 if success:
+                    # Update password button visibility
+                    self.update_password_buttons_visibility()
                     # Ask user if they want to generate recovery codes now
                     self._offer_recovery_code_generation("Password Recovered")
                     return True
@@ -1550,8 +1583,7 @@ class MainWindowBase(QMainWindow):
             
             # CRITICAL: Update UI buttons - enable start, disable stop
             print("[Recovery] Updating UI buttons...")
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
+            self.update_monitoring_button_state(False)
             
             # Re-enable system tools if they were disabled
             if hasattr(self, 'settings_panel') and self.settings_panel.lock_tools_checkbox.isChecked():
@@ -1631,6 +1663,16 @@ class MainWindowBase(QMainWindow):
         """Update the application count label"""
         count = len(self.app_list_widget.apps_data)
         self.app_count_label.setText(f"Applications: {count}")
+    
+    def update_password_buttons_visibility(self):
+        """Update visibility of Create/Change Password buttons based on password existence"""
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        password_exists = os.path.exists(password_file)
+        
+        # Show Create Password only if no password exists
+        self.create_pass_button.setVisible(not password_exists)
+        # Change Password is always visible
+        self.change_pass_button.setVisible(True)
     
     def remove_application(self):
         """Remove selected applications from the list"""
@@ -2238,6 +2280,52 @@ class MainWindowBase(QMainWindow):
             print(f"Error loading applications config: {e}")
         
     # Button handlers (to be overridden by subclasses)
+    def toggle_monitoring(self):
+        """Toggle monitoring on/off based on current state"""
+        if self.monitoring_active:
+            self.on_stop_monitoring()
+        else:
+            self.on_start_monitoring()
+    
+    def update_monitoring_button_state(self, is_active: bool):
+        """Update the monitoring button text and style based on state"""
+        if is_active:
+            self.monitoring_button.setText("⏹ Stop Monitoring")
+            self.monitoring_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #d32f2f;
+                    color: white;
+                    font-size: 13px;
+                    font-weight: bold;
+                    padding: 12px 20px;
+                    border-radius: 6px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #b71c1c;
+                }
+            """)
+        else:
+            self.monitoring_button.setText("▶ Start Monitoring")
+            self.monitoring_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #2e7d32;
+                    color: white;
+                    font-size: 13px;
+                    font-weight: bold;
+                    padding: 12px 20px;
+                    border-radius: 6px;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #388e3c;
+                }
+                QPushButton:disabled {
+                    background-color: #2a2a2a;
+                    color: #666666;
+                }
+            """)
+    
     def on_start_monitoring(self):
         """Handle start monitoring button click"""
         # Check if password is set
@@ -2449,10 +2537,9 @@ class MainWindowBase(QMainWindow):
                     self.file_access_monitor.start_monitoring()
                     print("✅ File access monitor started")
         
-        # Update UI buttons - disable start, enable stop
-        self.start_button.setEnabled(False)
-        self.stop_button.setEnabled(True)
-        print("🔘 Buttons updated: Start disabled, Stop enabled")
+        # Update UI button state
+        self.update_monitoring_button_state(True)
+        print("🔘 Button updated: Changed to Stop mode")
         
         # CRITICAL: Disable system tools if lock_tools setting is enabled
         # This prevents users from terminating FadCrypt via terminal/task manager
@@ -2562,10 +2649,9 @@ class MainWindowBase(QMainWindow):
                     print("🔓 Unprotecting FadCrypt config files...")
                     self.file_lock_manager.unlock_fadcrypt_configs()
             
-            # Update UI buttons - enable start, disable stop
-            self.start_button.setEnabled(True)
-            self.stop_button.setEnabled(False)
-            print("🔘 Buttons updated: Start enabled, Stop disabled")
+            # Update UI button state
+            self.update_monitoring_button_state(False)
+            print("🔘 Button updated: Changed to Start mode")
             
             # CRITICAL: Re-enable system tools if they were disabled
             # This restores access to terminals/task manager
@@ -3174,6 +3260,9 @@ class MainWindowBase(QMainWindow):
                     print(f"   Creating password file at: {password_file}")
                     self.password_manager.create_password(password)
                     print(f"   ✅ Password created successfully")
+                    
+                    # Update password button visibility
+                    self.update_password_buttons_visibility()
                     
                     # Offer recovery code generation
                     self._offer_recovery_code_generation("Password Created")
