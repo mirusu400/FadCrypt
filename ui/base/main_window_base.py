@@ -1512,7 +1512,7 @@ class MainWindowBase(QMainWindow):
     def _password_recovery_cleanup(self, new_password: str) -> bool:
         """
         Cleanup callback for password recovery.
-        Stops monitoring, unlocks files, resets state.
+        Stops monitoring, unlocks files, resets state, updates UI.
         
         Args:
             new_password: New master password (for re-encryption if needed)
@@ -1548,11 +1548,33 @@ class MainWindowBase(QMainWindow):
             }
             self.save_monitoring_state_to_disk()
             
-            print("[Recovery] ✅ Cleanup complete")
+            # CRITICAL: Update UI buttons - enable start, disable stop
+            print("[Recovery] Updating UI buttons...")
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            
+            # Re-enable system tools if they were disabled
+            if hasattr(self, 'settings_panel') and self.settings_panel.lock_tools_checkbox.isChecked():
+                print("[Recovery] Re-enabling system tools...")
+                if hasattr(self, 'enable_system_tools'):
+                    self.enable_system_tools()
+            
+            # Disable autostart
+            print("[Recovery] Disabling autostart...")
+            if hasattr(self, 'handle_autostart_setting'):
+                self.handle_autostart_setting(enable=False)
+            
+            # Update system tray status
+            if self.system_tray:
+                self.system_tray.set_monitoring_active(False)
+            
+            print("[Recovery] ✅ Cleanup complete - UI updated")
             return True
             
         except Exception as e:
             print(f"[Recovery] ❌ Error during cleanup: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def show_message(self, title, message, msg_type="info"):
