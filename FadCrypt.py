@@ -30,6 +30,54 @@ if '--cleanup' in sys.argv:
                 print(f"[CLEANUP] User home: {user_home}", flush=True)
             
             fadcrypt_folder = os.path.join(user_home, '.config', 'FadCrypt')
+            fadcrypt_backup_folder = os.path.join(user_home, '.local', 'share', 'FadCrypt', 'Backup')
+            
+            # CRITICAL: Remove immutable flags before deletion (files may have chattr +i from file protection)
+            folders_to_clean = [
+                fadcrypt_folder,
+                fadcrypt_backup_folder
+            ]
+            
+            for folder in folders_to_clean:
+                if os.path.exists(folder):
+                    try:
+                        # Find all files and remove immutable flag
+                        print(f"[CLEANUP] Removing immutable flags from {folder}...", flush=True)
+                        result = subprocess.run(
+                            ['find', folder, '-type', 'f', '-exec', 'chattr', '-i', '{}', '+'],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=10
+                        )
+                        if result.returncode == 0:
+                            print(f"[CLEANUP] ✅ Removed immutable flags", flush=True)
+                        else:
+                            # Try with pkexec if find/chattr failed
+                            result = subprocess.run(
+                                ['pkexec', 'bash', '-c', f'find "{folder}" -type f -exec chattr -i {{}} +'],
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                                timeout=10
+                            )
+                    except Exception as e:
+                        print(f"[CLEANUP] ⚠️ Warning: Could not remove immutable flags: {e}", flush=True)
+            
+            # Remove all FadCrypt config and backup folders
+            folders_to_remove = [
+                fadcrypt_folder,
+                fadcrypt_backup_folder
+            ]
+            
+            for folder in folders_to_remove:
+                if os.path.exists(folder):
+                    try:
+                        import shutil
+                        shutil.rmtree(folder)
+                        print(f"[CLEANUP] ✅ Removed: {folder}", flush=True)
+                    except Exception as e:
+                        print(f"[CLEANUP] ⚠️ Warning: Could not remove {folder}: {e}", flush=True)
             
             # List of common system tools that might have been disabled
             all_tools = [
