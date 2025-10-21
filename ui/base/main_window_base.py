@@ -2110,13 +2110,21 @@ class MainWindowBase(QMainWindow):
                 pass
         
         # Build applications array in unified format with consistent ISO timestamps
+        from datetime import datetime
         applications = []
         for app_name, app_data in self.app_list_widget.apps_data.items():
+            # Ensure added_at is always set to current time if missing
+            added_at = app_data.get('added_at')
+            if not added_at:
+                added_at = datetime.now().isoformat()
+                # Update the in-memory data as well
+                app_data['added_at'] = added_at
+                
             applications.append({
                 'name': app_name,
                 'path': app_data['path'],
                 'unlock_count': app_data.get('unlock_count', 0),
-                'added_at': app_data.get('added_at', None)
+                'added_at': added_at
             })
         
         # Create unified config - preserve locked items
@@ -2183,13 +2191,19 @@ class MainWindowBase(QMainWindow):
             self.app_list_widget.apps_data.clear()
             
             # Load apps from unified config format with consistent ISO timestamps
+            from datetime import datetime
             apps_list = config_data.get('applications', [])
             for app in apps_list:
+                # Always ensure added_at has a value (not null)
+                added_at = app.get('added_at')
+                if not added_at:
+                    added_at = datetime.now().isoformat()
+                    
                 self.app_list_widget.add_app(
                     app['name'],
                     app['path'],
                     unlock_count=app.get('unlock_count', 0),
-                    added_at=app.get('added_at', None)
+                    added_at=added_at
                 )
             
             self.update_app_count()

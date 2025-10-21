@@ -85,6 +85,23 @@ a = Analysis(
         'watchdog',
         'watchdog.observers',
         'watchdog.events',
+        # NumPy and PyQtGraph for enhanced stats
+        'numpy',
+        'numpy.core',
+        'numpy.core._multiarray_umath',
+        'numpy._core',
+        'numpy._core._exceptions',
+        'numpy._core.multiarray',
+        'pyqtgraph',
+        'pyqtgraph.graphicsItems',
+        # Pygame for snake game - avoid circular imports
+        'pygame.base',
+        'pygame.constants',
+        'pygame.color',
+        'pygame.colordict',
+        # UI windows that use lazy imports
+        'ui.windows',
+        'ui.windows.enhanced_stats_window',
     ],
     hookspath=[],
     hooksconfig={},

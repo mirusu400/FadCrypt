@@ -86,6 +86,7 @@ class AppScannerThread(QThread):
             exec_path = None
             icon = None
             categories = []
+            no_display = False
             
             for line in lines:
                 line = line.strip()
@@ -103,8 +104,30 @@ class AppScannerThread(QThread):
                 elif line.startswith('Categories='):
                     cat_line = line.split('=', 1)[1]
                     categories = [c.strip() for c in cat_line.split(';') if c.strip()]
+                elif line.startswith('NoDisplay='):
+                    no_display = line.split('=', 1)[1].lower() == 'true'
             
+            # Filter out system utilities and hidden apps
+            if no_display:
+                return None
+                
             if name and exec_path:
+                # Filter system utilities that shouldn't be locked
+                system_utilities = [
+                    '/usr/libexec/',  # System daemons
+                    '/bin/false',  # Dummy entries
+                    'gnome-control-center',  # Settings sub-panels
+                    'kcmshell5',  # KDE config modules
+                    'kde-geo-uri-handler',  # URI handlers
+                    'ibus',  # Input method utilities
+                    'false',  # Disabled apps
+                ]
+                
+                # Skip system utilities
+                for util in system_utilities:
+                    if util in exec_path:
+                        return None
+                
                 # Determine primary category
                 category = self._categorize_app(categories)
                 
