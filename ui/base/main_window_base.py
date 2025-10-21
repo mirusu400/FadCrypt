@@ -2457,9 +2457,9 @@ class MainWindowBase(QMainWindow):
         except Exception as e:
             print(f"[FileProtection] Could not read settings, using default: {e}")
         
-        # POLKIT-ONLY: No info dialog, go straight to polkit authorization
+        # DAEMON-ONLY: Elevated daemon handles file protection seamlessly (no password prompts)
         if file_protection_enabled:
-            print("🛡️  Requesting authorization to protect critical files via polkit...")
+            print("🛡️  Protecting critical files via elevated daemon...")
             file_protection = get_file_protection_manager()
             fadcrypt_folder = self.get_fadcrypt_folder()
             
@@ -2477,17 +2477,17 @@ class MainWindowBase(QMainWindow):
                 success_count, errors = file_protection.protect_multiple_files(existing_files)
                 if success_count > 0:
                     print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
-                    print(f"✅ Authorization cached for this session (works after reboot too!)")
+                    print(f"✅ Works seamlessly after reboot (daemon auto-starts with root permissions)")
                 else:
-                    error_msg = "❌ File protection failed - polkit authorization required to start monitoring"
+                    error_msg = "❌ File protection failed - elevated daemon required to start monitoring"
                     print(f"[ERROR] {error_msg}")
                     self.show_message(
-                        "Authorization Required",
-                        "FadCrypt requires polkit authorization to protect critical files.\n\n"
-                        "Your password was either:\n"
-                        "  • Not entered correctly\n"
-                        "  • Authorization was cancelled\n"
-                        "  • Your system doesn't have polkit installed\n\n"
+                        "Elevation Required",
+                        "FadCrypt requires the elevated daemon service to protect critical files.\n\n"
+                        "The daemon may not be:\n"
+                        "  • Running (check: systemctl status fadcrypt-elevated)\n"
+                        "  • Installed (check: dpkg -l | grep fadcrypt)\n"
+                        "  • Available on your system\n\n"
                         "Monitoring cannot start without file protection."
                     )
                     # Stop monitoring since protection failed
@@ -2614,8 +2614,8 @@ class MainWindowBase(QMainWindow):
                 self.unified_monitor.stop_monitoring()
                 print("🛑 Monitoring stopped successfully")
             
-            # Unprotect critical files - NO pkexec prompt needed (polkit already cached from start_monitoring)
-            print("🔓 Unprotecting critical files (using cached polkit)...")
+            # Unprotect critical files (daemon handles seamlessly - no password prompt needed)
+            print("🔓 Unprotecting critical files via daemon...")
             file_protection = get_file_protection_manager()
             success_count, errors = file_protection.unprotect_all_files()
             if success_count > 0:

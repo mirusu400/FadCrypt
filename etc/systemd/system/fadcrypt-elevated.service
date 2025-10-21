@@ -1,0 +1,31 @@
+[Unit]
+Description=FadCrypt Elevated Permissions Daemon
+Documentation=man:fadcrypt(1)
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Start the daemon with the elevated daemon script
+ExecStart=/usr/bin/python3 -u /usr/share/fadcrypt/elevated-daemon.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fadcrypt-daemon
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=no  # Need to access user home directories
+ProtectHome=no    # Need to access ~/.config/FadCrypt/
+
+[Install]
+WantedBy=multi-user.target

@@ -96,7 +96,7 @@ class FileProtectionAuthDialog(QDialog):
         else:  # Linux
             how_text = QLabel(
                 "Files will be made <b>immutable</b> (chattr +i) - even root cannot delete them! "
-                "This requires authorization via PolicyKit (pkexec) or sudo prompt."
+                "This requires the elevated daemon service running with root permissions."
             )
         how_text.setStyleSheet("padding-left: 15px; color: #b0b0b0;")
         how_text.setWordWrap(True)

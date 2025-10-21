@@ -202,12 +202,12 @@ X-GNOME-Autostart-enabled=true
     def disable_system_tools(self):
         """
         Disable system tools on Linux (terminals and system monitors).
-        Uses chmod to remove execute permissions. Requires pkexec for elevation.
+        Uses elevated daemon to remove execute permissions. Seamless - no password prompts.
         This is called when "Disable Main loopholes" is enabled before monitoring starts.
         """
-        import subprocess
-        
         try:
+            from core.linux.elevated_daemon_client import get_elevated_client
+            
             # List of common terminal and system monitor executables
             tools_to_disable = [
                 '/usr/bin/gnome-terminal',
@@ -219,17 +219,20 @@ X-GNOME-Autostart-enabled=true
             ]
             
             disabled_tools = []
-            chmod_commands = []
             for tool in tools_to_disable:
                 if os.path.exists(tool) and os.access(tool, os.X_OK):
-                    chmod_commands.append(f'chmod 644 "{tool}"')
                     disabled_tools.append(tool)
             
-            if chmod_commands:
-                # Run all chmod commands in one pkexec call
-                command = '; '.join(chmod_commands)
-                try:
-                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+            if disabled_tools:
+                # Use elevated daemon to change permissions
+                client = get_elevated_client()
+                if not client.is_available():
+                    print(f"✗ Elevated daemon not available for chmod operations")
+                    return False
+                
+                # Change all tools to 644 (no execute permission)
+                success, message = client.chmod(disabled_tools, 0o644)
+                if success:
                     print(f"✓ Disabled tools: {disabled_tools}")
                     
                     # Save the list of modified tools for re-enabling later
@@ -238,14 +241,8 @@ X-GNOME-Autostart-enabled=true
                         f.write('\n'.join(disabled_tools))
                     
                     return True
-                except subprocess.CalledProcessError as e:
-                    print(f"✗ Failed to disable tools: {e}")
-                    QMessageBox.warning(
-                        self,
-                        "Permission Required",
-                        f"Failed to disable system tools:\n{str(e)}\n\n"
-                        "Please enter your password when prompted."
-                    )
+                else:
+                    print(f"✗ Daemon failed to disable tools: {message}")
                     return False
             else:
                 print("ℹ No tools were disabled (tools not found or already disabled)")
@@ -258,12 +255,12 @@ X-GNOME-Autostart-enabled=true
     def enable_system_tools(self):
         """
         Re-enable previously disabled tools on Linux.
-        Restores execute permissions using chmod. Requires pkexec for elevation.
+        Restores execute permissions using elevated daemon. Seamless - no password prompts.
         This is called when monitoring stops or during cleanup.
         """
-        import subprocess
-        
         try:
+            from core.linux.elevated_daemon_client import get_elevated_client
+            
             # First try to read from the tracking file
             disabled_tools_file = os.path.join(self.get_fadcrypt_folder(), 'disabled_tools.txt')
             tools_to_enable = []
@@ -283,18 +280,21 @@ X-GNOME-Autostart-enabled=true
                     '/usr/bin/top'
                 ]
 
-            chmod_commands = []
             valid_tools = []
             for tool in tools_to_enable:
                 if tool and os.path.exists(tool):
-                    chmod_commands.append(f'chmod 755 "{tool}"')
                     valid_tools.append(tool)
 
-            if chmod_commands:
-                # Run all chmod commands in one pkexec call
-                command = '; '.join(chmod_commands)
-                try:
-                    subprocess.run(['pkexec', 'bash', '-c', command], check=True)
+            if valid_tools:
+                # Use elevated daemon to restore permissions
+                client = get_elevated_client()
+                if not client.is_available():
+                    print(f"✗ Elevated daemon not available for chmod operations")
+                    return False
+                
+                # Change all tools to 755 (executable permission restored)
+                success, message = client.chmod(valid_tools, 0o755)
+                if success:
                     for tool in valid_tools:
                         print(f"✓ Re-enabled: {tool}")
                     
@@ -303,14 +303,8 @@ X-GNOME-Autostart-enabled=true
                         os.remove(disabled_tools_file)
                     
                     return True
-                except subprocess.CalledProcessError as e:
-                    print(f"✗ Failed to restore permissions: {e}")
-                    QMessageBox.warning(
-                        self,
-                        "Permission Required",
-                        f"Failed to enable system tools:\n{str(e)}\n\n"
-                        "Please enter your password when prompted."
-                    )
+                else:
+                    print(f"✗ Daemon failed to restore permissions: {message}")
                     return False
             else:
                 print("ℹ No valid tools found to re-enable")
