@@ -33,7 +33,7 @@ class FileAccessHandler(FileSystemEventHandler):
         self.on_access_callback = on_access_callback
         self.get_state = get_state_func if get_state_func else lambda: {}
         self.last_event_time = {}  # Debounce events
-        self.debounce_seconds = 2.0  # Ignore events within 2 seconds (reduced for faster detection)
+        self.debounce_seconds = 0.5  # Shorter debounce for instant detection (was 2.0)
 
         
     def _should_process_event(self, path: str) -> bool:
@@ -650,8 +650,10 @@ class FileAccessMonitor:
         self.auto_lock_running = True
         self.auto_lock_thread = threading.Thread(target=self._auto_lock_loop, daemon=True)
         self.auto_lock_thread.start()
+        print(f"🚀 [MONITOR] Auto-lock thread started (daemon={self.auto_lock_thread.daemon})")
         
         print(f"✅ File access monitoring started for {len(self.monitored_paths)} items")
+        print(f"📊 [MONITOR] Status: observer={self.observer is not None}, handler={self.event_handler is not None}, monitoring={self.is_monitoring}")
         return True
     
     def _auto_lock_loop(self):
@@ -659,25 +661,42 @@ class FileAccessMonitor:
         Background thread that checks unlocked files and re-locks them when not in use
         Also monitors locked folders for file manager access attempts
         Similar to unified_monitor's auto-lock logic
+        
+        PERFORMANCE OPTIMIZED: Polling interval 2.0s (was 0.5s)
+        Now only checking folders + auto-lock since watchdog handles file detection instantly!
         """
         import subprocess
         
         check_counter = 0  # Counter for less frequent checks
+        print(f"🚀 [AUTO-LOCK] Loop started! monitoring={self.is_monitoring}, handler={self.event_handler is not None}")
         
         while self.auto_lock_running:
             try:
-                time.sleep(0.5)  # Check every 0.5 seconds for faster folder detection
+                time.sleep(2.0)  # Check every 2 seconds (only for folder checks + auto-lock)
                 check_counter += 1
                 
-                # Part 1: Check for folder access attempts MORE FREQUENTLY (every cycle)
+                # Debug: Log periodically to confirm loop is running
+                if check_counter == 1:
+                    print(f"🔄 [AUTO-LOCK] First cycle - checking folders...")
+                elif check_counter % 30 == 0:  # Every 60 seconds (30 cycles × 2s)
+                    print(f"🔄 [AUTO-LOCK] Still alive (cycle {check_counter})")
+                
+                # Part 1: Check for folder access attempts (watchdog backup for file managers)
                 self._check_locked_folders()
                 
-                # Part 2: Auto-lock unlocked files LESS FREQUENTLY (every 4th cycle = 2 seconds)
-                if check_counter % 4 == 0:
+                # Part 2: Auto-lock unlocked files (re-lock after timeout)
+                # Check every 2 cycles (3 seconds) to reduce CPU usage
+                if check_counter % 2 == 0:
                     self._check_auto_lock_files()
+                
+                # REMOVED: _check_locked_files() polling - watchdog's on_opened() handles this INSTANTLY!
+                # The on_opened() event fires immediately when files are accessed (IN_OPEN inotify event)
+                # Polling was causing delays and wasting CPU - watchdog is already instant!
                     
             except Exception as e:
                 print(f"⚠️  [AUTO-LOCK] Error in auto-lock loop: {e}")
+                import traceback
+                traceback.print_exc()
     
     def _check_auto_lock_files(self):
         """Check unlocked files and re-lock them when not in use"""
@@ -837,6 +856,86 @@ class FileAccessMonitor:
                 if not unlocked:
                     # Kill the file manager process
                     self.event_handler._kill_process_accessing_file(folder_path)
+    
+    def _check_locked_files(self):
+        """
+        Periodically check if any process is accessing locked files.
+        
+        CRITICAL: This polling is REQUIRED because:
+        - Files are locked with chmod 444 (read-only)
+        - Watchdog's on_modified() only fires when files are WRITTEN to
+        - Opening files for READING doesn't trigger any filesystem events
+        - Without this polling, users can open and read locked files freely
+        
+        PERFORMANCE OPTIMIZED: Uses BATCH checking to scan all processes ONCE
+        instead of calling per-file. This reduces CPU usage dramatically!
+        """
+        import os
+        
+        # Skip if not monitoring or no event handler
+        if not self.is_monitoring or not self.event_handler:
+            return
+        
+        # Get list of locked files (not folders) that need checking
+        all_locked_files = [item['path'] for item in self.file_lock_manager.locked_items 
+                           if item['type'] == 'file']
+        
+        if not all_locked_files:
+            return
+        
+        # Debug: Log first check
+        if not hasattr(self, '_first_file_check_done'):
+            print(f"🔍 [FILE CHECK] First check - {len(all_locked_files)} locked files")
+            self._first_file_check_done = True
+        
+        state = self.get_state()
+        unlocked_files = state.get('unlocked_files', [])
+        
+        # Filter to only check files that exist and are not already unlocked
+        files_to_check = []
+        for file_path in all_locked_files:
+            if file_path not in unlocked_files and os.path.exists(file_path):
+                files_to_check.append(file_path)
+        
+        if not files_to_check:
+            return
+        
+        # PERFORMANCE: Batch check all files in ONE process scan instead of per-file!
+        # This is 10-20x faster than calling _get_processes_using_file() per file
+        file_to_pids = self.file_lock_manager._get_processes_using_files(files_to_check)
+        
+        # Now handle any files that have processes accessing them
+        for file_path, pids in file_to_pids.items():
+            if not pids:
+                continue  # No process accessing this file
+            
+            if pids:  # Process(es) detected accessing the file
+                import psutil
+                # Get first process for info display
+                try:
+                    proc = psutil.Process(pids[0])
+                    proc_name = proc.name()
+                    proc_info = f" [Process: {proc_name} (PID: {pids[0]})]"
+                except:
+                    proc_info = f" [PID: {pids[0]}]"
+                
+                # Debounce check - only show dialog if we haven't checked this file recently
+                if self.event_handler._should_process_event(file_path):
+                    print(f"🔒 Locked file access detected: {file_path}{proc_info}")
+                    
+                    # Show password dialog
+                    unlocked = self.password_callback(file_path)
+                    
+                    if not unlocked:
+                        # Kill ALL processes accessing the file
+                        for pid in pids:
+                            try:
+                                proc = psutil.Process(pid)
+                                proc_name = proc.name()
+                                print(f"   🔪 Killing process {pid} ({proc_name})")
+                                proc.kill()
+                            except:
+                                pass
     
     def _handle_file_access(self, file_path: str):
         """

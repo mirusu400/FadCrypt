@@ -1628,8 +1628,12 @@ class MainWindowBase(QMainWindow):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
+            # Bulk remove optimization: defer grid refresh until all apps removed
+            removed_count = len(selected_apps)
+            
             for app_name in selected_apps:
-                self.app_list_widget.remove_app(app_name)
+                # Skip grid refresh during loop (optimization)
+                self.app_list_widget.remove_app(app_name, defer_refresh=True)
                 
                 # Log activity
                 self.log_activity(
@@ -1640,9 +1644,14 @@ class MainWindowBase(QMainWindow):
                     details=f"Removed application from list"
                 )
             
+            # Single refresh at end (O(n) instead of O(n²))
+            if removed_count > 0:
+                print(f"[Remove] Refreshing UI after removing {removed_count} apps...")
+                self.app_list_widget.refresh_grid()
+            
             self.save_applications_config()
             self.update_app_count()
-            self.show_message("Success", f"Removed {len(selected_apps)} application(s) successfully.", "success")
+            self.show_message("Success", f"Removed {removed_count} application(s) successfully.", "success")
     
     def toggle_app_lock(self):
         """Toggle lock status of selected applications - NOT USED IN PyQt6 VERSION"""
@@ -1659,10 +1668,10 @@ class MainWindowBase(QMainWindow):
             self.show_message("Error", "File locking not available on this platform.", "error")
             return
         
-        # Use getOpenFileNames for multi-selection
+        # Use native dialog for multi-file selection
         file_paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select File(s) to Protect (Hold Shift/Ctrl for multiple)",
+            "Select File(s) to Protect",
             os.path.expanduser('~'),
             "All Files (*.*)"
         )
@@ -1671,6 +1680,8 @@ class MainWindowBase(QMainWindow):
             return
         
         added_count = 0
+        print(f"[Add Files] Processing {len(file_paths)} file(s)...")
+        
         for file_path in file_paths:
             if self.file_lock_manager.add_item(file_path, "file"):
                 # Get metadata to display
@@ -1685,8 +1696,19 @@ class MainWindowBase(QMainWindow):
                         )
                         break
                 added_count += 1
+                
+                # Process UI events periodically for large batches
+                if added_count % 50 == 0:
+                    QApplication.processEvents()
+        
+        # Force grid refresh after bulk add
+        if added_count > 0:
+            print(f"[Add Files] Refreshing UI with {added_count} new files...")
+            self.file_grid_widget.refresh_grid()
         
         if added_count > 0:
+            print(f"[Add Files] Added {added_count} file(s) successfully")
+            
             # Auto-lock files if monitoring is active
             if self.monitoring_active and self.file_lock_manager:
                 print(f"🔒 Auto-locking {added_count} newly added file(s)")
@@ -1713,45 +1735,52 @@ class MainWindowBase(QMainWindow):
             self.show_message("Error", "File locking not available on this platform.", "error")
             return
         
+        # Use native dialog for folder selection (single selection only)
         folder_path = QFileDialog.getExistingDirectory(
             self,
             "Select Folder to Protect",
             os.path.expanduser('~')
         )
         
-        if folder_path:
-            if self.file_lock_manager.add_item(folder_path, "folder"):
-                # Get metadata to display
-                items = self.file_lock_manager.get_locked_items()
-                for item in items:
-                    if item['path'] == folder_path:
-                        self.file_grid_widget.add_item(
-                            folder_path,
-                            "folder",
-                            item.get('unlock_count', 0),
-                            item.get('added_at')
-                        )
-                        break
-                
-                # Auto-lock folder if monitoring is active
-                if self.monitoring_active and self.file_lock_manager:
-                    print(f"🔒 Auto-locking newly added folder: {os.path.basename(folder_path)}")
-                    # Re-lock all files (includes the new one)
-                    success, failed = self.file_lock_manager.lock_all()
-                    if success > 0:
-                        print(f"✅ Re-locked {success} items (including new folder)")
-                    # Update file access monitor
-                    if self.file_access_monitor:
-                        self.file_access_monitor.update_monitored_items()
-                        print(f"✅ File access monitor updated")
-                
-                # Update config display to show new locked items
-                if hasattr(self, 'update_config_display'):
-                    self.update_config_display()
-                
-                self.show_message("Success", f"Added folder: {os.path.basename(folder_path)}", "success")
-            else:
-                self.show_message("Error", "Failed to add folder. It may already be in the list.", "error")
+        if not folder_path:
+            return
+        
+        print(f"[Add Folder] Processing folder: {folder_path}")
+        
+        if self.file_lock_manager.add_item(folder_path, "folder"):
+            # Get metadata to display
+            items = self.file_lock_manager.get_locked_items()
+            for item in items:
+                if item['path'] == folder_path:
+                    self.file_grid_widget.add_item(
+                        folder_path,
+                        "folder",
+                        item.get('unlock_count', 0),
+                        item.get('added_at')
+                    )
+                    break
+            
+            print(f"[Add Folder] Added folder successfully")
+            
+            # Auto-lock folder if monitoring is active
+            if self.monitoring_active and self.file_lock_manager:
+                print(f"🔒 Auto-locking newly added folder")
+                # Re-lock all files (includes the new one)
+                success, failed = self.file_lock_manager.lock_all()
+                if success > 0:
+                    print(f"✅ Re-locked {success} items (including new folder)")
+                # Update file access monitor
+                if self.file_access_monitor:
+                    self.file_access_monitor.update_monitored_items()
+                    print(f"✅ File access monitor updated")
+            
+            # Update config display to show new locked items
+            if hasattr(self, 'update_config_display'):
+                self.update_config_display()
+            
+            self.show_message("Success", f"Added folder successfully.", "success")
+        else:
+            self.show_message("Error", "Failed to add folder. It may already be in the list.", "error")
     
     def remove_file_item(self):
         """Remove selected file/folder from protected items list"""
@@ -1781,10 +1810,18 @@ class MainWindowBase(QMainWindow):
         
         if reply == QMessageBox.StandardButton.Yes:
             removed_count = 0
+            
+            # Bulk remove optimization: defer grid refresh until all items removed
             for selected_path in selected_paths:
                 if self.file_lock_manager.remove_item(selected_path):
-                    self.file_grid_widget.remove_item(selected_path)
+                    # Skip grid refresh during loop (optimization)
+                    self.file_grid_widget.remove_item(selected_path, defer_refresh=True)
                     removed_count += 1
+            
+            # Single refresh at end (O(n) instead of O(n²))
+            if removed_count > 0:
+                print(f"[Remove] Refreshing file grid after removing {removed_count} items...")
+                self.file_grid_widget.refresh_grid()
             
             # Update file access monitor if monitoring is active
             if self.monitoring_active and self.file_access_monitor:
@@ -1903,13 +1940,27 @@ class MainWindowBase(QMainWindow):
         dialog.exec()
     
     def on_apps_scanned(self, selected_apps):
-        """Handle batch adding of scanned applications"""
+        """Handle batch adding of scanned applications - optimized for bulk operations"""
+        from datetime import datetime
+        from PyQt6.QtWidgets import QApplication
+        
         added_count = 0
         skipped_count = 0
         
-        for app in selected_apps:
+        # Show progress for large batches
+        total = len(selected_apps)
+        if total > 50:
+            print(f"[Scanner] Processing {total} apps (bulk add optimization enabled)...")
+        
+        # Defer grid refresh for all apps (optimization)
+        for i, app in enumerate(selected_apps):
             app_name = app['name']
             app_path = app['path']
+            
+            # Progress update for large batches (every 50 apps)
+            if total > 50 and (i + 1) % 50 == 0:
+                QApplication.processEvents()  # Keep UI responsive
+                print(f"[Scanner] Progress: {i + 1}/{total} apps processed...")
             
             # Check if already added
             if app_name in self.app_list_widget.apps_data:
@@ -1917,11 +1968,22 @@ class MainWindowBase(QMainWindow):
                 skipped_count += 1
                 continue
             
-            # Add to the grid
-            self.app_list_widget.add_app(app_name, app_path, unlock_count=0)
+            # Add to grid with deferred refresh (optimization)
+            self.app_list_widget.add_app(
+                app_name, 
+                app_path, 
+                unlock_count=0,
+                added_at=datetime.now().isoformat(),
+                defer_refresh=True  # Don't refresh grid yet
+            )
             added_count += 1
         
+        # Single grid refresh at the end (huge performance boost)
         if added_count > 0:
+            print(f"[Scanner] Refreshing UI with {added_count} new apps...")
+            self.app_list_widget.refresh_grid()
+            
+            print(f"[Scanner] Saving config for {added_count} new apps...")
             self.save_applications_config()
             self.update_app_count()
         
@@ -2319,7 +2381,8 @@ class MainWindowBase(QMainWindow):
                 )
                 
                 # Start file access monitoring after locking
-                if self.file_access_monitor and failed == 0:
+                # Note: Start monitoring even if some items failed to lock (e.g., already immutable config files)
+                if self.file_access_monitor:
                     print("👁️  Starting file access monitor...")
                     self.file_access_monitor.start_monitoring()
                     print("✅ File access monitor started")
@@ -3321,57 +3384,6 @@ class MainWindowBase(QMainWindow):
             except Exception as e:
                 self.show_message("Error", f"Failed to import configuration:\n{e}", "error")
 
-    def add_file(self):
-        """Add a file to protected files"""
-        from PyQt6.QtWidgets import QFileDialog
-        
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select File to Protect",
-            "",
-            "All Files (*.*)"
-        )
-        
-        if file_path:
-            self.file_grid_widget.add_item(file_path, item_type='file')
-            self.save_locked_files_config()
-            
-            # Log activity
-            self.log_activity(
-                'add_item',
-                file_path,
-                'file',
-                success=True,
-                details=f"Added file to protection list"
-            )
-            
-            self.show_message("Success", f"File '{file_path}' added to protection list.", "success")
-    
-    def add_folder(self):
-        """Add a folder to protected files"""
-        from PyQt6.QtWidgets import QFileDialog
-        
-        folder_path = QFileDialog.getExistingDirectory(
-            self,
-            "Select Folder to Protect",
-            ""
-        )
-        
-        if folder_path:
-            self.file_grid_widget.add_item(folder_path, item_type='folder')
-            self.save_locked_files_config()
-            
-            # Log activity
-            self.log_activity(
-                'add_item',
-                folder_path,
-                'folder',
-                success=True,
-                details=f"Added folder to protection list"
-            )
-            
-            self.show_message("Success", f"Folder '{folder_path}' added to protection list.", "success")
-    
     def remove_file_item(self):
         """Remove selected file or folder from protected items"""
         selected_items = self.file_grid_widget.get_selected_paths()

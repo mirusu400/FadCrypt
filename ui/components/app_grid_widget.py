@@ -363,8 +363,18 @@ class AppGridWidget(QWidget):
             self.empty_state_widget.hide()
             self.grid_layout.removeWidget(self.empty_state_widget)
     
-    def add_app(self, app_name, app_path, unlock_count=0, date_added=None, added_at=None):
-        """Add an application to the grid"""
+    def add_app(self, app_name, app_path, unlock_count=0, date_added=None, added_at=None, defer_refresh=False):
+        """
+        Add an application to the grid.
+        
+        Args:
+            app_name: Name of the application
+            app_path: Path to the executable
+            unlock_count: Number of times unlocked
+            date_added: Legacy parameter (use added_at instead)
+            added_at: ISO format timestamp when added
+            defer_refresh: If True, don't refresh grid immediately (for bulk operations)
+        """
         import time
         # Support both date_added and added_at parameter names for compatibility
         timestamp = added_at or date_added or time.time()
@@ -373,14 +383,46 @@ class AppGridWidget(QWidget):
             'unlock_count': unlock_count,
             'date_added': timestamp
         }
+        
+        # Only refresh if not deferred (optimization for bulk adds)
+        if not defer_refresh:
+            self.refresh_grid()
+    
+    def batch_add_apps(self, apps_list):
+        """
+        Efficiently add multiple applications at once.
+        
+        Args:
+            apps_list: List of dicts with 'name', 'path', 'unlock_count', 'added_at'
+        """
+        import time
+        from datetime import datetime
+        
+        for app in apps_list:
+            timestamp = app.get('added_at') or app.get('date_added') or datetime.now().isoformat()
+            self.apps_data[app['name']] = {
+                'path': app['path'],
+                'unlock_count': app.get('unlock_count', 0),
+                'date_added': timestamp
+            }
+        
+        # Single refresh at the end (O(n) instead of O(n²))
         self.refresh_grid()
     
-    def remove_app(self, app_name):
-        """Remove an application from the grid"""
+    def remove_app(self, app_name, defer_refresh=False):
+        """Remove an application from the grid
+        
+        Args:
+            app_name: Name of the application to remove
+            defer_refresh: If True, skip grid refresh (for bulk operations)
+        """
         if app_name in self.apps_data:
             del self.apps_data[app_name]
             self.selected_apps.discard(app_name)
-            self.refresh_grid()
+            
+            # Only refresh if not deferred (optimization for bulk removes)
+            if not defer_refresh:
+                self.refresh_grid()
     
     def refresh_grid(self):
         """Refresh the grid display"""

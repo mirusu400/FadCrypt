@@ -415,8 +415,13 @@ class FileGridWidget(QWidget):
         # Update placeholder visibility
         self._update_placeholder_visibility()
     
-    def remove_item(self, item_path: str):
-        """Remove file or folder from grid"""
+    def remove_item(self, item_path: str, defer_refresh=False):
+        """Remove file or folder from grid
+        
+        Args:
+            item_path: Path of the item to remove
+            defer_refresh: If True, skip grid refresh (for bulk operations)
+        """
         if item_path not in self.cards:
             return
         
@@ -434,8 +439,9 @@ class FileGridWidget(QWidget):
         if self.selected_path == item_path:
             self.selected_path = None
         
-        # Re-arrange remaining cards
-        self.refresh_grid()
+        # Only refresh if not deferred (optimization for bulk removes)
+        if not defer_refresh:
+            self.refresh_grid()
         
         # Update placeholder visibility
         self._update_placeholder_visibility()
