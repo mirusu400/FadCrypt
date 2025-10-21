@@ -2495,22 +2495,6 @@ class MainWindowBase(QMainWindow):
                     self.monitoring_active = False
                     self.update_monitoring_button_state(False)
                     return
-            fadcrypt_folder = self.get_fadcrypt_folder()
-            
-            critical_files = [
-                os.path.join(fadcrypt_folder, "recovery_codes.json"),
-                os.path.join(fadcrypt_folder, "encrypted_password.bin"),
-                os.path.join(fadcrypt_folder, "apps_config.json"),
-            ]
-            
-            existing_files = [f for f in critical_files if os.path.exists(f)]
-            
-            if existing_files:
-                success_count, errors = file_protection.protect_multiple_files(existing_files)
-                print(f"✅ Protected {success_count}/{len(existing_files)} critical files (auto-startup)")
-                if errors:
-                    for error in errors:
-                        print(f"   ⚠️  {error}")
         else:
             print("⏭️  File protection disabled in settings")
         
@@ -2630,8 +2614,8 @@ class MainWindowBase(QMainWindow):
                 self.unified_monitor.stop_monitoring()
                 print("🛑 Monitoring stopped successfully")
             
-            # Unprotect critical files
-            print("🔓 Unprotecting critical files...")
+            # Unprotect critical files - NO pkexec prompt needed (polkit already cached from start_monitoring)
+            print("🔓 Unprotecting critical files (using cached polkit)...")
             file_protection = get_file_protection_manager()
             success_count, errors = file_protection.unprotect_all_files()
             if success_count > 0:

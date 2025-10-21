@@ -229,12 +229,32 @@ class FileLockManagerLinux(FileLockManager):
     def _lock_config_file(self, file_path: str) -> Tuple[bool, str]:
         """
         Lock a single config file.
+        Config files are already protected by polkit-based file_protection.py via chattr +i.
+        This method is called after file protection is complete.
         Returns (success, message)
         """
         try:
-            # Store original permissions
-            original_mode = os.stat(file_path).st_mode
+            # Check if file is already immutable (protected by first polkit call)
+            stat_result = os.stat(file_path)
+            original_mode = stat_result.st_mode
             self.original_permissions[file_path] = oct(stat.S_IMODE(original_mode))
+            
+            # Check immutable flag using chattr (immutable = protected by polkit)
+            # If already immutable, don't try chmod (will fail - immutable files can't change perms)
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['lsattr', '-d', file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if 'i' in result.stdout:  # 'i' flag = immutable
+                    # Already immutable from file_protection.py polkit call
+                    return True, f"✅ Config already immutable: {os.path.basename(file_path)}"
+            except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+                # lsattr not available or error - proceed with chmod
+                pass
             
             # Make read-only (chmod 444) so config is still readable but not writable
             os.chmod(file_path, 0o444)

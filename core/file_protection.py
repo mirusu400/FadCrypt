@@ -425,38 +425,12 @@ class FileProtectionManager:
         try:
             import subprocess
             
-            # Try helper script first (uses polkit policy for persistence)
-            helper_script = "/usr/libexec/fadcrypt/fadcrypt-file-protection-helper.sh"
-            if os.path.exists(helper_script):
-                action = "protect" if set_immutable else "unprotect"
-                cmd = ['pkexec', helper_script, action] + file_paths
-                
-                print(f"[FileProtection] Using polkit policy helper for persistent authorization...")
-                
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                
-                if result.returncode == 0:
-                    action_text = "protected" if set_immutable else "unprotected"
-                    print(f"[FileProtection] ✅ Batch {action_text} {len(file_paths)} files (polkit)")
-                    print(f"[FileProtection] ℹ️  Authorization persists - no more prompts needed!")
-                    return True
-                else:
-                    stderr = result.stderr.strip()
-                    if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
-                        print(f"[FileProtection] ⚠️  User cancelled authorization")
-                    else:
-                        print(f"[FileProtection] ⚠️  Helper script failed: {stderr}")
-                    return False
-            
-            # Fallback: direct chattr with pkexec (standard method)
-            print(f"[FileProtection] Helper script not found, using direct pkexec...")
+            # Use direct chattr with pkexec (polkit policy is configured for this)
             flag = "+i" if set_immutable else "-i"
             cmd = ['pkexec', 'chattr', flag] + file_paths
+            
+            action_name = "protecting" if set_immutable else "unprotecting"
+            print(f"[FileProtection] Using polkit for {action_name} {len(file_paths)} files...")
             
             result = subprocess.run(
                 cmd,
@@ -467,18 +441,19 @@ class FileProtectionManager:
             
             if result.returncode == 0:
                 action = "protected" if set_immutable else "unprotected"
-                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files")
+                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files (polkit)")
+                print(f"[FileProtection] ℹ️  Cached authorization - no more prompts in this session!")
                 return True
             else:
                 stderr = result.stderr.strip()
                 if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
-                    print(f"[FileProtection] ⚠️  User cancelled batch authorization")
+                    print(f"[FileProtection] ⚠️  User cancelled authorization")
                 else:
-                    print(f"[FileProtection] ⚠️  Batch pkexec failed: {stderr}")
+                    print(f"[FileProtection] ⚠️  Batch chattr failed: {stderr}")
                 return False
                 
         except FileNotFoundError:
-            print(f"[FileProtection] ⚠️  pkexec not found")
+            print(f"[FileProtection] ⚠️  pkexec or chattr not found")
             return False
         except subprocess.TimeoutExpired:
             print(f"[FileProtection] ⚠️  pkexec timeout")
