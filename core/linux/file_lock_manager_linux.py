@@ -85,6 +85,9 @@ class FileLockManagerLinux(FileLockManager):
         Returns dict mapping file_path to list of PIDs using that file.
         
         PERFORMANCE: 12x faster than previous per-file fuser approach!
+        
+        IMPORTANT: Excludes FadCrypt's own process to prevent self-termination when
+        file protection is active (file locks held for security).
         """
         file_to_pids = {path: [] for path in file_paths}
         
@@ -92,15 +95,21 @@ class FileLockManagerLinux(FileLockManager):
             return file_to_pids
         
         file_set = set(file_paths)
+        current_pid = os.getpid()  # Get FadCrypt's own PID
         
         try:
             # SINGLE SCAN: Iterate through all processes once
             for proc in psutil.process_iter(['pid', 'open_files']):
                 try:
+                    pid = proc.info['pid']
+                    
+                    # Skip FadCrypt's own process to prevent self-termination
+                    if pid == current_pid:
+                        continue
+                    
                     if proc.info['open_files']:
                         for file_info in proc.info['open_files']:
                             if file_info.path in file_set:
-                                pid = proc.info['pid']
                                 if pid not in file_to_pids[file_info.path]:
                                     file_to_pids[file_info.path].append(pid)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):

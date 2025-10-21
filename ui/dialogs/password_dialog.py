@@ -1,7 +1,7 @@
 """Password Dialog for FadCrypt"""
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QFrame
+    QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QFrame, QProgressBar, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QFont
@@ -10,7 +10,7 @@ from PyQt6.QtGui import QPixmap, QFont
 class PasswordDialog(QDialog):
     """Custom password dialog with optional fullscreen wallpaper background"""
     
-    def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None):
+    def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None, show_forgot_password=True, has_recovery_codes=True):
         # For fullscreen mode, don't use parent to avoid being hidden when parent is minimized
         if fullscreen:
             super().__init__(None)  # Independent top-level window
@@ -21,6 +21,8 @@ class PasswordDialog(QDialog):
         self.fullscreen = fullscreen
         self.wallpaper_choice = wallpaper_choice
         self.password_value = None
+        self.show_forgot_password = show_forgot_password
+        self.has_recovery_codes = has_recovery_codes
         
         self.setWindowTitle(title)
         self.init_ui(title, prompt)
@@ -74,11 +76,17 @@ class PasswordDialog(QDialog):
         """)
         
         if self.fullscreen:
-            content_frame.setFixedSize(440, 240)
+            # Set minimum size but allow dynamic expansion
+            content_frame.setMinimumSize(440, 240)
+            content_frame.setMaximumWidth(600)  # Max width for readability
         
         content_layout = QVBoxLayout(content_frame)
-        content_layout.setContentsMargins(30, 25, 30, 25)
-        content_layout.setSpacing(12)
+        if self.fullscreen:
+            content_layout.setContentsMargins(40, 30, 40, 30)  # More padding for fullscreen
+            content_layout.setSpacing(15)  # More spacing for fullscreen
+        else:
+            content_layout.setContentsMargins(30, 25, 30, 25)
+            content_layout.setSpacing(12)
         
         # Title label - compact
         title_label = QLabel(title)
@@ -98,20 +106,24 @@ class PasswordDialog(QDialog):
         # Prompt label - responsive with proper wrapping
         prompt_label = QLabel(prompt)
         prompt_label.setWordWrap(True)
-        from PyQt6.QtWidgets import QSizePolicy
         prompt_label.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Minimum
         )
-        # Set maximum width for text wrapping
-        prompt_label.setMaximumWidth(380)
+        # Set maximum width for text wrapping based on mode
+        if self.fullscreen:
+            prompt_label.setMaximumWidth(520)  # Wider for fullscreen
+        else:
+            prompt_label.setMaximumWidth(380)
+        
         prompt_label.setStyleSheet("""
             QLabel { 
                 font-size: 11px; 
                 color: #a0a0a0; 
                 border: none;
-                padding: 0;
+                padding: 8px 0;
                 margin: 0;
+                line-height: 1.5;
             }
         """)
         prompt_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -145,8 +157,100 @@ class PasswordDialog(QDialog):
         self.password_input.returnPressed.connect(self.on_ok)
         content_layout.addWidget(self.password_input)
         
+        # Password strength meter - only show during password creation
+        if title and ("Create" in title or "New Password" in title):
+            # Strength meter container
+            strength_layout = QVBoxLayout()
+            strength_layout.setSpacing(4)
+            strength_layout.setContentsMargins(0, 8, 0, 0)
+            
+            # Strength meter label
+            self.strength_label = QLabel("Password Strength: -")
+            self.strength_label.setStyleSheet("""
+                QLabel {
+                    font-size: 11px;
+                    color: #888888;
+                    border: none;
+                }
+            """)
+            strength_layout.addWidget(self.strength_label)
+            
+            # Strength meter bar
+            self.strength_meter = QProgressBar()
+            self.strength_meter.setFixedHeight(8)
+            self.strength_meter.setTextVisible(False)
+            self.strength_meter.setRange(0, 100)
+            self.strength_meter.setValue(0)
+            self.strength_meter.setStyleSheet("""
+                QProgressBar {
+                    border: none;
+                    background-color: #2b2b2b;
+                    border-radius: 4px;
+                }
+                QProgressBar::chunk {
+                    background-color: #666666;
+                    border-radius: 4px;
+                }
+            """)
+            strength_layout.addWidget(self.strength_meter)
+            
+            content_layout.addLayout(strength_layout)
+            
+            # Connect password input to strength meter
+            self.password_input.textChanged.connect(self.update_password_strength)
+        else:
+            self.strength_label = None
+            self.strength_meter = None
+        
         # Spacer before buttons
         content_layout.addSpacing(10)
+        
+        # "Forgot Password?" link - only show if enabled
+        if self.show_forgot_password:
+            forgot_link = QPushButton("🔑 Forgot Password?")
+            forgot_link.setFlat(True)
+            forgot_link.setCursor(self.cursor())
+            forgot_link.setStyleSheet("""
+                QPushButton {
+                    color: #d32f2f;
+                    border: none;
+                    background: transparent;
+                    padding: 0;
+                    font-size: 12px;
+                    text-decoration: none;
+                }
+                QPushButton:hover {
+                    color: #b71c1c;
+                }
+            """)
+            forgot_link.clicked.connect(self.on_forgot_password)
+            forgot_layout = QHBoxLayout()
+            forgot_layout.addStretch()
+            forgot_layout.addWidget(forgot_link)
+            forgot_layout.addStretch()
+            content_layout.addLayout(forgot_layout)
+            
+            # Warning if no recovery codes
+            if not self.has_recovery_codes:
+                warning_label = QLabel(
+                    "⚠️  No recovery codes generated!\n"
+                    "Generate them from Settings → Generate Recovery Codes"
+                )
+                warning_label.setStyleSheet("""
+                    QLabel {
+                        color: #ff9800;
+                        font-size: 11px;
+                        background-color: #2a2a2a;
+                        border: 1px solid #ff9800;
+                        border-radius: 4px;
+                        padding: 8px;
+                    }
+                """)
+                warning_label.setWordWrap(True)
+                warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                content_layout.addWidget(warning_label)
+            
+            content_layout.addSpacing(10)
         
         # Buttons - compact design
         button_layout = QHBoxLayout()
@@ -173,7 +277,13 @@ class PasswordDialog(QDialog):
         """)
         cancel_button.clicked.connect(self.reject)
         
-        ok_button = QPushButton("Unlock")
+        # OK button - dynamic text based on dialog type
+        if title and ("Create" in title or "New Password" in title):
+            button_text = "Create"
+        else:
+            button_text = "Unlock"
+        
+        ok_button = QPushButton(button_text)
         ok_button.setFixedSize(120, 36)
         ok_button.setStyleSheet("""
             QPushButton {
@@ -297,11 +407,97 @@ class PasswordDialog(QDialog):
             # Fallback to dark background
             self.setStyleSheet("QDialog { background-color: #1a1a1a; }")
     
+    def calculate_password_strength(self, password: str) -> tuple[int, str, str]:
+        """
+        Calculate password strength score and return (score, label, color).
+        
+        Args:
+            password: Password to evaluate
+            
+        Returns:
+            Tuple of (score 0-100, strength label, color hex)
+        """
+        if not password:
+            return (0, "-", "#666666")
+        
+        score = 0
+        length = len(password)
+        
+        # Length scoring (0-40 points)
+        if length >= 1:
+            score += min(length * 3, 40)
+        
+        # Character variety (0-60 points)
+        has_lower = any(c.islower() for c in password)
+        has_upper = any(c.isupper() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+        
+        variety_score = 0
+        if has_lower: variety_score += 10
+        if has_upper: variety_score += 10
+        if has_digit: variety_score += 15
+        if has_special: variety_score += 25
+        
+        score += variety_score
+        
+        # Cap at 100
+        score = min(score, 100)
+        
+        # Determine strength label and color
+        if score < 25:
+            return (score, "Very Weak", "#d32f2f")  # Red
+        elif score < 45:
+            return (score, "Weak", "#ff5722")  # Deep Orange
+        elif score < 65:
+            return (score, "Fair", "#ff9800")  # Orange
+        elif score < 85:
+            return (score, "Good", "#4caf50")  # Green
+        else:
+            return (score, "Strong", "#2e7d32")  # Dark Green
+    
+    def update_password_strength(self, text: str):
+        """Update password strength meter based on input"""
+        if self.strength_meter and self.strength_label:
+            score, label, color = self.calculate_password_strength(text)
+            
+            # Update meter value
+            self.strength_meter.setValue(score)
+            
+            # Update meter color
+            self.strength_meter.setStyleSheet(f"""
+                QProgressBar {{
+                    border: none;
+                    background-color: #2b2b2b;
+                    border-radius: 4px;
+                }}
+                QProgressBar::chunk {{
+                    background-color: {color};
+                    border-radius: 4px;
+                }}
+            """)
+            
+            # Update label
+            self.strength_label.setText(f"Password Strength: {label}")
+            self.strength_label.setStyleSheet(f"""
+                QLabel {{
+                    font-size: 11px;
+                    color: {color};
+                    border: none;
+                    font-weight: bold;
+                }}
+            """)
+    
     def on_ok(self):
         """Handle OK button click"""
         self.password_value = self.password_input.text()
         if self.password_value:
             self.accept()
+    
+    def on_forgot_password(self):
+        """Handle forgot password - user needs to recover with code"""
+        self.password_value = "RECOVER"  # Special marker for recovery flow
+        self.accept()
     
     def get_password(self):
         """Get the entered password"""
@@ -315,7 +511,7 @@ class PasswordDialog(QDialog):
             super().keyPressEvent(event)
 
 
-def ask_password(title, prompt, resource_path, style="simple", wallpaper="default", parent=None):
+def ask_password(title, prompt, resource_path, style="simple", wallpaper="default", parent=None, show_forgot_password=True, has_recovery_codes=True):
     """
     Helper function to show password dialog.
     
@@ -326,12 +522,14 @@ def ask_password(title, prompt, resource_path, style="simple", wallpaper="defaul
         style: "simple" or "fullscreen"
         wallpaper: Wallpaper choice ("default", "H4ck3r", "Binary", "encrypted")
         parent: Parent widget
+        show_forgot_password: Show "Forgot Password?" link (default: True)
+        has_recovery_codes: Whether recovery codes exist (for warning message)
     
     Returns:
         Password string or None if cancelled
     """
     fullscreen = (style == "fullscreen")
-    dialog = PasswordDialog(title, prompt, resource_path, fullscreen, wallpaper, parent)
+    dialog = PasswordDialog(title, prompt, resource_path, fullscreen, wallpaper, parent, show_forgot_password, has_recovery_codes)
     
     if dialog.exec() == QDialog.DialogCode.Accepted:
         return dialog.get_password()

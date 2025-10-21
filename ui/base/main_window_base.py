@@ -26,6 +26,7 @@ from core.config_manager import ConfigManager
 from core.application_manager import ApplicationManager
 from core.activity_manager import ActivityManager
 from core.statistics_manager import StatisticsManager
+from core.file_protection import get_file_protection_manager
 
 # Import version info
 from version import __version__, __version_code__
@@ -145,7 +146,13 @@ class MainWindowBase(QMainWindow):
         # Password file path - use platform-specific folder
         fadcrypt_folder = self.get_fadcrypt_folder()
         password_file = os.path.join(fadcrypt_folder, "encrypted_password.bin")
-        self.password_manager = PasswordManager(password_file, self.crypto_manager)
+        recovery_codes_file = os.path.join(fadcrypt_folder, "recovery_codes.json")
+        
+        self.password_manager = PasswordManager(
+            password_file,
+            self.crypto_manager,
+            recovery_codes_file
+        )
         
         # Initialize file lock manager (platform-specific)
         self.file_lock_manager = self.get_file_lock_manager(fadcrypt_folder)
@@ -224,6 +231,9 @@ class MainWindowBase(QMainWindow):
         
         # Connect settings signal
         self.settings_panel.settings_changed.connect(self.on_settings_changed)
+        
+        # Connect recovery codes button to handler
+        self.settings_panel.on_generate_recovery_codes = self.on_generate_recovery_codes_clicked
         
         # Connect cleanup button to cleanup handler
         self.settings_panel.on_cleanup_clicked = self.cleanup_before_uninstall
@@ -376,17 +386,11 @@ class MainWindowBase(QMainWindow):
     def show_window_from_tray(self):
         """Show window from system tray - requires password if monitoring is active"""
         if self.monitoring_active:
-            # Ask for password when monitoring is active (same as legacy)
-            from ui.dialogs.password_dialog import ask_password
-            password = ask_password(
+            # Ask for password with recovery option
+            if self.verify_password_with_recovery(
                 "Show Window",
-                "Enter your password to show the window:",
-                self.resource_path,
-                style=self.password_dialog_style,
-                wallpaper=self.wallpaper_choice,
-                parent=self
-            )
-            if password and self.password_manager.verify_password(password):
+                "Enter your password to show the window:"
+            ):
                 self.show()
                 self.activateWindow()
                 self.raise_()
@@ -394,7 +398,7 @@ class MainWindowBase(QMainWindow):
                 if self.system_tray:
                     self.system_tray.show_message(
                         "Access Denied",
-                        "Incorrect password. Window remains hidden.",
+                        "Window remains hidden.",
                         QSystemTrayIcon.MessageIcon.Warning
                     )
         else:
@@ -449,6 +453,10 @@ class MainWindowBase(QMainWindow):
                 # Stop monitoring first
                 if self.unified_monitor:
                     self.unified_monitor.stop_monitoring()
+                # Unprotect critical files
+                print("🔓 Unprotecting critical files on exit...")
+                file_protection = get_file_protection_manager()
+                file_protection.unprotect_all_files()
                 # Really exit the application
                 from PyQt6.QtWidgets import QApplication
                 # Cleanup logs widget
@@ -466,6 +474,10 @@ class MainWindowBase(QMainWindow):
         else:
             # Not monitoring, exit without password
             print("✅ Exiting FadCrypt (no monitoring active)")
+            # Unprotect critical files (in case they were left protected)
+            print("🔓 Unprotecting critical files on exit...")
+            file_protection = get_file_protection_manager()
+            file_protection.unprotect_all_files()
             from PyQt6.QtWidgets import QApplication
             # Cleanup logs widget
             if hasattr(self, 'logs_tab_widget'):
@@ -1332,6 +1344,217 @@ class MainWindowBase(QMainWindow):
         else:
             print("[MainWindow] ⚠️  No screen found, cannot center")
     
+    def verify_password_with_recovery(self, title: str, prompt: str) -> bool:
+        """
+        Verify password with recovery code fallback.
+        Handles "Forgot Password?" flow.
+        
+        Returns:
+            True if password verified, False if cancelled or recovery attempted
+        """
+        from ui.dialogs.password_dialog import ask_password
+        from ui.dialogs.recovery_dialog import ask_recovery_code, show_recovery_codes
+        
+        while True:
+            # Ask for password with recovery code status
+            password = ask_password(
+                title,
+                prompt,
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self,
+                has_recovery_codes=self.password_manager.has_recovery_codes()
+            )
+            
+            # User cancelled
+            if not password:
+                return False
+            
+            # User clicked "Forgot Password?"
+            if password == "RECOVER":
+                if not self.password_manager.has_recovery_codes():
+                    self.show_message(
+                        "No Recovery Codes",
+                        "No recovery codes found. You cannot recover your password.\n"
+                        "Your password cannot be reset without backup codes.",
+                        "error"
+                    )
+                    continue
+                
+                # Show recovery code dialog with verification callback
+                code, new_pwd = ask_recovery_code(
+                    self.resource_path,
+                    self,
+                    verify_callback=self.password_manager.verify_recovery_code
+                )
+                
+                if not code or not new_pwd:
+                    continue  # User cancelled recovery
+                
+                # Attempt password recovery
+                success, error = self.password_manager.recover_password_with_code(
+                    code,
+                    new_pwd,
+                    cleanup_callback=self._password_recovery_cleanup
+                )
+                
+                if success:
+                    # Ask user if they want to generate recovery codes now
+                    self._offer_recovery_code_generation("Password Recovered")
+                    return True
+                else:
+                    self.show_message(
+                        "Recovery Failed",
+                        f"❌ Password recovery failed:\n{error}",
+                        "error"
+                    )
+                    continue
+            
+            # Verify password
+            if self.password_manager.verify_password(password):
+                return True
+            else:
+                # Invalid password - ask again
+                self.show_message(
+                    "Invalid Password",
+                    "❌ Incorrect password. Please try again.\n"
+                    "You can click 'Forgot Password?' if you don't remember your password.",
+                    "error"
+                )
+                continue
+    
+    def _offer_recovery_code_generation(self, success_title: str = "Success"):
+        """
+        Offer user to generate recovery codes with recommendation.
+        
+        Args:
+            success_title: Title for success message
+        """
+        from ui.dialogs.recovery_dialog import show_recovery_codes
+        
+        # Check if recovery codes already exist
+        has_codes = self.password_manager.has_recovery_codes()
+        
+        if has_codes:
+            # Codes exist - warn about invalidation
+            message = (
+                "✅ Password operation successful!\n\n"
+                "ℹ️  You currently have existing recovery codes.\n\n"
+                "🔐 Would you like to generate NEW recovery codes?\n\n"
+                "⚠️  IMPORTANT: Generating new codes will INVALIDATE all old codes!\n"
+                "• If you have old codes saved, they will no longer work\n"
+                "• Only the new codes will be valid after generation\n\n"
+                "Recommendation: Only generate new codes if:\n"
+                "• You've lost your old codes\n"
+                "• You want to refresh your codes for security"
+            )
+        else:
+            # No codes exist - recommend generation
+            message = (
+                "✅ Password operation successful!\n\n"
+                "🔐 Would you like to generate recovery codes now?\n\n"
+                "Recovery codes allow you to reset your password if you forget it.\n"
+                "Without recovery codes, a forgotten password cannot be recovered!\n\n"
+                "⚠️  Highly recommended for account security!"
+            )
+        
+        # Ask if user wants to generate codes now
+        reply = QMessageBox.question(
+            self,
+            success_title,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No if has_codes else QMessageBox.StandardButton.Yes
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            success, codes = self.password_manager.create_recovery_codes()
+            if success and codes:
+                show_recovery_codes(codes, self.resource_path, self)
+                if has_codes:
+                    self.show_message(
+                        "Recovery Codes Regenerated",
+                        "✅ New recovery codes generated successfully!\n"
+                        "⚠️  All old codes have been invalidated.\n\n"
+                        "Save the new codes in a secure place.\n\n"
+                        "You can regenerate codes anytime from the main menu.",
+                        "success"
+                    )
+                else:
+                    self.show_message(
+                        "Recovery Codes Generated",
+                        "✅ Recovery codes generated successfully!\n"
+                        "Save them in a secure place.\n\n"
+                        "You can regenerate codes anytime from the main menu.",
+                        "success"
+                    )
+        else:
+            if has_codes:
+                self.show_message(
+                    "Recovery Codes Kept",
+                    "ℹ️  Your existing recovery codes remain valid.\n\n"
+                    "You can continue using your saved codes if needed.\n\n"
+                    "To generate new codes later, use:\n"
+                    "Settings → Generate Recovery Codes",
+                    "info"
+                )
+            else:
+                self.show_message(
+                    "Recovery Codes Skipped",
+                    "⚠️  You chose not to generate recovery codes.\n\n"
+                    "Without recovery codes, you CANNOT reset your password if forgotten!\n\n"
+                    "You can generate them later from the main menu:\n"
+                    "Settings → Generate Recovery Codes",
+                    "warning"
+                )
+    
+    def _password_recovery_cleanup(self, new_password: str) -> bool:
+        """
+        Cleanup callback for password recovery.
+        Stops monitoring, unlocks files, resets state.
+        
+        Args:
+            new_password: New master password (for re-encryption if needed)
+        
+        Returns:
+            True if cleanup successful
+        """
+        try:
+            print("[Recovery] Starting cleanup callback...")
+            
+            # Stop monitoring if active
+            if self.monitoring_active:
+                print("[Recovery] Stopping monitoring...")
+                if self.unified_monitor:
+                    self.unified_monitor.stop_monitoring()
+                if self.file_access_monitor:
+                    self.file_access_monitor.stop_monitoring()
+                self.monitoring_active = False
+            
+            # Unlock all files
+            if self.file_lock_manager:
+                print("[Recovery] Unlocking all files...")
+                if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
+                    self.file_lock_manager.unlock_all_with_configs()
+                else:
+                    self.file_lock_manager.unlock_all()
+                self.file_lock_manager.unlock_fadcrypt_configs()
+            
+            # Reset monitoring state
+            self.monitoring_state = {
+                'unlocked_apps': [],
+                'unlocked_files': []
+            }
+            self.save_monitoring_state_to_disk()
+            
+            print("[Recovery] ✅ Cleanup complete")
+            return True
+            
+        except Exception as e:
+            print(f"[Recovery] ❌ Error during cleanup: {e}")
+            return False
+    
     def show_message(self, title, message, msg_type="info"):
         """Show a message dialog"""
         if msg_type == "info":
@@ -2014,6 +2237,58 @@ class MainWindowBase(QMainWindow):
         self.unified_monitor.start_monitoring(applications)
         self.monitoring_active = True
         
+        # Protect critical files from deletion/tampering (if enabled in settings)
+        settings_file = os.path.join(self.get_fadcrypt_folder(), 'settings.json')
+        file_protection_enabled = True  # Default: enabled
+        
+        try:
+            if os.path.exists(settings_file):
+                import json
+                with open(settings_file, 'r') as f:
+                    settings = json.load(f)
+                    file_protection_enabled = settings.get('file_protection_enabled', True)
+        except Exception as e:
+            print(f"[FileProtection] Could not read settings, using default: {e}")
+        
+        if file_protection_enabled:
+            # Show authorization dialog before requesting permissions
+            from ui.dialogs.file_protection_auth_dialog import FileProtectionAuthDialog
+            
+            platform_name = "Windows" if sys.platform == 'win32' else "Linux"
+            auth_dialog = FileProtectionAuthDialog(
+                parent=self,
+                platform_name=platform_name,
+                file_count=3
+            )
+            
+            dialog_result = auth_dialog.exec()
+            
+            if dialog_result == FileProtectionAuthDialog.DialogCode.Accepted:
+                print("🛡️  Protecting critical files...")
+                file_protection = get_file_protection_manager()
+                fadcrypt_folder = self.get_fadcrypt_folder()
+                
+                # List of critical files to protect
+                critical_files = [
+                    os.path.join(fadcrypt_folder, "recovery_codes.json"),
+                    os.path.join(fadcrypt_folder, "encrypted_password.bin"),
+                    os.path.join(fadcrypt_folder, "apps_config.json"),
+                ]
+                
+                # Filter to only existing files
+                existing_files = [f for f in critical_files if os.path.exists(f)]
+                
+                if existing_files:
+                    success_count, errors = file_protection.protect_multiple_files(existing_files)
+                    print(f"✅ Protected {success_count}/{len(existing_files)} critical files")
+                    if errors:
+                        for error in errors:
+                            print(f"   ⚠️  {error}")
+            else:
+                print("⏭️  User skipped file protection")
+        else:
+            print("⏭️  File protection disabled in settings")
+        
         # Log monitoring start event (needed for duration calculation)
         self.log_activity(
             'start_monitoring',
@@ -2120,22 +2395,25 @@ class MainWindowBase(QMainWindow):
             self.show_message("Info", "Monitoring is not running.", "info")
             return
         
-        # Ask for password
-        from ui.dialogs.password_dialog import ask_password
-        password = ask_password(
+        # Ask for password with recovery option
+        if self.verify_password_with_recovery(
             "Stop Monitoring",
-            "Enter your password to stop monitoring:",
-            self.resource_path,
-            style=self.password_dialog_style,
-            wallpaper=self.wallpaper_choice,
-            parent=self
-        )
-        
-        if password and self.password_manager.verify_password(password):
+            "Enter your password to stop monitoring:"
+        ):
             # Stop monitoring
             if self.unified_monitor:
                 self.unified_monitor.stop_monitoring()
                 print("🛑 Monitoring stopped successfully")
+            
+            # Unprotect critical files
+            print("🔓 Unprotecting critical files...")
+            file_protection = get_file_protection_manager()
+            success_count, errors = file_protection.unprotect_all_files()
+            if success_count > 0:
+                print(f"✅ Unprotected {success_count} critical files")
+            if errors:
+                for error in errors:
+                    print(f"   ⚠️  {error}")
             
             # Stop file access monitoring
             if self.file_access_monitor:
@@ -2618,18 +2896,11 @@ class MainWindowBase(QMainWindow):
     
     def show_password_prompt_for_app_sync(self, app_name, app_path):
         """Show password dialog in main thread (thread-safe)"""
-        from ui.dialogs.password_dialog import ask_password
-        
-        password = ask_password(
+        # Use verify_password_with_recovery to handle forgot password flow
+        if self.verify_password_with_recovery(
             f"Unlock {app_name}",
-            f"Application '{app_name}' is locked.\n\nEnter your password to unlock it:",
-            self.resource_path,
-            style=self.password_dialog_style,
-            wallpaper=self.wallpaper_choice,
-            parent=self
-        )
-        
-        if password and self.password_manager.verify_password(password):
+            f"Application '{app_name}' is locked.\n\nEnter your password to unlock it:"
+        ):
             print(f"✅ Password correct - Unlocking {app_name}")
             
             # Add to unlocked apps (the monitoring thread will see this and stop blocking)
@@ -2660,7 +2931,7 @@ class MainWindowBase(QMainWindow):
             # Remove from showing dialog set
             self.unified_monitor.remove_from_showing_dialog(app_name)
         else:
-            print(f"❌ Password incorrect - Keeping {app_name} locked")
+            print(f"❌ Password incorrect or cancelled - Keeping {app_name} locked")
             
             # Log failed unlock attempt
             self.log_activity(
@@ -2668,18 +2939,10 @@ class MainWindowBase(QMainWindow):
                 app_name,
                 'application',
                 success=False,
-                details="Wrong password entered"
+                details="Wrong password entered or cancelled"
             )
             
-            # Show error message for wrong password
-            if password:  # Only show error if password was entered (not cancelled)
-                self.show_message(
-                    "Incorrect Password",
-                    f"The password you entered is incorrect.\n\n{app_name} remains locked.",
-                    "error"
-                )
-            
-            # Remove from showing dialog set even if password wrong
+            # Remove from showing dialog set
             self.unified_monitor.remove_from_showing_dialog(app_name)
         
     def on_readme_clicked(self):
@@ -2777,19 +3040,45 @@ class MainWindowBase(QMainWindow):
             print(f"   ⚠️  Password file already exists, cannot create")
             self.show_message("Info", "Password already exists. Use 'Change Password' to modify.", "info")
         else:
+            # First password entry
             password = ask_password(
                 "Create Password",
                 "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
                 self.resource_path,
                 style=self.password_dialog_style,
                 wallpaper=self.wallpaper_choice,
-                parent=self
+                parent=self,
+                show_forgot_password=False  # Hide forgot password during creation
             )
             if password:
+                # Confirm password entry
+                confirm_password = ask_password(
+                    "Confirm New Password",  # Changed to include "New Password" for "Create" button
+                    "Please re-enter your password to confirm:",
+                    self.resource_path,
+                    style=self.password_dialog_style,
+                    wallpaper=self.wallpaper_choice,
+                    parent=self,
+                    show_forgot_password=False  # Hide forgot password during creation
+                )
+                
+                if not confirm_password:
+                    print(f"   ⚠️  Password confirmation cancelled")
+                    return
+                
+                if password != confirm_password:
+                    print(f"   ❌ Passwords don't match")
+                    self.show_message("Error", "Passwords don't match. Please try again.", "error")
+                    return
+                
                 try:
                     print(f"   Creating password file at: {password_file}")
                     self.password_manager.create_password(password)
                     print(f"   ✅ Password created successfully")
+                    
+                    # Offer recovery code generation
+                    self._offer_recovery_code_generation("Password Created")
+                    
                     self.show_message("Success", "Password created successfully.", "success")
                 except Exception as e:
                     print(f"   ❌ Error creating password: {e}")
@@ -2804,14 +3093,54 @@ class MainWindowBase(QMainWindow):
         print(f"   File exists: {os.path.exists(password_file)}")
         
         if os.path.exists(password_file):
+            # Ask for old password with recovery option
             old_password = ask_password(
                 "Change Password",
                 "Enter your old password:",
                 self.resource_path,
                 style=self.password_dialog_style,
                 wallpaper=self.wallpaper_choice,
-                parent=self
+                parent=self,
+                show_forgot_password=True,
+                has_recovery_codes=self.password_manager.has_recovery_codes()
             )
+            
+            if old_password == "RECOVER":
+                # User clicked forgot password - show recovery dialog
+                from ui.dialogs.recovery_dialog import ask_recovery_code
+                
+                if not self.password_manager.has_recovery_codes():
+                    self.show_message(
+                        "No Recovery Codes",
+                        "❌ No recovery codes found!\n\n"
+                        "You cannot recover your password without recovery codes.\n"
+                        "Recovery codes must be generated from the Settings menu first.",
+                        "error"
+                    )
+                    return
+                
+                code, new_pwd = ask_recovery_code(
+                    self.resource_path,
+                    self,
+                    verify_callback=self.password_manager.verify_recovery_code
+                )
+                
+                if not code or not new_pwd:
+                    return  # User cancelled
+                
+                # Recover password
+                success, error = self.password_manager.recover_password_with_code(
+                    code,
+                    new_pwd,
+                    cleanup_callback=self._password_recovery_cleanup
+                )
+                
+                if success:
+                    self._offer_recovery_code_generation("Password Recovered")
+                else:
+                    self.show_message("Recovery Failed", f"❌ {error}", "error")
+                return
+            
             if old_password and self.password_manager.verify_password(old_password):
                 print(f"   ✅ Old password verified")
                 new_password = ask_password(
@@ -2820,23 +3149,84 @@ class MainWindowBase(QMainWindow):
                     self.resource_path,
                     style=self.password_dialog_style,
                     wallpaper=self.wallpaper_choice,
-                    parent=self
+                    parent=self,
+                    show_forgot_password=False
                 )
                 if new_password:
                     try:
                         print(f"   Changing password at: {password_file}")
                         self.password_manager.change_password(old_password, new_password)
                         print(f"   ✅ Password changed successfully")
-                        self.show_message("Success", "Password changed successfully.", "success")
+                        
+                        # Offer recovery code generation
+                        self._offer_recovery_code_generation("Password Changed")
+                        
                     except Exception as e:
                         print(f"   ❌ Error changing password: {e}")
                         self.show_message("Error", f"Failed to change password:\n{e}", "error")
             else:
-                print(f"   ❌ Old password verification failed")
-                self.show_message("Error", "Incorrect old password.", "error")
+                print(f"   ❌ Password verification failed")
+                self.show_message("Error", "Incorrect old password", "error")
         else:
             print(f"   ⚠️  No password file found")
             self.show_message("Oops!", "How do I change a password that doesn't exist? :(", "warning")
+    
+    def on_generate_recovery_codes_clicked(self):
+        """Handle generate recovery codes button click from settings"""
+        from ui.dialogs.password_dialog import ask_password
+        from ui.dialogs.recovery_dialog import show_recovery_codes
+        
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        
+        # Check if password exists
+        if not os.path.exists(password_file):
+            self.show_message(
+                "No Password Set",
+                "You need to create a password first before generating recovery codes.",
+                "warning"
+            )
+            return
+        
+        # Ask for password to verify user identity
+        password = ask_password(
+            "Generate Recovery Codes",
+            "Enter your master password to generate recovery codes:",
+            self.resource_path,
+            style=self.password_dialog_style,
+            wallpaper=self.wallpaper_choice,
+            parent=self,
+            show_forgot_password=False
+        )
+        
+        if not password:
+            return
+        
+        # Verify password
+        if not self.password_manager.verify_password(password):
+            self.show_message(
+                "Invalid Password",
+                "Incorrect password. Recovery codes not generated.",
+                "error"
+            )
+            return
+        
+        # Generate recovery codes
+        success, codes = self.password_manager.create_recovery_codes()
+        if success and codes:
+            show_recovery_codes(codes, self.resource_path, self)
+            self.show_message(
+                "Recovery Codes Generated",
+                "✅ Recovery codes generated successfully!\n\n"
+                "⚠️  These replace any previous recovery codes.\n"
+                "Save them in a secure place.",
+                "success"
+            )
+        else:
+            self.show_message(
+                "Generation Failed",
+                "Failed to generate recovery codes. Please try again.",
+                "error"
+            )
         
     def on_snake_game(self):
         """Handle snake game button click"""

@@ -1,11 +1,12 @@
 """
 Password Manager - Master Password Operations
-Handles master password creation, verification, and changes
+Handles master password creation, verification, changes, and recovery codes
 """
 
 import os
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Tuple
 from .crypto_manager import CryptoManager
+from .recovery_manager import RecoveryCodeManager
 
 
 class PasswordManager:
@@ -22,21 +23,28 @@ class PasswordManager:
         cached_password: In-memory cache of password (bytes)
     """
     
-    def __init__(self, password_file_path: str, crypto_manager: Optional[CryptoManager] = None):
+    def __init__(self, password_file_path: str, crypto_manager: Optional[CryptoManager] = None, recovery_codes_file_path: Optional[str] = None):
         """
         Initialize the PasswordManager.
         
         Args:
             password_file_path: Full path to encrypted_password.bin file
-            crypto_manager: Optional CryptoManager instance (creates new if None)
+            crypto_manager: Optional CryptoManager instance
+            recovery_codes_file_path: Full path to recovery_codes.json file
         """
         self.password_file = password_file_path
         self.crypto = crypto_manager or CryptoManager()
         self.cached_password: Optional[bytes] = None
         
-        # Log initialization
+        # Initialize recovery code manager if path provided
+        self.recovery_manager: Optional[RecoveryCodeManager] = None
+        if recovery_codes_file_path:
+            self.recovery_manager = RecoveryCodeManager(recovery_codes_file_path)
+        
         print(f"[PasswordManager] Initialized with password file: {password_file_path}")
         print(f"[PasswordManager] Password file exists: {os.path.exists(password_file_path)}")
+        if self.recovery_manager:
+            print(f"[PasswordManager] Recovery codes available: {self.recovery_manager.has_recovery_codes()}")
     
     def create_password(self, password: str) -> bool:
         """
@@ -201,3 +209,154 @@ class PasswordManager:
             Cached password as bytes, or None if not cached
         """
         return self.cached_password
+
+    # ==================== Recovery Code Methods ====================
+    
+    def create_recovery_codes(self) -> Tuple[bool, Optional[List[str]]]:
+        """
+        Create recovery codes for the master password.
+        
+        Should be called immediately after password creation.
+        User must write down the codes and store them safely.
+        
+        Returns:
+            Tuple of (success: bool, codes: List[str] or None)
+        """
+        if not self.recovery_manager:
+            print("[PasswordManager] Recovery code manager not initialized")
+            return False, None
+        
+        return self.recovery_manager.create_recovery_codes()
+    
+    def verify_recovery_code(self, code: str) -> Tuple[bool, Optional[str]]:
+        """
+        Verify if a recovery code is valid and unused.
+        
+        Args:
+            code: Recovery code to verify
+            
+        Returns:
+            Tuple of (is_valid: bool, error_message: Optional[str])
+        """
+        if not self.recovery_manager:
+            return False, "Recovery codes not available"
+        
+        return self.recovery_manager.verify_recovery_code(code)
+    
+    def recover_password_with_code(
+        self,
+        recovery_code: str,
+        new_password: str,
+        cleanup_callback: Optional[Callable[[str], bool]] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Recover access and reset password using a recovery code.
+        
+        This is the core password recovery mechanism with hash-based security:
+        1. Verify recovery code against saved hashes (NO password needed!)
+        2. Mark code as used (one-time consumption)
+        3. Delete old password file
+        4. Delete old recovery codes
+        5. Create new password
+        6. Create new recovery codes
+        7. Call cleanup callback (e.g., stop monitoring, unlock files)
+        
+        CRITICAL SECURITY (Version 2.0 - Hash-Based):
+        - Recovery codes verified WITHOUT needing old password
+        - PBKDF2-HMAC-SHA256 hash verification (100k iterations)
+        - Code must match stored hash to proceed
+        - Code marked as used immediately after verification
+        - Old password file deleted (no bypass with old password)
+        - Old recovery codes deleted (used code won't work again)
+        - New recovery codes created with new password
+        - Even with hash file access, codes cannot be reversed
+        
+        Args:
+            recovery_code: Recovery code provided by user
+            new_password: New master password
+            cleanup_callback: Optional callback to cleanup monitoring/files
+                             Should accept new_password (str) and return success bool
+            
+        Returns:
+            Tuple of (success: bool, error_message: Optional[str])
+        """
+        if not self.recovery_manager:
+            return False, "Recovery codes not available"
+        
+        try:
+            if not self.recovery_manager.has_recovery_codes():
+                return False, "No recovery codes found. Please reset your password differently."
+            
+            print("[PasswordManager] Starting password recovery process (hash-based)...")
+            
+            # Step 1: Verify recovery code
+            print("[PasswordManager] Verifying recovery code against stored hashes...")
+            is_valid, error_msg = self.recovery_manager.verify_recovery_code(recovery_code)
+            
+            if not is_valid:
+                print(f"[PasswordManager] Recovery code verification failed: {error_msg}")
+                return False, f"Invalid recovery code: {error_msg}"
+            
+            print("[PasswordManager] Recovery code verified successfully")
+            
+            # Step 2: Consume (mark as used) the recovery code immediately
+            print("[PasswordManager] Marking recovery code as used...")
+            consumed, consume_error = self.recovery_manager.consume_recovery_code(recovery_code)
+            
+            if not consumed:
+                print(f"[PasswordManager] Failed to mark code as used: {consume_error}")
+            else:
+                print("[PasswordManager] Recovery code marked as used")
+            
+            # Step 3: Delete old password file (cannot be recovered)
+            if os.path.exists(self.password_file):
+                try:
+                    os.remove(self.password_file)
+                    print("[PasswordManager] ✅ Deleted old password file")
+                except Exception as e:
+                    print(f"[PasswordManager] ⚠️  Failed to delete old password: {e}")
+            
+            # Note: Recovery codes are kept - only the used code is marked as consumed
+            # Remaining unused codes can still be used for future password resets
+            
+            # Step 4: Run cleanup callback (stop monitoring, unlock files, reset state)
+            if cleanup_callback:
+                print("[PasswordManager] Running cleanup callback...")
+                if not cleanup_callback(new_password):
+                    print("[PasswordManager] ⚠️  Cleanup callback returned False")
+            
+            # Step 5: Create new password
+            if not self.create_password(new_password):
+                return False, "Failed to create new password"
+            
+            print("[PasswordManager] Password recovered and reset successfully")
+            
+            return True, None
+            
+        except Exception as e:
+            print(f"[PasswordManager] ❌ Error recovering password: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"Error during recovery: {str(e)}"
+    
+    def has_recovery_codes(self) -> bool:
+        """
+        Check if recovery codes are available.
+        
+        Returns:
+            True if recovery codes are set, False otherwise
+        """
+        if not self.recovery_manager:
+            return False
+        return self.recovery_manager.has_recovery_codes()
+    
+    def get_remaining_recovery_codes_count(self) -> Tuple[bool, Optional[int]]:
+        """
+        Get count of unused recovery codes.
+        
+        Returns:
+            Tuple of (success: bool, count: Optional[int])
+        """
+        if not self.recovery_manager:
+            return False, None
+        return self.recovery_manager.get_remaining_codes_count()
