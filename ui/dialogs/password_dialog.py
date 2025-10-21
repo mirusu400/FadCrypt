@@ -10,7 +10,7 @@ from PyQt6.QtGui import QPixmap, QFont
 class PasswordDialog(QDialog):
     """Custom password dialog with optional fullscreen wallpaper background"""
     
-    def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None, show_forgot_password=True):
+    def __init__(self, title, prompt, resource_path, fullscreen=False, wallpaper_choice=None, parent=None, show_forgot_password=True, has_recovery_codes=True):
         # For fullscreen mode, don't use parent to avoid being hidden when parent is minimized
         if fullscreen:
             super().__init__(None)  # Independent top-level window
@@ -22,6 +22,7 @@ class PasswordDialog(QDialog):
         self.wallpaper_choice = wallpaper_choice
         self.password_value = None
         self.show_forgot_password = show_forgot_password
+        self.has_recovery_codes = has_recovery_codes
         
         self.setWindowTitle(title)
         self.init_ui(title, prompt)
@@ -228,6 +229,26 @@ class PasswordDialog(QDialog):
             forgot_layout.addWidget(forgot_link)
             forgot_layout.addStretch()
             content_layout.addLayout(forgot_layout)
+            
+            # Warning if no recovery codes
+            if not self.has_recovery_codes:
+                warning_label = QLabel(
+                    "⚠️  No recovery codes generated!\n"
+                    "Generate them from Settings → Generate Recovery Codes"
+                )
+                warning_label.setStyleSheet("""
+                    QLabel {
+                        color: #ff9800;
+                        font-size: 11px;
+                        background-color: #2a2a2a;
+                        border: 1px solid #ff9800;
+                        border-radius: 4px;
+                        padding: 8px;
+                    }
+                """)
+                warning_label.setWordWrap(True)
+                warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                content_layout.addWidget(warning_label)
             
             content_layout.addSpacing(10)
         
@@ -490,7 +511,7 @@ class PasswordDialog(QDialog):
             super().keyPressEvent(event)
 
 
-def ask_password(title, prompt, resource_path, style="simple", wallpaper="default", parent=None, show_forgot_password=True):
+def ask_password(title, prompt, resource_path, style="simple", wallpaper="default", parent=None, show_forgot_password=True, has_recovery_codes=True):
     """
     Helper function to show password dialog.
     
@@ -502,12 +523,13 @@ def ask_password(title, prompt, resource_path, style="simple", wallpaper="defaul
         wallpaper: Wallpaper choice ("default", "H4ck3r", "Binary", "encrypted")
         parent: Parent widget
         show_forgot_password: Show "Forgot Password?" link (default: True)
+        has_recovery_codes: Whether recovery codes exist (for warning message)
     
     Returns:
         Password string or None if cancelled
     """
     fullscreen = (style == "fullscreen")
-    dialog = PasswordDialog(title, prompt, resource_path, fullscreen, wallpaper, parent, show_forgot_password)
+    dialog = PasswordDialog(title, prompt, resource_path, fullscreen, wallpaper, parent, show_forgot_password, has_recovery_codes)
     
     if dialog.exec() == QDialog.DialogCode.Accepted:
         return dialog.get_password()

@@ -316,13 +316,10 @@ class PasswordManager:
                 except Exception as e:
                     print(f"[PasswordManager] ⚠️  Failed to delete old password: {e}")
             
-            # Step 4: Delete old recovery codes file
-            if not self.recovery_manager.delete_recovery_codes():
-                print("[PasswordManager] ⚠️  Failed to delete old recovery codes")
-            else:
-                print("[PasswordManager] ✅ Deleted old recovery codes")
+            # Note: Recovery codes are kept - only the used code is marked as consumed
+            # Remaining unused codes can still be used for future password resets
             
-            # Step 5: Run cleanup callback (stop monitoring, unlock files, reset state)
+            # Step 4: Run cleanup callback (stop monitoring, unlock files, reset state)
             if cleanup_callback:
                 print("[PasswordManager] Running cleanup callback...")
                 if not cleanup_callback(new_password):
@@ -332,13 +329,7 @@ class PasswordManager:
             if not self.create_password(new_password):
                 return False, "Failed to create new password"
             
-            # Step 6: Create new recovery codes
-            success, codes = self.create_recovery_codes()
-            if not success or codes is None:
-                return False, "Failed to create new recovery codes"
-            
             print("[PasswordManager] Password recovered and reset successfully")
-            print(f"[PasswordManager] Generated {len(codes)} new recovery codes")
             
             return True, None
             

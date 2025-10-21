@@ -231,6 +231,9 @@ class MainWindowBase(QMainWindow):
         # Connect settings signal
         self.settings_panel.settings_changed.connect(self.on_settings_changed)
         
+        # Connect recovery codes button to handler
+        self.settings_panel.on_generate_recovery_codes = self.on_generate_recovery_codes_clicked
+        
         # Connect cleanup button to cleanup handler
         self.settings_panel.on_cleanup_clicked = self.cleanup_before_uninstall
         
@@ -1344,14 +1347,15 @@ class MainWindowBase(QMainWindow):
         from ui.dialogs.recovery_dialog import ask_recovery_code, show_recovery_codes
         
         while True:
-            # Ask for password
+            # Ask for password with recovery code status
             password = ask_password(
                 title,
                 prompt,
                 self.resource_path,
                 style=self.password_dialog_style,
                 wallpaper=self.wallpaper_choice,
-                parent=self
+                parent=self,
+                has_recovery_codes=self.password_manager.has_recovery_codes()
             )
             
             # User cancelled
@@ -1387,17 +1391,8 @@ class MainWindowBase(QMainWindow):
                 )
                 
                 if success:
-                    # Display new recovery codes
-                    success2, codes = self.password_manager.create_recovery_codes()
-                    if success2 and codes:
-                        show_recovery_codes(codes, self.resource_path, self)
-                    
-                    self.show_message(
-                        "Password Recovered",
-                        "✅ Your password has been reset successfully!\n"
-                        "Save your new recovery codes in a safe place.",
-                        "success"
-                    )
+                    # Ask user if they want to generate recovery codes now
+                    self._offer_recovery_code_generation("Password Recovered")
                     return True
                 else:
                     self.show_message(
@@ -1419,6 +1414,91 @@ class MainWindowBase(QMainWindow):
                     "error"
                 )
                 continue
+    
+    def _offer_recovery_code_generation(self, success_title: str = "Success"):
+        """
+        Offer user to generate recovery codes with recommendation.
+        
+        Args:
+            success_title: Title for success message
+        """
+        from ui.dialogs.recovery_dialog import show_recovery_codes
+        
+        # Check if recovery codes already exist
+        has_codes = self.password_manager.has_recovery_codes()
+        
+        if has_codes:
+            # Codes exist - warn about invalidation
+            message = (
+                "✅ Password operation successful!\n\n"
+                "ℹ️  You currently have existing recovery codes.\n\n"
+                "🔐 Would you like to generate NEW recovery codes?\n\n"
+                "⚠️  IMPORTANT: Generating new codes will INVALIDATE all old codes!\n"
+                "• If you have old codes saved, they will no longer work\n"
+                "• Only the new codes will be valid after generation\n\n"
+                "Recommendation: Only generate new codes if:\n"
+                "• You've lost your old codes\n"
+                "• You want to refresh your codes for security"
+            )
+        else:
+            # No codes exist - recommend generation
+            message = (
+                "✅ Password operation successful!\n\n"
+                "🔐 Would you like to generate recovery codes now?\n\n"
+                "Recovery codes allow you to reset your password if you forget it.\n"
+                "Without recovery codes, a forgotten password cannot be recovered!\n\n"
+                "⚠️  Highly recommended for account security!"
+            )
+        
+        # Ask if user wants to generate codes now
+        reply = QMessageBox.question(
+            self,
+            success_title,
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No if has_codes else QMessageBox.StandardButton.Yes
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            success, codes = self.password_manager.create_recovery_codes()
+            if success and codes:
+                show_recovery_codes(codes, self.resource_path, self)
+                if has_codes:
+                    self.show_message(
+                        "Recovery Codes Regenerated",
+                        "✅ New recovery codes generated successfully!\n"
+                        "⚠️  All old codes have been invalidated.\n\n"
+                        "Save the new codes in a secure place.\n\n"
+                        "You can regenerate codes anytime from the main menu.",
+                        "success"
+                    )
+                else:
+                    self.show_message(
+                        "Recovery Codes Generated",
+                        "✅ Recovery codes generated successfully!\n"
+                        "Save them in a secure place.\n\n"
+                        "You can regenerate codes anytime from the main menu.",
+                        "success"
+                    )
+        else:
+            if has_codes:
+                self.show_message(
+                    "Recovery Codes Kept",
+                    "ℹ️  Your existing recovery codes remain valid.\n\n"
+                    "You can continue using your saved codes if needed.\n\n"
+                    "To generate new codes later, use:\n"
+                    "Settings → Generate Recovery Codes",
+                    "info"
+                )
+            else:
+                self.show_message(
+                    "Recovery Codes Skipped",
+                    "⚠️  You chose not to generate recovery codes.\n\n"
+                    "Without recovery codes, you CANNOT reset your password if forgotten!\n\n"
+                    "You can generate them later from the main menu:\n"
+                    "Settings → Generate Recovery Codes",
+                    "warning"
+                )
     
     def _password_recovery_cleanup(self, new_password: str) -> bool:
         """
@@ -2925,20 +3005,8 @@ class MainWindowBase(QMainWindow):
                     self.password_manager.create_password(password)
                     print(f"   ✅ Password created successfully")
                     
-                    # Generate and display recovery codes
-                    print(f"   🔑 Generating recovery codes...")
-                    success, codes = self.password_manager.create_recovery_codes()
-                    if success and codes:
-                        print(f"   ✅ Recovery codes generated: {len(codes)} codes")
-                        # Show recovery codes dialog
-                        from ui.dialogs.recovery_dialog import show_recovery_codes
-                        show_recovery_codes(
-                            codes,
-                            self.resource_path,
-                            parent=self
-                        )
-                    else:
-                        print(f"   ⚠️  Failed to generate recovery codes")
+                    # Offer recovery code generation
+                    self._offer_recovery_code_generation("Password Created")
                     
                     self.show_message("Success", "Password created successfully.", "success")
                 except Exception as e:
@@ -2954,59 +3022,140 @@ class MainWindowBase(QMainWindow):
         print(f"   File exists: {os.path.exists(password_file)}")
         
         if os.path.exists(password_file):
-            # Use verify_password_with_recovery to handle forgot password flow
-            if self.verify_password_with_recovery(
+            # Ask for old password with recovery option
+            old_password = ask_password(
                 "Change Password",
-                "Enter your old password:"
-            ):
+                "Enter your old password:",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self,
+                show_forgot_password=True,
+                has_recovery_codes=self.password_manager.has_recovery_codes()
+            )
+            
+            if old_password == "RECOVER":
+                # User clicked forgot password - show recovery dialog
+                from ui.dialogs.recovery_dialog import ask_recovery_code
+                
+                if not self.password_manager.has_recovery_codes():
+                    self.show_message(
+                        "No Recovery Codes",
+                        "❌ No recovery codes found!\n\n"
+                        "You cannot recover your password without recovery codes.\n"
+                        "Recovery codes must be generated from the Settings menu first.",
+                        "error"
+                    )
+                    return
+                
+                code, new_pwd = ask_recovery_code(
+                    self.resource_path,
+                    self,
+                    verify_callback=self.password_manager.verify_recovery_code
+                )
+                
+                if not code or not new_pwd:
+                    return  # User cancelled
+                
+                # Recover password
+                success, error = self.password_manager.recover_password_with_code(
+                    code,
+                    new_pwd,
+                    cleanup_callback=self._password_recovery_cleanup
+                )
+                
+                if success:
+                    self._offer_recovery_code_generation("Password Recovered")
+                else:
+                    self.show_message("Recovery Failed", f"❌ {error}", "error")
+                return
+            
+            if old_password and self.password_manager.verify_password(old_password):
                 print(f"   ✅ Old password verified")
-                # Get the old password (we need it for change_password method)
-                old_password = ask_password(
-                    "Confirm Old Password",
-                    "Please confirm your old password once more:",
+                new_password = ask_password(
+                    "New Password",
+                    "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
                     self.resource_path,
                     style=self.password_dialog_style,
                     wallpaper=self.wallpaper_choice,
                     parent=self,
-                    show_forgot_password=False  # Don't show forgot password in confirmation
+                    show_forgot_password=False
                 )
-                
-                if old_password and self.password_manager.verify_password(old_password):
-                    new_password = ask_password(
-                        "New Password",
-                        "Make sure to securely note down your password.\nIf forgotten, the tool cannot be stopped,\nand recovery will be difficult!\nEnter a new password:",
-                        self.resource_path,
-                        style=self.password_dialog_style,
-                        wallpaper=self.wallpaper_choice,
-                        parent=self,
-                        show_forgot_password=False  # Don't show forgot password for new password
-                    )
-                    if new_password:
-                        try:
-                            print(f"   Changing password at: {password_file}")
-                            self.password_manager.change_password(old_password, new_password)
-                            print(f"   ✅ Password changed successfully")
-                            
-                            # Generate new recovery codes
-                            success, codes = self.password_manager.create_recovery_codes()
-                            if success and codes:
-                                print(f"   ✅ Recovery codes generated: {len(codes)} codes")
-                                from ui.dialogs.recovery_dialog import show_recovery_codes
-                                show_recovery_codes(
-                                    codes,
-                                    self.resource_path,
-                                    parent=self
-                                )
-                            
-                            self.show_message("Success", "Password changed successfully.\nNew recovery codes have been generated.", "success")
-                        except Exception as e:
-                            print(f"   ❌ Error changing password: {e}")
-                            self.show_message("Error", f"Failed to change password:\n{e}", "error")
-                else:
-                    print(f"   ❌ Password confirmation failed")
+                if new_password:
+                    try:
+                        print(f"   Changing password at: {password_file}")
+                        self.password_manager.change_password(old_password, new_password)
+                        print(f"   ✅ Password changed successfully")
+                        
+                        # Offer recovery code generation
+                        self._offer_recovery_code_generation("Password Changed")
+                        
+                    except Exception as e:
+                        print(f"   ❌ Error changing password: {e}")
+                        self.show_message("Error", f"Failed to change password:\n{e}", "error")
+            else:
+                print(f"   ❌ Password verification failed")
+                self.show_message("Error", "Incorrect old password", "error")
         else:
             print(f"   ⚠️  No password file found")
             self.show_message("Oops!", "How do I change a password that doesn't exist? :(", "warning")
+    
+    def on_generate_recovery_codes_clicked(self):
+        """Handle generate recovery codes button click from settings"""
+        from ui.dialogs.password_dialog import ask_password
+        from ui.dialogs.recovery_dialog import show_recovery_codes
+        
+        password_file = os.path.join(self.get_fadcrypt_folder(), "encrypted_password.bin")
+        
+        # Check if password exists
+        if not os.path.exists(password_file):
+            self.show_message(
+                "No Password Set",
+                "You need to create a password first before generating recovery codes.",
+                "warning"
+            )
+            return
+        
+        # Ask for password to verify user identity
+        password = ask_password(
+            "Generate Recovery Codes",
+            "Enter your master password to generate recovery codes:",
+            self.resource_path,
+            style=self.password_dialog_style,
+            wallpaper=self.wallpaper_choice,
+            parent=self,
+            show_forgot_password=False
+        )
+        
+        if not password:
+            return
+        
+        # Verify password
+        if not self.password_manager.verify_password(password):
+            self.show_message(
+                "Invalid Password",
+                "Incorrect password. Recovery codes not generated.",
+                "error"
+            )
+            return
+        
+        # Generate recovery codes
+        success, codes = self.password_manager.create_recovery_codes()
+        if success and codes:
+            show_recovery_codes(codes, self.resource_path, self)
+            self.show_message(
+                "Recovery Codes Generated",
+                "✅ Recovery codes generated successfully!\n\n"
+                "⚠️  These replace any previous recovery codes.\n"
+                "Save them in a secure place.",
+                "success"
+            )
+        else:
+            self.show_message(
+                "Generation Failed",
+                "Failed to generate recovery codes. Please try again.",
+                "error"
+            )
         
     def on_snake_game(self):
         """Handle snake game button click"""

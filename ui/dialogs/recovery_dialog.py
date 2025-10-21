@@ -366,8 +366,18 @@ class RecoveryCodeDialog(QDialog):
         if self.verify_callback:
             is_valid, error_msg = self.verify_callback(code)
             if not is_valid:
+                # Determine appropriate title based on error message
+                if error_msg and "already been used" in error_msg:
+                    title = "Recovery Code Already Used"
+                elif error_msg and ("not found" in error_msg or "incorrect" in error_msg):
+                    title = "Invalid Recovery Code"
+                elif error_msg and "format" in error_msg:
+                    title = "Invalid Code Format"
+                else:
+                    title = "Recovery Code Error"
+                
                 self.show_error(
-                    "Invalid Recovery Code",
+                    title,
                     error_msg or "The recovery code you entered is invalid or has already been used.\n"
                     "Please check your codes and try again."
                 )

@@ -248,6 +248,38 @@ class SettingsPanel(QWidget):
         separator3.setFrameShadow(QFrame.Shadow.Sunken)
         bottom_frame.addWidget(separator3)
         
+        # Recovery Codes Section
+        recovery_title = QLabel("🔐 Recovery Codes")
+        recovery_title.setStyleSheet("font-size: 11px; font-weight: bold;")
+        bottom_frame.addWidget(recovery_title)
+        
+        recovery_info = QLabel(
+            "Generate or regenerate recovery codes for password recovery.\n"
+            "Keep these codes safe - they allow you to reset your password if forgotten."
+        )
+        recovery_info.setStyleSheet("color: #888888;")
+        recovery_info.setWordWrap(True)
+        bottom_frame.addWidget(recovery_info)
+        
+        recovery_button = QPushButton("Generate Recovery Codes")
+        recovery_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1976d2;
+                color: white;
+                font-weight: bold;
+                padding: 8px 20px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #1565c0;
+            }
+        """)
+        recovery_button.clicked.connect(lambda: self.on_generate_recovery_codes())
+        recovery_button.setMaximumWidth(250)
+        bottom_frame.addWidget(recovery_button)
+        
+        bottom_frame.addSpacing(20)
+        
         cleanup_title = QLabel("🔧 Uninstall Cleanup")
         cleanup_title.setStyleSheet("font-size: 11px; font-weight: bold;")
         bottom_frame.addWidget(cleanup_title)
@@ -329,6 +361,11 @@ class SettingsPanel(QWidget):
         self.settings_changed.emit(settings)
         self.update_preview()
         
+    def on_generate_recovery_codes(self):
+        """Handle recovery codes button click"""
+        # To be implemented by main window
+        pass
+    
     def on_cleanup_clicked(self):
         """Handle cleanup button click"""
         # To be implemented by main window
