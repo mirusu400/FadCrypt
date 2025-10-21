@@ -1,8 +1,9 @@
 """Fullscreen Readme Dialog with animated text"""
 
-from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout, QHBoxLayout
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QFont
+import webbrowser
 
 
 class ReadmeDialog(QDialog):
@@ -16,24 +17,32 @@ class ReadmeDialog(QDialog):
         # Full readme text
         self.full_text = (
             "Welcome to FadCrypt!\n\n"
-            "Experience top-notch security and sleek design with FadCrypt.\n\n"
-            "Features:\n"
-            "- Application Locking: Secure apps with an encrypted password. Save your password safely;\nit can't be recovered if lost!\n"
-            "- Real-time Monitoring: Detects and auto-recovers critical files if they are deleted.\n"
-            "- Auto-Startup: After starting monitoring, the app will be automatically enabled for every session.\n"
-            "- Aesthetic UI: Choose custom wallpapers or a minimal style with smooth animations.\n\n"
+            "Advanced cross-platform security for apps and files.\n\n"
+            "Core Features:\n"
+            "• Password-protected app locking & monitoring\n"
+            "• Real-time file/folder protection from deletion\n"
+            "• Auto-recovery if files are deleted\n"
+            "• Recovery codes for password reset\n"
+            "• Auto-startup after system reboot\n"
+            "• Single-instance enforcement (prevent bypasses)\n\n"
             "Security:\n"
-            "- System Tools Disabled: Disables common terminals (gnome-terminal, konsole, xterm) and system monitors\n  (gnome-system-monitor, htop, top); a real nightmare for attackers trying to bypass it.\n  Manual disabling of other terminals is recommended as it's a significant loophole!\n"
-            "- Encrypted Storage: Passwords and config file data (list of locked apps) are encrypted and backed up.\n\n"
-            "Testing:\n"
-            "- Test blocked tools by trying to run disabled terminals and system monitors to confirm effectiveness.\n\n"
-            "Upcoming Features:\n"
-            "- Password Recovery: In case of a forgotten password, users will be able to recover their passwords.\n"
-            "- Logging and Alerts: Includes screenshots, email alerts on wrong password attempts, and detailed logs.\n"
-            "- Community Input: Integrating feedback for improved security and usability.\n\n"
-            "Extras:\n"
-            "- Snake Game: Enjoy the classic Snake game on the main tab or from the tray icon for a bit of fun!\n\n"
-            "# Join our Discord community via the 'Settings' tab\nfor help, questions, or to share your ideas and feedback."
+            "• System tools blocked during monitoring:\n"
+            "  - Windows: Task Manager, Registry, Control Panel, CMD\n"
+            "  - Linux: Terminals & system monitors\n"
+            "• Encrypted password & config storage\n"
+            "• Critical files protected from tampering\n"
+            "• Password-secured monitoring control\n\n"
+            "Additional Features:\n"
+            "• Detailed statistics & activity monitoring\n"
+            "• Customizable dialog styles & preferences\n"
+            "• System tray integration\n"
+            "• Snake game (bonus)\n\n"
+            "Setup:\n"
+            "1. Create password → 2. Generate recovery codes\n"
+            "3. Add apps or files → 4. Start monitoring\n"
+            "5. Stop only with password\n\n"
+            "Love FadCrypt? Join our Discord community!\n"
+            "Share feedback, get help, and connect with other users."
         )
         
         self.init_ui()
@@ -90,11 +99,44 @@ class ReadmeDialog(QDialog):
         self.image_label.setStyleSheet("background-color: transparent;")
         self.image_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         
-        # Add to grid: text takes 75%, image takes 25%
-        content_grid.addWidget(self.text_label, 0, 0, 1, 8)  # Text: 8 columns
-        content_grid.addWidget(self.image_label, 0, 8, 1, 2)  # Image: 2 columns
-        content_grid.setColumnStretch(0, 8)  # Text column stretch
-        content_grid.setColumnStretch(8, 2)  # Image column stretch
+        # Create text column layout (with Discord button at bottom)
+        text_column_layout = QVBoxLayout()
+        text_column_layout.addWidget(self.text_label, 1)
+        
+        # Discord Button at bottom of text column (left-aligned with text)
+        discord_button = QPushButton("💬 Join Discord Community")
+        discord_button.setFixedSize(220, 40)
+        discord_button.setStyleSheet("""
+            QPushButton {
+                background-color: #5865f2;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4752c4;
+            }
+            QPushButton:pressed {
+                background-color: #3c40c4;
+            }
+        """)
+        discord_button.clicked.connect(lambda: webbrowser.open("https://discord.gg/kvAZvdkuuN"))
+        discord_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        discord_layout = QHBoxLayout()
+        discord_layout.addWidget(discord_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        discord_layout.addStretch()
+        text_column_layout.addLayout(discord_layout)
+        
+        # Add text column to grid (left side)
+        content_grid.addLayout(text_column_layout, 0, 0, 1, 1)
+        
+        # Add image to grid (bottom right)
+        content_grid.addWidget(self.image_label, 0, 1, 1, 1, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        content_grid.setColumnStretch(0, 1)
+        content_grid.setColumnStretch(1, 0)
         
         main_layout.addLayout(content_grid, 1)
         
@@ -123,11 +165,89 @@ class ReadmeDialog(QDialog):
         button_layout.addWidget(self.ok_button, alignment=Qt.AlignmentFlag.AlignCenter)
         main_layout.addLayout(button_layout)
         
+        # Footer with FadSec Lab logo inline (all together at bottom center)
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(0, 10, 0, 20)
+        footer_layout.setSpacing(5)
+        
+        # Left spacer to center the footer
+        footer_layout.addStretch()
+        
+        # "Made with ❤️ at " text
+        footer_left = QLabel("Made with ❤️ at")
+        footer_left.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                background-color: transparent;
+                font-size: 11px;
+            }
+        """)
+        footer_layout.addWidget(footer_left)
+        
+        # Load FadSec Lab footer image (inline)
+        self.footer_logo = QLabel()
+        self.footer_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.footer_logo.setStyleSheet("background-color: transparent;")
+        footer_layout.addWidget(self.footer_logo)
+        
+        # " in Pakistan 🇵🇰" text
+        footer_right = QLabel("in Pakistan 🇵🇰")
+        footer_right.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                background-color: transparent;
+                font-size: 11px;
+            }
+        """)
+        footer_layout.addWidget(footer_right)
+        
+        # Right spacer to center the footer
+        footer_layout.addStretch()
+        
+        main_layout.addLayout(footer_layout)
+        
         self.setLayout(main_layout)
         
         self.load_readme_image()
+        self.load_footer_image()
         self.start_animation()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        
+    def load_footer_image(self):
+        """Load and display the FadSec Lab footer image"""
+        import os
+        try:
+            img_path = self.resource_path("img/fadsec-main-footer.png")
+            print(f"\n[FOOTER IMAGE] Loading from: {img_path}")
+            
+            if not os.path.exists(img_path):
+                print(f"[FOOTER IMAGE] ❌ File not found!")
+                return
+            
+            pixmap = QPixmap(img_path)
+            if pixmap.isNull():
+                print(f"[FOOTER IMAGE] ❌ Failed to load pixmap")
+                return
+            
+            print(f"[FOOTER IMAGE] Original size: {pixmap.width()}x{pixmap.height()}")
+            
+            # Scale to small size for footer
+            scaled_pixmap = pixmap.scaled(
+                100, 30,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            
+            print(f"[FOOTER IMAGE] Scaled size: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
+            
+            self.footer_logo.setPixmap(scaled_pixmap)
+            
+            print(f"[FOOTER IMAGE] ✅ Image loaded and displayed")
+            
+        except Exception as e:
+            print(f"[FOOTER IMAGE] ❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
         
     def load_readme_image(self):
         """Load and display the readme image using layout"""

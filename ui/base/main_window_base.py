@@ -681,8 +681,25 @@ class MainWindowBase(QMainWindow):
         separator_v.setFrameShadow(QFrame.Shadow.Sunken)
         content_layout.addWidget(separator_v)
         
-        # Right side - spacer for clean look
-        content_layout.addStretch()
+        # Right side - with background flag image at bottom
+        right_layout = QVBoxLayout()
+        right_layout.addStretch()
+        
+        # Add FadSec Lab flag image at bottom right
+        flag_path = self.resource_path('img/fadseclab_flag.png')
+        if os.path.exists(flag_path):
+            flag_label = QLabel()
+            flag_pixmap = QPixmap(flag_path)
+            # Scale to reasonable size
+            scaled_flag = flag_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            flag_label.setPixmap(scaled_flag)
+            flag_label.setAlignment(Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)
+            flag_label.setStyleSheet("background-color: transparent;")
+            right_layout.addWidget(flag_label)
+        else:
+            right_layout.addStretch()
+        
+        content_layout.addLayout(right_layout)
         
         main_layout.addLayout(content_layout)
         
