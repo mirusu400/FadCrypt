@@ -8,6 +8,13 @@ case "$1" in
     remove|upgrade|deconfigure)
         echo "Running FadCrypt cleanup..."
         
+        # Stop elevated daemon service if running
+        if command -v systemctl >/dev/null 2>&1; then
+            echo "Stopping FadCrypt elevated daemon..."
+            systemctl stop fadcrypt-elevated.service 2>/dev/null || true
+            systemctl disable fadcrypt-elevated.service 2>/dev/null || true
+        fi
+        
         # Run cleanup if the binary still exists
         if [ -x /usr/bin/fadcrypt ]; then
             # Export SUDO_USER so cleanup knows the real user's home directory
@@ -20,17 +27,9 @@ case "$1" in
             echo "FadCrypt binary not found, skipping cleanup"
         fi
         
-        # Remove polkit policy (only on full removal, not upgrade)
+        # Remove socket directory on full removal
         if [ "$1" = "remove" ]; then
-            echo "Removing polkit policy..."
-            if [ -f /usr/share/polkit-1/actions/dev.faded.fadcrypt.policy ]; then
-                rm -f /usr/share/polkit-1/actions/dev.faded.fadcrypt.policy
-                echo "✅ Removed polkit policy"
-            fi
-            # Reload polkit to remove policies
-            if command -v systemctl >/dev/null 2>&1; then
-                systemctl try-restart polkit.service 2>/dev/null || true
-            fi
+            rm -rf /run/fadcrypt 2>/dev/null || true
         fi
         ;;
         

@@ -53,14 +53,8 @@ if '--cleanup' in sys.argv:
                         if result.returncode == 0:
                             print(f"[CLEANUP] ✅ Removed immutable flags", flush=True)
                         else:
-                            # Try with pkexec if find/chattr failed
-                            result = subprocess.run(
-                                ['pkexec', 'bash', '-c', f'find "{folder}" -type f -exec chattr -i {{}} +'],
-                                capture_output=True,
-                                text=True,
-                                check=False,
-                                timeout=10
-                            )
+                            print(f"[CLEANUP] ⚠️  Could not remove immutable flags via chattr", flush=True)
+                            print(f"[CLEANUP]     Note: Daemon will handle cleanup when service stops", flush=True)
                     except Exception as e:
                         print(f"[CLEANUP] ⚠️ Warning: Could not remove immutable flags: {e}", flush=True)
             

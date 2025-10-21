@@ -42,8 +42,8 @@ mkdir -p fadcrypt-deb/usr/bin
 mkdir -p fadcrypt-deb/usr/share/applications
 mkdir -p fadcrypt-deb/usr/share/pixmaps
 mkdir -p fadcrypt-deb/usr/share/doc/fadcrypt
-mkdir -p fadcrypt-deb/usr/share/polkit-1/actions
-mkdir -p fadcrypt-deb/usr/libexec/fadcrypt
+mkdir -p fadcrypt-deb/etc/systemd/system
+mkdir -p fadcrypt-deb/usr/share/fadcrypt
 
 # Copy files
 echo "Copying files..."
@@ -53,12 +53,14 @@ cp img/1.png fadcrypt-deb/usr/share/pixmaps/fadcrypt.png
 cp LICENSE fadcrypt-deb/usr/share/doc/fadcrypt/
 cp README.md fadcrypt-deb/usr/share/doc/fadcrypt/
 
-# Copy polkit policy and helper script
-echo "Installing polkit policy for persistent elevated privileges..."
-cp polkit/dev.faded.fadcrypt.policy fadcrypt-deb/usr/share/polkit-1/actions/
-cp polkit/fadcrypt-file-protection-helper.sh fadcrypt-deb/usr/libexec/fadcrypt/
-chmod 755 fadcrypt-deb/usr/libexec/fadcrypt/fadcrypt-file-protection-helper.sh
-chmod 644 fadcrypt-deb/usr/share/polkit-1/actions/dev.faded.fadcrypt.policy
+# Copy elevated daemon service and scripts
+echo "Installing elevated daemon service..."
+cp etc/systemd/system/fadcrypt-elevated.service fadcrypt-deb/etc/systemd/system/
+chmod 644 fadcrypt-deb/etc/systemd/system/fadcrypt-elevated.service
+
+# Copy elevated daemon implementation to /usr/share/fadcrypt/
+cp core/linux/elevated_daemon.py fadcrypt-deb/usr/share/fadcrypt/elevated-daemon.py
+chmod 755 fadcrypt-deb/usr/share/fadcrypt/elevated-daemon.py
 
 # Copy prerm script for cleanup on uninstall
 if [ -f debian/prerm ]; then
@@ -67,11 +69,11 @@ if [ -f debian/prerm ]; then
     echo "Added prerm script for automatic cleanup on uninstall"
 fi
 
-# Copy postinst script for polkit setup
+# Copy postinst script for daemon setup
 if [ -f debian/postinst ]; then
     cp debian/postinst fadcrypt-deb/DEBIAN/
     chmod 755 fadcrypt-deb/DEBIAN/postinst
-    echo "Added postinst script for polkit policy setup"
+    echo "Added postinst script for daemon service setup"
 fi
 
 # Set permissions

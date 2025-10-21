@@ -113,7 +113,7 @@ class FileProtectionManager:
         """
         Protect multiple files at once.
         
-        On Linux: Uses batch chattr +i with single pkexec prompt for all files.
+        On Linux: Uses elevated daemon for batch chattr +i operations (seamless, no prompts).
         On Windows: Protects each file individually.
         
         Args:
@@ -132,7 +132,7 @@ class FileProtectionManager:
         for file_path in existing_files:
             self._store_original_attributes(file_path)
         
-        # Linux: Use batch protection with single pkexec prompt
+        # Linux: Use batch protection via elevated daemon
         if IS_LINUX:
             return self._protect_multiple_files_linux_batch(existing_files)
         
@@ -161,7 +161,7 @@ class FileProtectionManager:
         """
         Remove protection from all previously protected files.
         
-        On Linux: Uses batch chattr -i with single authorization for all files.
+        On Linux: Uses elevated daemon for batch chattr -i operations (seamless, no prompts).
         On Windows: Unprotects each file individually.
         
         Returns:
@@ -173,12 +173,9 @@ class FileProtectionManager:
         success_count = 0
         errors = []
         
-        # Linux: Use batch unprotection with single authorization
+        # Linux: Use batch unprotection via daemon
         if IS_LINUX and len(self.protected_files) > 1:
-            batch_success = self._try_batch_chattr_with_pkexec(self.protected_files, set_immutable=False)
-            
-            if not batch_success:
-                batch_success = self._try_batch_chattr_with_sudo(self.protected_files, set_immutable=False)
+            batch_success = self._try_batch_chattr_with_daemon(self.protected_files, set_immutable=False)
             
             if batch_success:
                 # Verify and remove from protected list
@@ -234,11 +231,28 @@ class FileProtectionManager:
     
     def _protect_file_windows(self, file_path: str) -> Tuple[bool, Optional[str]]:
         """
-        Protect file on Windows using SetFileAttributesW.
+        Protect file on Windows using elevated service or direct SetFileAttributesW.
         
         Sets attributes: HIDDEN + SYSTEM + READONLY
         This makes the file harder to delete and hidden from normal view.
+        
+        Tries service first (seamless, no UAC), falls back to direct API.
         """
+        # Try elevated service first (seamless, no UAC prompt)
+        try:
+            from core.windows.elevated_service_client import get_windows_elevated_client
+            client = get_windows_elevated_client()
+            if client.is_available():
+                success, msg = client.protect_files([file_path])
+                if success:
+                    print(f"[FileProtection] Service: Protected {os.path.basename(file_path)} (no UAC!)")
+                    return True, None
+                else:
+                    print(f"[FileProtection] Service protect failed: {msg}, trying direct method...")
+        except Exception as e:
+            logger.debug(f"Service not available: {e}")
+        
+        # Fallback: Direct SetFileAttributesW
         if not WINDOWS_AVAILABLE:
             return False, "Windows ctypes not available"
         
@@ -267,8 +281,24 @@ class FileProtectionManager:
         """
         Remove protection from file on Windows.
         
+        Tries elevated service first (seamless, no UAC), falls back to direct API.
         Restores original attributes or sets to NORMAL.
         """
+        # Try elevated service first (seamless, no UAC prompt)
+        try:
+            from core.windows.elevated_service_client import get_windows_elevated_client
+            client = get_windows_elevated_client()
+            if client.is_available():
+                success, msg = client.unprotect_files([file_path])
+                if success:
+                    print(f"[FileProtection] Service: Unprotected {os.path.basename(file_path)} (no UAC!)")
+                    return True, None
+                else:
+                    print(f"[FileProtection] Service unprotect failed: {msg}, trying direct method...")
+        except Exception as e:
+            logger.debug(f"Service not available: {e}")
+        
+        # Fallback: Direct SetFileAttributesW
         if not WINDOWS_AVAILABLE:
             return False, "Windows ctypes not available"
         
@@ -299,50 +329,45 @@ class FileProtectionManager:
         """
         Protect file on Linux using immutable flag (chattr +i).
         
-        POLKIT-ONLY APPROACH: No fallbacks.
-        Requires PolicyKit authorization via pkexec - this is the ONLY supported method.
-        If polkit fails, file protection fails completely.
+        DAEMON-ONLY APPROACH: Uses elevated daemon running at boot.
+        No user prompts needed - daemon has persistent root permissions.
         
         Returns:
             Tuple of (success: bool, error_message: Optional[str])
         """
         filename = os.path.basename(file_path)
         
-        # ENFORCE: Use ONLY pkexec (NO FALLBACKS)
-        print(f"[FileProtection] � Requesting polkit authorization for {filename}...")
-        success, error = self._try_chattr_with_pkexec(file_path, set_immutable=True)
+        # Use daemon (persistent root elevation at boot time)
+        print(f"[FileProtection] 🔒 Protecting {filename} via daemon...")
+        success, error = self._try_chattr_with_daemon([file_path], set_immutable=True)
         
         if success:
             print(f"[FileProtection] ✅ IMMUTABLE: {filename}")
             print(f"[FileProtection] 🔒 File CANNOT be deleted, even by root")
             return True, None
         else:
-            # HARD FAIL - no fallbacks allowed
-            error_msg = f"❌ Polkit authorization failed: {error}"
+            # Hard fail if daemon unavailable
+            error_msg = f"❌ Daemon elevation failed: {error}"
             print(f"[FileProtection] {error_msg}")
             return False, error_msg
-        print(f"[FileProtection] ⚠️  File CAN be deleted with rm/sudo - monitor will auto-restore")
-        return True, None  # Still return success to not block monitoring
     
     def _unprotect_file_linux(self, file_path: str) -> Tuple[bool, Optional[str]]:
         """
         Remove protection from file on Linux.
         
-        POLKIT-ONLY APPROACH: No fallbacks.
-        Removes immutable flag and restores permissions via pkexec only.
+        DAEMON-ONLY APPROACH: Uses elevated daemon (no user prompts).
+        Daemon has persistent root permissions from boot.
         """
         filename = os.path.basename(file_path)
         
-        # ENFORCE: Use ONLY pkexec (NO FALLBACKS)
-        print(f"[FileProtection] � Requesting polkit authorization to unprotect {filename}...")
-        success, error = self._try_chattr_with_pkexec(file_path, set_immutable=False)
+        # Use daemon (seamless, no prompts)
+        print(f"[FileProtection] 🔓 Unprotecting {filename} via daemon...")
+        success, error = self._try_chattr_with_daemon([file_path], set_immutable=False)
         
         if not success:
-            error_msg = f"❌ Polkit authorization failed: {error}"
+            error_msg = f"❌ Daemon unprotection failed: {error}"
             print(f"[FileProtection] {error_msg}")
             return False, error_msg
-        
-        print(f"[FileProtection] ✅ Immutable flag removed: {filename}")
         
         # Restore original permissions
         try:
@@ -353,20 +378,17 @@ class FileProtectionManager:
                 mode = stat.S_IRUSR | stat.S_IWUSR  # 600 (rw-------)
             
             os.chmod(file_path, mode)
-            print(f"[FileProtection] 📝 Restored permissions on {filename}")
             return True, None
             
         except Exception as e:
-            error_msg = f"Unprotection failed: {e}"
-            print(f"[FileProtection] ❌ {error_msg}")
-            return False, error_msg
+            return False, f"Permission restore failed: {e}"
     
     def _protect_multiple_files_linux_batch(self, file_paths: List[str]) -> Tuple[int, List[str]]:
         """
-        Protect multiple files with single pkexec authorization (Linux only).
+        Protect multiple files using elevated daemon.
         
-        POLKIT-ONLY APPROACH: No fallbacks. User must authenticate via polkit.
-        Uses batch chattr +i command to set immutable flag on all files at once.
+        DAEMON-ONLY: Single solution, no fallbacks.
+        One authorization for all files - truly seamless operation.
         
         Args:
             file_paths: List of file paths to protect
@@ -380,13 +402,11 @@ class FileProtectionManager:
         success_count = 0
         errors = []
         
-        # ENFORCE: Use ONLY polkit (no fallbacks)
-        print(f"[FileProtection] 🔐 Requesting polkit authorization to protect {len(file_paths)} files...")
-        batch_success = self._try_batch_chattr_with_pkexec(file_paths, set_immutable=True)
+        print(f"[FileProtection] � Protecting {len(file_paths)} files via daemon...")
+        batch_success = self._try_batch_chattr_with_daemon(file_paths, set_immutable=True)
         
         if not batch_success:
-            # Polkit failed - NO FALLBACK, HARD FAIL
-            error_msg = "❌ Polkit authorization required. File protection failed - monitoring cannot start."
+            error_msg = "❌ Daemon elevation failed - monitoring cannot start."
             print(f"[FileProtection] {error_msg}")
             return 0, [error_msg]
         
@@ -410,10 +430,13 @@ class FileProtectionManager:
             print(f"[FileProtection] {error_msg}")
             return 0, [error_msg]
     
-    def _try_batch_chattr_with_pkexec(self, file_paths: List[str], set_immutable: bool) -> bool:
+    def _try_batch_chattr_with_daemon(self, file_paths: List[str], set_immutable: bool) -> bool:
         """
-        Try to set/unset immutable flag on multiple files with single pkexec prompt.
-        Uses polkit policy for persistent authorization - no repeated prompts after first grant.
+        Try to set/unset immutable flag using elevated daemon.
+        
+        Daemon runs as root via systemd service.
+        No polkit prompts needed - daemon is already elevated.
+        Works seamlessly across reboots.
         
         Args:
             file_paths: List of file paths
@@ -423,84 +446,72 @@ class FileProtectionManager:
             True if command succeeded, False otherwise
         """
         try:
-            import subprocess
+            from core.linux.elevated_daemon_client import get_elevated_client, ElevatedClientError
             
-            # Use direct chattr with pkexec (polkit policy is configured for this)
-            flag = "+i" if set_immutable else "-i"
-            cmd = ['pkexec', 'chattr', flag] + file_paths
+            client = get_elevated_client()
             
-            action_name = "protecting" if set_immutable else "unprotecting"
-            print(f"[FileProtection] Using polkit for {action_name} {len(file_paths)} files...")
+            # Check if daemon is available
+            if not client.is_available():
+                print(f"[FileProtection] ⚠️  Elevated daemon not available")
+                return False
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
+            # Use daemon for file operations
+            action = "protecting" if set_immutable else "unprotecting"
+            print(f"[FileProtection] Using elevated daemon for {action} {len(file_paths)} files...")
             
-            if result.returncode == 0:
+            success, message = client.chattr(file_paths, set_immutable=set_immutable)
+            
+            if success:
                 action = "protected" if set_immutable else "unprotected"
-                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files (polkit)")
-                print(f"[FileProtection] ℹ️  Cached authorization - no more prompts in this session!")
+                print(f"[FileProtection] ✅ Daemon {action} {len(file_paths)} files (no password prompt!)")
+                print(f"[FileProtection] ℹ️  Seamless operation across reboots!")
                 return True
             else:
-                stderr = result.stderr.strip()
-                if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
-                    print(f"[FileProtection] ⚠️  User cancelled authorization")
-                else:
-                    print(f"[FileProtection] ⚠️  Batch chattr failed: {stderr}")
+                print(f"[FileProtection] ⚠️  Daemon operation failed: {message}")
                 return False
-                
-        except FileNotFoundError:
-            print(f"[FileProtection] ⚠️  pkexec or chattr not found")
-            return False
-        except subprocess.TimeoutExpired:
-            print(f"[FileProtection] ⚠️  pkexec timeout")
+        
+        except ImportError:
+            print(f"[FileProtection] ⚠️  Elevated daemon client not available")
             return False
         except Exception as e:
-            print(f"[FileProtection] ⚠️  Batch pkexec exception: {e}")
+            print(f"[FileProtection] ⚠️  Elevated daemon error: {e}")
             return False
     
-    def _try_batch_chattr_with_sudo(self, file_paths: List[str], set_immutable: bool) -> bool:
+    def _try_chattr_with_daemon(self, file_paths: List[str], set_immutable: bool) -> Tuple[bool, str]:
         """
-        Try to set/unset immutable flag on multiple files with sudo.
+        Try to set/unset immutable flag using elevated daemon (single or multiple files).
         
         Args:
-            file_paths: List of file paths
+            file_paths: List of file paths (or single file)
             set_immutable: True to set +i, False to set -i
             
         Returns:
-            True if command succeeded, False otherwise
+            Tuple of (success: bool, error_message: str)
         """
         try:
-            import subprocess
+            from core.linux.elevated_daemon_client import get_elevated_client, ElevatedClientError
             
-            flag = "+i" if set_immutable else "-i"
+            client = get_elevated_client()
             
-            # Build command: sudo -n chattr +i file1 file2 file3...
-            cmd = ['sudo', '-n', 'chattr', flag] + file_paths
+            # Check if daemon is available
+            if not client.is_available():
+                return False, "Daemon not available"
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            # Use daemon for file operations
+            success, message = client.chattr(file_paths, set_immutable=set_immutable)
             
-            if result.returncode == 0:
-                action = "protected" if set_immutable else "unprotected"
-                print(f"[FileProtection] ✅ Batch {action} {len(file_paths)} files with sudo")
-                return True
+            if success:
+                return True, message
             else:
-                stderr = result.stderr.strip()
-                print(f"[FileProtection] ⚠️  Batch sudo failed: {stderr}")
-                return False
-                
+                return False, message
+        
+        except ImportError:
+            return False, "Daemon client not available"
         except Exception as e:
-            print(f"[FileProtection] ⚠️  Batch sudo exception: {e}")
-            return False
+            return False, f"Daemon error: {e}"
     
+
+
     def _verify_immutable_flag(self, file_path: str) -> bool:
         """
         Verify that a file has the immutable flag set.
@@ -533,114 +544,7 @@ class FileProtectionManager:
         except Exception:
             return False
     
-    def _try_chattr_with_pkexec(self, file_path: str, set_immutable: bool) -> Tuple[bool, Optional[str]]:
-        """
-        Try to set/unset immutable flag using pkexec (PolicyKit GUI prompt).
-        
-        Args:
-            file_path: Path to file
-            set_immutable: True to set +i, False to set -i
-            
-        Returns:
-            Tuple of (success: bool, error: Optional[str])
-        """
-        try:
-            import subprocess
-            
-            flag = "+i" if set_immutable else "-i"
-            result = subprocess.run(
-                ['pkexec', 'chattr', flag, file_path],
-                capture_output=True,
-                text=True,
-                timeout=30  # Longer timeout for user to respond to GUI
-            )
-            
-            if result.returncode == 0:
-                return True, None
-            else:
-                stderr = result.stderr.strip()
-                # Check if user cancelled
-                if "dismissed" in stderr.lower() or "cancelled" in stderr.lower():
-                    return False, "User cancelled authorization"
-                return False, f"pkexec chattr failed: {stderr}"
-                
-        except FileNotFoundError:
-            return False, "pkexec command not found"
-        except subprocess.TimeoutExpired:
-            return False, "pkexec timeout (user did not respond)"
-        except Exception as e:
-            return False, f"pkexec exception: {e}"
-    
-    def _try_chattr_with_sudo(self, file_path: str, set_immutable: bool) -> Tuple[bool, Optional[str]]:
-        """
-        Try to set/unset immutable flag using sudo (terminal password prompt).
-        
-        Args:
-            file_path: Path to file
-            set_immutable: True to set +i, False to set -i
-            
-        Returns:
-            Tuple of (success: bool, error: Optional[str])
-        """
-        try:
-            import subprocess
-            
-            flag = "+i" if set_immutable else "-i"
-            result = subprocess.run(
-                ['sudo', '-n', 'chattr', flag, file_path],  # -n = non-interactive (fail if password needed)
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode == 0:
-                return True, None
-            else:
-                stderr = result.stderr.strip()
-                # Check if password required
-                if "password is required" in stderr.lower() or "sudo: a password" in stderr.lower():
-                    return False, "Sudo requires password (run FadCrypt from terminal with sudo)"
-                return False, f"sudo chattr failed: {stderr}"
-                
-        except FileNotFoundError:
-            return False, "sudo command not found"
-        except subprocess.TimeoutExpired:
-            return False, "sudo timeout"
-        except Exception as e:
-            return False, f"sudo exception: {e}"
-    
-    def _try_chattr_immutable(self, file_path: str, set_immutable: bool) -> Tuple[bool, Optional[str]]:
-        """
-        Try to set/unset immutable flag using chattr (without elevation).
-        
-        Args:
-            file_path: Path to file
-            set_immutable: True to set +i, False to set -i
-            
-        Returns:
-            Tuple of (success: bool, error: Optional[str])
-        """
-        try:
-            import subprocess
-            
-            flag = "+i" if set_immutable else "-i"
-            result = subprocess.run(
-                ['chattr', flag, file_path],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            
-            if result.returncode == 0:
-                return True, None
-            else:
-                return False, f"chattr failed: {result.stderr}"
-                
-        except FileNotFoundError:
-            return False, "chattr command not found"
-        except Exception as e:
-            return False, f"chattr exception: {e}"
-    
+
     def get_protected_files(self) -> List[str]:
         """
         Get list of currently protected files.

@@ -1,22 +1,37 @@
 #!/bin/bash
 #
 # FadCrypt postinst script
-# Runs after package installation to set up polkit policy
+# Runs after package installation to set up elevated daemon service
 #
 
 set -e
 
 case "$1" in
     configure)
-        echo "Configuring FadCrypt polkit policy..."
+        echo "Configuring FadCrypt..."
         
-        # Reload polkit rules to recognize new policy
+        # Install and enable elevated daemon service
         if command -v systemctl >/dev/null 2>&1; then
-            systemctl try-restart polkit.service 2>/dev/null || true
+            echo "Installing FadCrypt elevated daemon service..."
+            
+            # Reload systemd daemon to recognize new service
+            systemctl daemon-reload
+            
+            # Enable and start the service
+            systemctl enable fadcrypt-elevated.service 2>/dev/null || true
+            systemctl restart fadcrypt-elevated.service 2>/dev/null || true
+            
+            echo "✅ FadCrypt elevated daemon installed and started"
+            echo "   Seamless elevated operations (no password prompts)"
+        else
+            echo "⚠️  systemd not found - daemon will not be available"
+            echo "   File protection requires the elevated daemon service"
         fi
         
-        echo "✅ FadCrypt polkit policy installed"
-        echo "   File protection will now work seamlessly without repeated sudo prompts"
+        # Create socket directory with proper permissions
+        mkdir -p /run/fadcrypt
+        chmod 755 /run/fadcrypt
+        
         ;;
     
     abort-upgrade|abort-remove|abort-deconfigure)
