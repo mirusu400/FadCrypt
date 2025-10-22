@@ -157,23 +157,10 @@ class MainWindowBase(QMainWindow):
         # Initialize file lock manager (platform-specific)
         self.file_lock_manager = self.get_file_lock_manager(fadcrypt_folder)
         
-        # Initialize file access monitor (for real-time file monitoring)
-        self.file_access_monitor = None
-        if self.file_lock_manager:
-            try:
-                from core.file_access_monitor import FileAccessMonitor
-                self.file_access_monitor = FileAccessMonitor(
-                    self.file_lock_manager,
-                    self._handle_file_access_attempt_threadsafe,
-                    get_state_func=self.get_monitoring_state,
-                    set_state_func=self.set_monitoring_state,
-                    log_activity_func=self.log_activity
-                )
-                # Connect signal for thread-safe dialog invocation
-                self.file_access_requested.connect(self._handle_file_access_attempt)
-                print("✅ File access monitor initialized")
-            except ImportError as e:
-                print(f"⚠️  Could not initialize file access monitor: {e}")
+        # Set password callback for fanotify (Linux)
+        if self.file_lock_manager and hasattr(self.file_lock_manager, 'set_password_callback'):
+            self.file_lock_manager.set_password_callback(self._handle_file_access_permission)
+            print("✅ Fanotify password callback set (Linux)")
         
         # Log important paths at startup
         print("\n📁 FadCrypt File Locations:")
@@ -1579,17 +1566,14 @@ class MainWindowBase(QMainWindow):
                 print("[Recovery] Stopping monitoring...")
                 if self.unified_monitor:
                     self.unified_monitor.stop_monitoring()
-                if self.file_access_monitor:
-                    self.file_access_monitor.stop_monitoring()
+                if self.file_lock_manager and hasattr(self.file_lock_manager, 'stop_monitoring'):
+                    self.file_lock_manager.stop_monitoring()
                 self.monitoring_active = False
             
             # Unlock all files
             if self.file_lock_manager:
                 print("[Recovery] Unlocking all files...")
-                if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
-                    self.file_lock_manager.unlock_all_with_configs()
-                else:
-                    self.file_lock_manager.unlock_all()
+                self.file_lock_manager.unlock_all()
                 self.file_lock_manager.unlock_fadcrypt_configs()
             
             # Reset monitoring state
@@ -1798,10 +1782,11 @@ class MainWindowBase(QMainWindow):
                 success, failed = self.file_lock_manager.lock_all()
                 if success > 0:
                     print(f"✅ Re-locked {success} items (including new files)")
-                # Update file access monitor
-                if self.file_access_monitor:
-                    self.file_access_monitor.update_monitored_items()
-                    print(f"✅ File access monitor updated")
+                
+                # Update fanotify watches if using fanotify
+                if hasattr(self.file_lock_manager, 'update_monitored_items'):
+                    self.file_lock_manager.update_monitored_items()
+                    print(f"🔄 Updated fanotify watches")
             
             # Update config display to show new locked items
             if hasattr(self, 'update_config_display'):
@@ -1851,10 +1836,11 @@ class MainWindowBase(QMainWindow):
                 success, failed = self.file_lock_manager.lock_all()
                 if success > 0:
                     print(f"✅ Re-locked {success} items (including new folder)")
-                # Update file access monitor
-                if self.file_access_monitor:
-                    self.file_access_monitor.update_monitored_items()
-                    print(f"✅ File access monitor updated")
+                
+                # Update fanotify watches if using fanotify
+                if hasattr(self.file_lock_manager, 'update_monitored_items'):
+                    self.file_lock_manager.update_monitored_items()
+                    print(f"🔄 Updated fanotify watches")
             
             # Update config display to show new locked items
             if hasattr(self, 'update_config_display'):
@@ -1900,16 +1886,16 @@ class MainWindowBase(QMainWindow):
                     self.file_grid_widget.remove_item(selected_path, defer_refresh=True)
                     removed_count += 1
             
+            # Update fanotify watches if monitoring is active
+            if self.monitoring_active and hasattr(self.file_lock_manager, 'update_monitored_items'):
+                self.file_lock_manager.update_monitored_items()
+                print(f"🔄 Updated fanotify watches after removal")
+            
             # Single refresh at end (O(n) instead of O(n²))
             if removed_count > 0:
                 print(f"[Remove] Refreshing file grid after removing {removed_count} items...")
                 self.file_grid_widget.refresh_grid()
             
-            # Update file access monitor if monitoring is active
-            if self.monitoring_active and self.file_access_monitor:
-                print(f"📝 Updating file access monitor after removal...")
-                self.file_access_monitor.update_monitored_items()
-                print(f"✅ File access monitor updated")
             
             if removed_count > 0:
                 self.show_message("Success", f"Removed {removed_count} item(s) successfully.", "success")
@@ -2510,55 +2496,38 @@ class MainWindowBase(QMainWindow):
         # Save monitoring state to disk (for crash recovery)
         self.save_monitoring_state_to_disk()
         
-        # Lock files and folders + config files with single password prompt
+        # Lock files and folders + start monitoring
         if self.file_lock_manager:
-            # Check if manager has unified method (Linux implementation)
-            if hasattr(self.file_lock_manager, 'lock_all_with_configs'):
-                print("🔒 Locking files, folders, and config files...")
-                success, failed = self.file_lock_manager.lock_all_with_configs()
-                if failed > 0:
-                    print(f"⚠️  Failed to lock {failed} items")
-                
-                # Log lock event
-                self.log_activity(
-                    'lock',
-                    'all_items',
-                    success=True,
-                    details=f"Locked {success} items"
-                )
-                
-                # Start file access monitoring after locking
-                # Note: Start monitoring even if some items failed to lock (e.g., already immutable config files)
-                if self.file_access_monitor:
-                    print("👁️  Starting file access monitor...")
-                    self.file_access_monitor.start_monitoring()
-                    print("✅ File access monitor started")
-            else:
-                # Fallback for other platforms (Windows, etc.)
-                print("🔒 Locking files and folders...")
-                success, failed = self.file_lock_manager.lock_all()
-                if success > 0:
-                    print(f"✅ Locked {success} items successfully")
-                if failed > 0:
-                    print(f"⚠️  Failed to lock {failed} items")
-                
-                # Log lock event
-                self.log_activity(
-                    'lock',
-                    'all_items',
-                    success=True,
-                    details=f"Locked {success} items"
+            print("🔒 Locking files and starting monitoring...")
+            
+            # Lock all items first
+            success, failed = self.file_lock_manager.lock_all()
+            if success > 0:
+                print(f"✅ Locked {success} items")
+            if failed > 0:
+                print(f"⚠️  Failed to lock {failed} items")
+            
+            # Lock config files
+            self.file_lock_manager.lock_fadcrypt_configs()
+            
+            # Start monitoring (fanotify on Linux, nothing on Windows yet)
+            if hasattr(self.file_lock_manager, 'start_monitoring'):
+                if self.file_lock_manager.start_monitoring():
+                    print("✅ Fanotify monitoring started (kernel-level file access interception)")
+                else:
+                    print("⚠️  Failed to start fanotify monitoring")
+            
+            # Log lock event
+            self.log_activity(
+                'lock',
+                'all_items',
+                success=True,
+                details=f"Locked {success} items"
                 )
                 
                 # Lock FadCrypt's own config files
                 print("🔒 Protecting FadCrypt config files...")
                 self.file_lock_manager.lock_fadcrypt_configs()
-                
-                # Start file access monitoring after locking
-                if self.file_access_monitor:
-                    print("👁️  Starting file access monitor...")
-                    self.file_access_monitor.start_monitoring()
-                    print("✅ File access monitor started")
         
         # Update UI button state
         self.update_monitoring_button_state(True)
@@ -2624,53 +2593,36 @@ class MainWindowBase(QMainWindow):
                 for error in errors:
                     print(f"   ⚠️  {error}")
             
-            # Stop file access monitoring
-            if self.file_access_monitor:
-                print("🛑 Stopping file access monitor...")
-                self.file_access_monitor.stop_monitoring()
-                print("✅ File access monitor stopped")
+            # Stop file access monitoring (fanotify on Linux)
+            if hasattr(self.file_lock_manager, 'stop_monitoring'):
+                print("🛑 Stopping fanotify monitoring...")
+                self.file_lock_manager.stop_monitoring()
+                print("✅ Fanotify monitoring stopped")
             
             self.monitoring_active = False
             
             # Save monitoring state to disk (for crash recovery)
             self.save_monitoring_state_to_disk()
             
-            # Unlock files and folders + config files with single password prompt
+            # Unlock files and folders + config files
             if self.file_lock_manager:
-                # Check if manager has unified method (Linux implementation)
-                if hasattr(self.file_lock_manager, 'unlock_all_with_configs'):
-                    print("🔓 Unlocking files, folders, and config files...")
-                    success, failed = self.file_lock_manager.unlock_all_with_configs()
-                    if failed > 0:
-                        print(f"⚠️  Failed to unlock {failed} items")
-                    
-                    # Log unlock event
-                    self.log_activity(
-                        'unlock',
-                        'all_items',
-                        success=True,
-                        details=f"Unlocked {success} items"
-                    )
-                else:
-                    # Fallback for other platforms (Windows, etc.)
-                    print("🔓 Unlocking files and folders...")
-                    success, failed = self.file_lock_manager.unlock_all()
-                    if success > 0:
-                        print(f"✅ Unlocked {success} items successfully")
-                    if failed > 0:
-                        print(f"⚠️  Failed to unlock {failed} items")
-                    
-                    # Log unlock event
-                    self.log_activity(
-                        'unlock',
-                        'all_items',
-                        success=True,
-                        details=f"Unlocked {success} items"
-                    )
-                    
-                    # Unlock FadCrypt's config files
-                    print("🔓 Unprotecting FadCrypt config files...")
-                    self.file_lock_manager.unlock_fadcrypt_configs()
+                print("🔓 Unlocking files, folders, and config files...")
+                success, failed = self.file_lock_manager.unlock_all()
+                if success > 0:
+                    print(f"✅ Unlocked {success} items")
+                if failed > 0:
+                    print(f"⚠️  Failed to unlock {failed} items")
+                
+                # Unlock config files
+                self.file_lock_manager.unlock_fadcrypt_configs()
+                
+                # Log unlock event
+                self.log_activity(
+                    'unlock',
+                    'all_items',
+                    success=True,
+                    details=f"Unlocked {success} items"
+                )
             
             # Update UI button state
             self.update_monitoring_button_state(False)
@@ -2788,7 +2740,6 @@ class MainWindowBase(QMainWindow):
     def _handle_file_access_attempt(self, file_path: str) -> bool:
         """
         Handle file access attempts - show password dialog
-        Called by FileAccessMonitor when a locked file is accessed
         
         Args:
             file_path: Path to the file being accessed
@@ -2885,6 +2836,90 @@ class MainWindowBase(QMainWindow):
             )
             
             return False
+    
+    def _handle_file_access_permission(self, file_path: str, pid: int) -> bool:
+        """
+        Handle file access permission request from fanotify (Linux only).
+        
+        This is called by the fanotify client when a locked file is accessed.
+        Must be thread-safe as it's called from the fanotify client thread.
+        
+        Args:
+            file_path: Path to the file being accessed
+            pid: Process ID trying to access the file
+            
+        Returns:
+            True if access allowed, False if denied
+        """
+        from PyQt6.QtCore import QMetaObject, Qt
+        from ui.dialogs.password_dialog import ask_password
+        
+        filename = os.path.basename(file_path)
+        print(f"🚨 [Fanotify] File access attempt: {filename} (PID: {pid})")
+        
+        # Result container for thread-safe return
+        result = [False]
+        
+        def show_dialog():
+            # Show password dialog
+            password = ask_password(
+                f"File Access: {filename}",
+                f"Enter password to access:\n{file_path}\n\nProcess PID: {pid}",
+                self.resource_path,
+                style=self.password_dialog_style,
+                wallpaper=self.wallpaper_choice,
+                parent=self
+            )
+            
+            if password and self.password_manager.verify_password(password):
+                print(f"✅ [Fanotify] Correct password - granting access to {filename}")
+                
+                # Add to unlocked files state
+                unlocked_files = self.get_monitoring_state().get('unlocked_files', [])
+                abs_path = os.path.abspath(file_path)
+                if abs_path not in unlocked_files:
+                    unlocked_files.append(abs_path)
+                    self.set_monitoring_state('unlocked_files', unlocked_files)
+                
+                # Increment unlock count
+                if self.file_lock_manager:
+                    self.file_lock_manager.increment_unlock_count(abs_path)
+                
+                # Log activity
+                item_type = 'folder' if os.path.isdir(file_path) else 'file'
+                self.log_activity(
+                    'unlock',
+                    filename,
+                    item_type,
+                    success=True,
+                    unlock_method='password',
+                    details=f'Unlocked via fanotify (PID: {pid})'
+                )
+                
+                result[0] = True
+            else:
+                print(f"❌ [Fanotify] Incorrect password - access denied to {filename}")
+                
+                # Log failed attempt
+                item_type = 'folder' if os.path.isdir(file_path) else 'file'
+                self.log_activity(
+                    'failed_unlock',
+                    filename,
+                    item_type,
+                    success=False,
+                    details=f'Wrong password (PID: {pid})'
+                )
+                
+                result[0] = False
+        
+        # Call in main thread (blocking)
+        QMetaObject.invokeMethod(
+            self,
+            show_dialog,
+            Qt.ConnectionType.BlockingQueuedConnection
+        )
+        
+        return result[0]
     
     def save_monitoring_state_to_disk(self):
         """Save monitoring state to JSON file including monitoring_active flag"""

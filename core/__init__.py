@@ -8,6 +8,7 @@ from .application_manager import ApplicationManager
 from .unified_monitor import UnifiedMonitor
 from .crypto_manager import CryptoManager
 from .password_manager import PasswordManager
+from .file_lock_manager import FileLockManager
 from .autostart_manager import (
     AutostartManagerBase,
     AutostartManagerLinux,
@@ -21,6 +22,7 @@ __all__ = [
     'UnifiedMonitor',
     'CryptoManager',
     'PasswordManager',
+    'FileLockManager',
     'AutostartManagerBase',
     'AutostartManagerLinux',
     'AutostartManagerWindows',

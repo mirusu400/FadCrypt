@@ -40,6 +40,9 @@ a = Analysis(
         'core.statistics_manager',
         'core.linux',
         'core.linux.file_lock_manager_linux',
+        'core.linux.elevated_daemon',
+        'core.linux.elevated_daemon_client',
+        'core.linux.fanotify_client',
         # UI modules
         'ui',
         'ui.base',

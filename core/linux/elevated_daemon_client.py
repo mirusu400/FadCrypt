@@ -123,6 +123,116 @@ class ElevatedClient:
             logger.error(f"Daemon communication failed: {e}")
             return False, f"Daemon error: {e}"
     
+    def fanotify_start(self) -> Tuple[bool, str]:
+        """
+        Start fanotify monitoring via daemon.
+        
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        request = {'command': 'fanotify_start'}
+        
+        try:
+            response = self._send_request(request)
+            
+            if response.get('success'):
+                logger.info("Daemon: Fanotify monitoring started")
+                return True, response.get('message', 'Success')
+            else:
+                error = response.get('error', 'Unknown error')
+                logger.error(f"Daemon fanotify_start failed: {error}")
+                return False, error
+                
+        except Exception as e:
+            logger.error(f"Daemon communication failed: {e}")
+            return False, f"Daemon error: {e}"
+    
+    def fanotify_stop(self) -> Tuple[bool, str]:
+        """
+        Stop fanotify monitoring via daemon.
+        
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        request = {'command': 'fanotify_stop'}
+        
+        try:
+            response = self._send_request(request)
+            
+            if response.get('success'):
+                logger.info("Daemon: Fanotify monitoring stopped")
+                return True, response.get('message', 'Success')
+            else:
+                error = response.get('error', 'Unknown error')
+                logger.error(f"Daemon fanotify_stop failed: {error}")
+                return False, error
+                
+        except Exception as e:
+            logger.error(f"Daemon communication failed: {e}")
+            return False, f"Daemon error: {e}"
+    
+    def fanotify_watch(self, paths: List[str]) -> Tuple[bool, str]:
+        """
+        Add files/folders to fanotify watch via daemon.
+        
+        Args:
+            paths: List of file/folder paths to watch
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        request = {
+            'command': 'fanotify_watch',
+            'paths': paths
+        }
+        
+        try:
+            response = self._send_request(request)
+            
+            if response.get('success'):
+                count = response.get('paths_watched', len(paths))
+                logger.info(f"Daemon: Watching {count} paths via fanotify")
+                return True, response.get('message', 'Success')
+            else:
+                error = response.get('error', 'Unknown error')
+                logger.error(f"Daemon fanotify_watch failed: {error}")
+                return False, error
+                
+        except Exception as e:
+            logger.error(f"Daemon communication failed: {e}")
+            return False, f"Daemon error: {e}"
+    
+    def fanotify_unwatch(self, paths: List[str]) -> Tuple[bool, str]:
+        """
+        Remove files/folders from fanotify watch via daemon.
+        
+        Args:
+            paths: List of file/folder paths to stop watching
+            
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
+        request = {
+            'command': 'fanotify_unwatch',
+            'paths': paths
+        }
+        
+        try:
+            response = self._send_request(request)
+            
+            if response.get('success'):
+                count = response.get('paths_unwatched', len(paths))
+                logger.info(f"Daemon: Stopped watching {count} paths")
+                return True, response.get('message', 'Success')
+            else:
+                error = response.get('error', 'Unknown error')
+                logger.error(f"Daemon fanotify_unwatch failed: {error}")
+                return False, error
+                
+        except Exception as e:
+            logger.error(f"Daemon communication failed: {e}")
+            return False, f"Daemon error: {e}"
+    
     def _send_request(self, request: dict) -> dict:
         """
         Send request to daemon and receive response.
